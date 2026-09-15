@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
 // RawStore persists fetched items and per-source health. Declared here, at the
@@ -971,9 +973,12 @@ func (e *Engine) FetchNow(ctx context.Context, sourceID string) (items, added in
 }
 
 // SourceIDFor returns the watchlist source that follows an instrument, if one
-// is registered.
-func (e *Engine) SourceIDFor(ticker string) (string, bool) {
-	id := "watch-" + strings.ToLower(strings.TrimSpace(ticker))
+// is registered. The id is keyed by the full canonical symbol, not the bare
+// ticker: "watch-reliance.nse" and "watch-aapl" are different sources, and a
+// bare "watch-infy" would be ambiguous between the NSE constituent and its
+// NYSE-listed namesake.
+func (e *Engine) SourceIDFor(sym marketdata.Symbol) (string, bool) {
+	id := "watch-" + strings.ToLower(sym.String())
 	if _, ok := e.registry.Get(id); ok {
 		return id, true
 	}

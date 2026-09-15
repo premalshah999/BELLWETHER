@@ -332,7 +332,7 @@ func (s *Server) handleSymbolEvents(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	filter := storage.EventFilter{
-		Symbol: sym.Ticker,
+		Symbol: sym.String(),
 		Limit:  atoiDefault(q.Get("limit"), 40),
 		Offset: atoiDefault(q.Get("offset"), 0),
 		// This page is about one instrument, so everything collected for it
@@ -397,7 +397,7 @@ func (s *Server) handleSymbolDebrief(w http.ResponseWriter, r *http.Request) {
 
 	days := clampInt(intParam(r, "days", 30), 1, 365)
 	list, err := reader.ListEvents(r.Context(), storage.EventFilter{
-		Symbol: sym.Ticker,
+		Symbol: sym.String(),
 		Since:  s.now().AddDate(0, 0, -days),
 		Limit:  200,
 	})
@@ -408,7 +408,11 @@ func (s *Server) handleSymbolDebrief(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var company, industry string
-	if s.deps.Companies != nil {
+	// The company master is NSE-only text -- looking up a US ticker against
+	// it would occasionally collide with an unrelated NSE name (a bare
+	// ticker match is not venue-aware), so it is only consulted for the
+	// venues it actually covers.
+	if s.deps.Companies != nil && sym.IsIndian() {
 		if c, found := s.deps.Companies.Lookup(sym.Ticker); found {
 			company = c.Name
 		}
@@ -423,7 +427,7 @@ func (s *Server) handleSymbolDebrief(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := s.deps.AI.Debrief(r.Context(), store, sym.Ticker, company, industry, list, days)
+	out, err := s.deps.AI.Debrief(r.Context(), store, sym.String(), company, industry, list, days)
 	if err != nil {
 		s.deps.Log.Warn("debrief failed", "symbol", sym.String(), "err", err)
 		writeError(w, http.StatusBadGateway, "ai_unavailable", "The debrief failed: "+err.Error())
@@ -463,7 +467,7 @@ func (s *Server) handleRefreshSymbolNews(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "bad_request", "Unrecognised symbol.")
 		return
 	}
-	sourceID, ok := s.deps.Ingest.SourceIDFor(sym.Ticker)
+	sourceID, ok := s.deps.Ingest.SourceIDFor(sym)
 	if !ok {
 		writeError(w, http.StatusNotFound, "not_found",
 			"This instrument is not on the watchlist, so nothing follows it specifically.")

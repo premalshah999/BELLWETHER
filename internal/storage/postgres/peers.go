@@ -95,9 +95,10 @@ const minPeersForPercentile = 5
 // ComparePeers ranks one company against the other listed companies in its
 // NSE industry.
 func (d *DB) ComparePeers(ctx context.Context, symbol string) (PeerComparison, error) {
-	var industry string
+	var industry, taxonomy string
 	err := d.db.QueryRowContext(ctx,
-		`SELECT industry FROM index_constituents WHERE symbol = $1`, symbol).Scan(&industry)
+		`SELECT industry, COALESCE(taxonomy, '') FROM index_constituents WHERE symbol = $1`,
+		symbol).Scan(&industry, &taxonomy)
 	if err == sql.ErrNoRows || industry == "" {
 		return PeerComparison{}, fmt.Errorf("compare peers: %s has no industry classification", symbol)
 	}
@@ -115,12 +116,18 @@ func (d *DB) ComparePeers(ctx context.Context, symbol string) (PeerComparison, e
 	// capitalisation that moves daily. The two live in different tables
 	// because they change on different clocks; they are joined here rather
 	// than stored together for the same reason.
+	//
+	// Scoped by taxonomy as well as industry label: NSE's classification and
+	// GICS both use ordinary English sector names, and "Information
+	// Technology" means one thing in each. Matching on the label alone would
+	// silently pool an NSE company's peer group with US ones any time the
+	// two taxonomies happened to spell a sector the same way.
 	const base = `
 WITH snapshots AS (
     SELECT DISTINCT ON (f.symbol) f.*
     FROM fundamentals_snapshot f
     JOIN index_constituents ic ON ic.symbol = f.symbol
-    WHERE ic.industry = $1
+    WHERE ic.industry = $1 AND ic.taxonomy = $3
     ORDER BY f.symbol, f.id DESC
 ),
 fcf AS (
@@ -145,7 +152,7 @@ latest AS (
     LEFT JOIN fcf ON fcf.symbol = l.symbol
 )`
 
-	if err := d.db.QueryRowContext(ctx, base+` SELECT count(*) FROM latest`, industry).
+	if err := d.db.QueryRowContext(ctx, base+` SELECT count(*) FROM latest`, industry, "", taxonomy).
 		Scan(&out.Peers); err != nil {
 		return out, fmt.Errorf("compare peers: count: %w", err)
 	}
@@ -169,7 +176,7 @@ SELECT
 
 		var value, median sql.NullFloat64
 		var reporting, below int
-		if err := d.db.QueryRowContext(ctx, q, industry, symbol).
+		if err := d.db.QueryRowContext(ctx, q, industry, symbol, taxonomy).
 			Scan(&value, &median, &reporting, &below); err != nil {
 			return out, fmt.Errorf("compare peers: %s: %w", m.label, err)
 		}
