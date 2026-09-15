@@ -99,6 +99,24 @@ func DefaultSources() []Source {
 		})
 	}
 
+	// The US regulators and policy bodies that play the same role for the US
+	// as RBI plays for India: an announcement here reprices a sector, or the
+	// whole market, before any publisher writes about it. All three verified
+	// live and reachable from this host with a plain RSS/Atom fetch, no key.
+	usOfficial := []struct{ id, name, url, category string }{
+		{"fed-press", "Federal Reserve Press Releases", "https://www.federalreserve.gov/feeds/press_all.xml", "regulatory"},
+		{"whitehouse-actions", "White House Presidential Actions", "https://www.whitehouse.gov/presidential-actions/feed/", "regulatory"},
+		{"sec-press", "SEC Press Releases", "https://www.sec.gov/news/pressreleases.rss", "regulatory"},
+	}
+	for _, f := range usOfficial {
+		out = append(out, Source{
+			ID: f.id, Name: f.name, URL: f.url,
+			Method: MethodRSS, Category: f.category, Country: "US", Language: "en",
+			Trust: TrustOfficial, Refresh: 5 * time.Minute, Timeout: 20 * time.Second,
+			Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
+		})
+	}
+
 	// PIB is deliberately absent, having been measured rather than assumed.
 	//
 	// Its ministry announcements — budget measures, FPI policy, tariff and duty
@@ -199,23 +217,28 @@ func DefaultSources() []Source {
 		{"cnbc-earnings", "CNBC Earnings", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839135", "results", TrustMajorFin, 10 * time.Minute},
 		{"marketwatch-top", "MarketWatch Top Stories", "https://feeds.content.dowjones.io/public/rss/mw_topstories", "markets", TrustMajorFin, 5 * time.Minute},
 		{"ft-companies", "Financial Times Companies", "https://www.ft.com/companies?format=rss", "companies", TrustMajorFin, 10 * time.Minute},
+
+		// Restored, having previously been measured out of the catalog (see
+		// the removed comment this replaced, still readable in git history).
+		// The earlier verdict was correct for what this app was then: over
+		// one archive these three produced 682 events, a fifth of
+		// everything collected, resolving to an Indian listed company three
+		// times in total -- "RSI Alert: Polestar Now Oversold" is real
+		// material, just not for an Indian operator's feed. That same
+		// material is now exactly on target: this is the primary US retail
+		// and market-news layer, the closest thing this catalog has to what
+		// NSE announcements and BSE notices are for India.
+		{"yahoo-finance", "Yahoo Finance", "https://finance.yahoo.com/news/rssindex", "markets", TrustMajorFin, 5 * time.Minute},
+		{"nasdaq-markets", "Nasdaq Markets", "https://www.nasdaq.com/feed/rssoutbound?category=Markets", "markets", TrustMajorFin, 5 * time.Minute},
+		{"investing-com", "Investing.com News", "https://www.investing.com/rss/news.rss", "markets", TrustMajorFin, 10 * time.Minute},
+		// Seeking Alpha's "Market Currents" is a breaking-news wire (filings,
+		// dividend declarations, guidance, M&A) rather than the long-form
+		// analysis the site is best known for -- verified live: dividend
+		// declarations, a credit-facility raise, an EPA rule change, all
+		// inside the same 7-item pull.
+		{"seeking-alpha", "Seeking Alpha Market Currents", "https://seekingalpha.com/market_currents.xml", "markets", TrustMajorFin, 5 * time.Minute},
 	}
 
-	// Deliberately not carried: Yahoo Finance, Nasdaq and Investing.com.
-	//
-	// All three were in the catalog and all three were measured out of it.
-	// Over one archive they produced 682 events between them — a fifth of
-	// everything collected — and resolved to an Indian listed company three
-	// times in total. What they actually carry is US retail commentary:
-	// "RSI Alert: Polestar Now Oversold", "Bullish Two Hundred Day Moving
-	// Average Cross", "Danaos Corp stock hits 52-week high".
-	//
-	// That is not a classification failure to be fixed with more keywords. It
-	// is the wrong material for this application, and carrying it means an
-	// operator scrolling the feed spends four rows in five on companies they
-	// cannot trade. The global desks that remain — CNBC, the FT, MarketWatch
-	// — are kept because their India and macro coverage does bear on the
-	// Indian open.
 	for _, f := range global {
 		out = append(out, Source{
 			ID: f.id, Name: f.name, URL: f.url,
@@ -287,6 +310,53 @@ func DefaultSources() []Source {
 		})
 	}
 
+	// The same event-class approach, for the US. Each query was measured
+	// live against Google News before being added, same discipline as the
+	// India queries above; the counts in the comments are what a single pull
+	// returned.
+	usDiscovery := []struct{ id, name, query string }{
+		// 53 items: "Oklo Stock Drops After Announcing $1 Billion Share
+		// Sale", "Kioxia said to consider raising $10 billion in U.S.
+		// listing". A bare "block trade" OR "secondary offering" query
+		// returned one item; broadening to "share sale" is what found the
+		// rest of this event class.
+		{"disc-us-block-trades", "Block Trades & Secondary Offerings (via discovery)",
+			`US company "block trade" OR "secondary offering" OR "share sale" shares when:3d`},
+		// 36 items: "Moody's upgrades Embraer rating to Baa2 on strong
+		// metrics". A rating action is a solvency judgement and reprices
+		// equity as well as debt, same reasoning as the CRISIL/ICRA query.
+		{"disc-us-rating-actions", "Credit Rating Actions (via discovery)",
+			`Moody's OR S&P OR Fitch rating downgrade OR upgrade company when:3d`},
+		// 38 items: "Coca-Cola Europacific steps up buybacks in US and UK
+		// markets".
+		{"disc-us-buybacks", "Buybacks (via discovery)",
+			`US company "share buyback" OR "stock repurchase" announces when:3d`},
+		// 15 items: "Weather delays and a compressor issue cut 2026 output
+		// at Obsidian Energy". Deliberately catches both directions --
+		// "raises" and "cuts" -- since a beat is as much a price mover as a
+		// miss.
+		{"disc-us-guidance", "Guidance Changes (via discovery)",
+			`US company cuts OR lowers OR raises guidance forecast when:2d`},
+		// 56 items: "Classic Vacations CEO Melissa Krueger steps down".
+		{"disc-us-leadership", "Leadership Changes (via discovery)",
+			`US company CEO OR CFO resigns OR steps down OR appointed when:2d`},
+		// 48 items: "Crane Company Announces Agreement to Acquire U.S. Water
+		// Pump Business". M&A is the single highest-value event class this
+		// system tracks and the SEC 8-K tape (Item 2.01/1.01) already covers
+		// it once a deal is filed; this catches the announcement, which
+		// usually precedes the filing by hours to days.
+		{"disc-us-ma", "Mergers & Acquisitions (via discovery)",
+			`US company to acquire OR merger OR "definitive agreement" when:2d`},
+	}
+	for _, f := range usDiscovery {
+		out = append(out, Source{
+			ID: f.id, Name: f.name, URL: GoogleNewsSearch(f.query, "en-US", "US"),
+			Method: MethodGoogleNews, Category: "discovery", Country: "US", Language: "en",
+			Trust: TrustWire, Refresh: 10 * time.Minute, Timeout: 20 * time.Second,
+			Usage: UsageDiscoveryOnly, Display: DisplayLinkOnly, Enabled: true,
+		})
+	}
+
 	// ---- Layer E: GDELT coverage expansion --------------------------------
 	//
 	// Not a breaking-news source and not treated as one. Its job is to answer
@@ -299,6 +369,20 @@ func DefaultSources() []Source {
 		// GDELT's TLS handshake from a datacentre IP measures 15-20 seconds
 		// before any data flows, so the timeout has to accommodate a slow
 		// start rather than a slow feed.
+		Trust: TrustAggregator, Refresh: 30 * time.Minute, Timeout: 90 * time.Second,
+		Usage: UsagePublicReviewed, Display: DisplayLinkOnly, Enabled: true,
+	})
+	// Same query, US-scoped. Not independently re-verified live (GDELT's
+	// shared-IP rate limit -- one request per five seconds, enforced more
+	// strictly than that in practice -- was already exhausted probing the
+	// rest of this catalog by the time this was added); the mechanism and
+	// query syntax are identical to gdelt-india-business above, which is
+	// live in production, and sourcecountry is a documented two-letter-code
+	// filter with no reason "us" would behave differently from "india".
+	out = append(out, Source{
+		ID: "gdelt-us-business", Name: "GDELT US Business",
+		URL:    "https://api.gdeltproject.org/api/v2/doc/doc?query=(stocks%20OR%20shares%20OR%20earnings)%20sourcecountry:us&mode=ArtList&format=json&maxrecords=75&timespan=60min",
+		Method: MethodGDELT, Category: "discovery", Country: "US", Language: "en",
 		Trust: TrustAggregator, Refresh: 30 * time.Minute, Timeout: 90 * time.Second,
 		Usage: UsagePublicReviewed, Display: DisplayLinkOnly, Enabled: true,
 	})
