@@ -1,24 +1,67 @@
-# TradeSys Dashboard
+# Bellwether
 
-A self-hosted market **analysis and alerting** terminal for Indian and US
-equities. It watches symbols, evaluates rule-based algorithms against them, and
-notifies you when their conditions are met.
+*(internal codename: TradeSys Dashboard)*
 
-> **This version contains no order-placement code path of any kind.** It
-> observes markets and notifies. It does not trade.
+A self-hosted market intelligence terminal for **US and Indian equities** —
+built by two operators who trade and invest their own capital, currently
+running as a live personal deployment.
+
+> **This build contains no order-placement code path of any kind.** It
+> watches markets, filings and policy, and tells you what it found. It does
+> not trade.
 >
 > Analysis tool. Not investment advice. Data may be delayed.
 
 ---
 
-## Status
+## The problem this answers
 
-| Milestone | Scope | State |
-| --- | --- | --- |
-| **M1** | Skeleton, data adapters, cache, chart, health dots | **done** |
-| **M2** | Indicators, algorithm DSL + evaluator, builder UI, Telegram alerts | **done** |
-| **M3** | News, search, AI layer, budget tracking, calibration | **done** |
-| **M4** | Design polish, empty/error states, docker-compose | **done** |
+Bloomberg Terminal ($24,000/year) connects world events to positions.
+Retail tools show you *what* moved but almost never *why*, and never which
+of *your* holdings a policy change, a filing, or a Congressional trade
+actually touches. AI finance chatbots answer confidently and cite nothing —
+you cannot audit them, so you cannot trust them.
+
+Bellwether occupies that gap at retail cost:
+
+```
+world event / filing / policy change  →  which sectors it reaches
+                                       →  which of your holdings sit there
+                                       →  cited, auditable evidence
+```
+
+Three things make that trustworthy rather than another chatbot wrapper:
+
+- **Provenance discipline.** Every event carries three timestamps — when it
+  happened, when it was published, and when *this system* discovered it.
+  Only the last is ever used to reason about "what was knowable when," which
+  is what makes look-ahead bias structurally impossible downstream (see
+  [Event study](#event-study), the clearest demonstration of why this
+  matters).
+- **Deterministic routing of AI spend.** A statistical scanner picks the
+  handful of instruments worth attention out of a universe of 1,250+; only
+  those trigger a model call. The LLM never decides what to look at, and
+  never places a trade.
+- **Auditable synthesis.** Research cites sources, flags where they
+  disagree, and says plainly what they fail to establish. A finding with no
+  valid citation is dropped, not softened.
+
+---
+
+## What it actually does
+
+| | |
+| --- | --- |
+| **Dashboard & Charts** | Real OHLCV across US and NSE venues, with indicator overlays and session-aware VWAP. |
+| **Scanner** | Reads price and volume across the whole universe (1,250+ instruments) every trading session, finds what is behaving abnormally *before any article exists about it*, and raises that instrument's search priority. |
+| **News** | 80+ sources: SEC EDGAR (8-K, Form 4, 13F), NSE/BSE corporate filings, the Federal Register, Fed and Treasury releases, GDELT, and targeted Google News queries — deduplicated, timestamped, and classified into one of ~54 event types. |
+| **Geopolitics & Policy** | Macro, regulatory, commodity and geopolitical events, fanned out to the GICS/NSE sectors they touch and cross-referenced against your own watchlist — "does this actually reach anything I hold?" |
+| **Congressional trading** | House Clerk STOCK Act disclosures: which members traded which tickers, and how many days they took to disclose it against the 45-day statutory deadline. |
+| **Event study** | For any event type, the measured abnormal return (vs. the S&P 500 or NIFTY 50) over N days after the event, with a real sample size and honest small-sample warnings — not a chart with an arrow next to a date. |
+| **Research** | Multi-source deep research over a question, with per-finding citations, disagreement flagged explicitly, and a `gaps` section naming what the sources don't establish. |
+| **Algorithms & Backtest** | A JSON rule language over indicators (SMA/EMA/RSI/MACD/ATR/VWAP/52-week high-low…) with three-valued (unknown-aware) logic, evaluated on a schedule, and a leakage-free backtester with its own small-sample warning discipline. |
+| **Alerts** | Rule triggers, delivered to Telegram and the in-app feed, with the full evaluation snapshot persisted for audit. |
+| **AI calibration** | Every AI-generated outlook is logged with a horizon and probabilities, scored against what actually happened, and plotted as a reliability curve — no LLM call needed to keep the track record current. |
 
 ---
 
@@ -26,226 +69,236 @@ notifies you when their conditions are met.
 
 ```bash
 git clone <this repo> && cd Dashboard
-cp .env.example .env      # then edit: at minimum set APP_PASSWORD
+cp .env.example .env       # see Configuration below
 docker compose up -d
 ```
 
-Open <http://localhost:8080> and log in with any username and the
-`APP_PASSWORD` you set. That is the whole install: the image builds the
-frontend, compiles a static binary with the frontend embedded, and runs it
-unprivileged with the SQLite file on a named volume.
+This starts three services: **Postgres**, the **yfinance sidecar**
+(`services/yfinance`, deep US/NSE/BSE daily history with no request budget),
+and **tradesys** itself — a static Go binary with the built React frontend
+embedded.
 
-On first run the watchlist is seeded with `RELIANCE.BSE` and `AAPL`, and the
-four template algorithms are installed **disabled** — a fresh install must not
-start notifying anybody before they have looked at it.
+A fresh deployment has no API keys issued, which leaves the app **open** —
+intentionally, so it can be reached long enough to issue the first one:
 
 ```bash
-docker compose logs -f     # follow
-docker compose down        # stop, keeping the data volume
+docker compose exec tradesys tradesys -issue-key -name "you" -role owner
 ```
 
-To publish on a different port, set `HOST_PORT` in `.env`.
+Open <http://localhost:8080>, sign in with that key, and the door closes:
+every route after the first key exists requires one.
+
+```bash
+docker compose logs -f tradesys     # follow
+docker compose down                 # stop, keeping the data volume
+```
 
 ### Running a model on the same host
-
-Self-hosted models usually run beside the container rather than in it. The
-compose file maps `host.docker.internal` to the host gateway, so:
 
 ```
 LLM_BASE_URL=http://host.docker.internal:11434/v1
 ```
 
+The compose file maps `host.docker.internal` to the host gateway, so a
+self-hosted model (Ollama, vLLM, …) running beside the container needs no
+extra networking.
+
 ### Building without Docker
 
-Requirements: **Go 1.22+** and **Node 20+**. No cgo, no system SQLite, no
-database server.
+Requirements: **Go 1.27+**, **Node 20+**, a reachable **Postgres 17**.
 
 ```bash
 npm --prefix web install
 npm --prefix web run build     # the Go binary embeds web/dist
 go build -o tradesys ./cmd/tradesys
-./tradesys
+DATABASE_URL=postgres://... ./tradesys
 ```
 
-### Backing up
-
-Everything is one SQLite file plus its WAL siblings.
+### Development
 
 ```bash
-docker compose stop
-docker run --rm -v tradesys-data:/data -v "$PWD:/backup" alpine \
-    tar czf /backup/tradesys-backup.tar.gz -C /data .
-docker compose start
-```
-
-### Frontend development
-
-Run the Go server and Vite side by side; Vite proxies `/api` to the backend so
-the app is same-origin in dev exactly as it is in production.
-
-```bash
-./tradesys &                     # backend on :8080
-npm --prefix web run dev         # frontend on :5173, proxying /api
-```
-
-To iterate on the frontend without rebuilding the Go binary, point the server
-at the build output on disk:
-
-```bash
-WEB_DIST_DIR=./web/dist ./tradesys
+go build -o tradesys ./cmd/tradesys && ./tradesys &   # backend on :8080
+npm --prefix web run dev                              # frontend on :5173, proxying /api
 ```
 
 ### Tests
 
 ```bash
-go test ./...                    # backend
-npm --prefix web run build       # frontend typecheck + build
+go test ./...                                          # unit tests, no DB needed
+TEST_DATABASE_URL=postgres://... go test ./...         # + Postgres integration tests
+npm --prefix web run build                             # frontend typecheck + build
 ```
 
----
+Postgres integration tests run against a **dedicated database**, never the
+one an environment's `DATABASE_URL` points at — set `TEST_DATABASE_URL`
+explicitly to a scratch database and nothing else. Tests that need it skip
+cleanly when it is unset.
 
-## Configuration
+### Backing up
 
-Everything is read from the environment, loaded from `.env` at startup.
-Variables already exported in the environment win over `.env`. See
-[`.env.example`](.env.example) for the annotated list.
+```bash
+docker compose exec postgres pg_dump -U tradesys -Fc tradesys > backup.dump
+```
 
-**Secrets are never written to the database and never returned by the API.**
-The settings page reports only whether each dependency is configured.
-
-The app degrades feature by feature rather than refusing to start: with no keys
-at all it still runs on Yahoo Finance alone.
+The compose file also runs a scheduled dump into the `tradesys-backups`
+volume on the interval set by `BACKUP_KEEP_DAYS`.
 
 ---
 
 ## Architecture
 
 ```
-cmd/tradesys/            wiring — the only place that names a concrete adapter
+cmd/tradesys/             wiring — the only place that names a concrete adapter
 internal/
-  config/                environment loading and validation
-  marketdata/            Provider interface, Router, Symbol, Candle, Quote
-    alphavantage/        adapter + hard daily request budget
-    yahoo/               adapter + isolated parsing + venue fallback
-    fixture/             deterministic synthetic provider (tests, demos)
-  storage/               persistence ports
-    sqlite/              the only implementation today; migrations live here
-  health/                dependency health aggregation for the status dots
-  server/                REST API + static frontend serving
-  indicators/            SMA, EMA, RSI, MACD, ATR, VWAP, 52w high/low, vol avg
-  algo/                  the rule language: parse, validate, evaluate
-  alerts/                evaluation scheduler -> cooldown -> notify pipeline
-  notify/                Notifier interface + telegram/ adapter
-  ai/                    LLM client, prompt files, budget, the five AI features
-  search/                SearchProvider interface + tavily/, brave/ adapters
-  news/                  RSS pollers -> normalised articles -> AI scoring
-web/                     React + Vite + TypeScript + Tailwind frontend
+  config/                 environment loading and validation
+  marketdata/              Provider interface, Router, Symbol, Candle, Quote
+    yahoo/, yfin/, twelvedata/, alphavantage/, fixture/
+  storage/                 persistence ports
+    postgres/               the production implementation; migrations live here
+    sqlite/                 one-time importer target for pre-Postgres installs
+  news/                     lane-based multi-source ingestion: fetch -> normalize -> dedupe
+    company/                 the listed-instrument master (NSE + SEC-derived US universe)
+  events/                   classification: type taxonomy, sector inference, SEC/NSE parsers
+  scanner/                  the statistical "what's abnormal" pass over the whole universe
+  congress/                 House Clerk STOCK Act disclosure parsing
+  eventstudy/               abnormal-return computation against a venue benchmark
+  research/                 multi-source deep research, citation-gated synthesis
+  backtest/                 leakage-free strategy backtesting
+  algo/                     the rule language: parse, validate, evaluate (three-valued logic)
+  alerts/                   evaluation scheduler -> cooldown -> notify pipeline
+  ai/                       LLM client, prompt files (as files, not Go strings), budget
+  server/                   REST API + static frontend serving
+  health/                   per-dependency status for the settings page's dots
+web/                       React + Vite + TypeScript + Tailwind frontend
+services/yfinance/         the yfinance sidecar (Python), reachable only inside the compose network
 ```
 
 ### Seams that matter
 
-**Every external service sits behind an interface with a fake implementation.**
-Nothing imports a concrete adapter except `cmd/tradesys/main.go`. This is what
-makes the whole pipeline testable without a network.
+**Every external dependency sits behind an interface**, with `cmd/tradesys`
+the only package that imports a concrete adapter. Storage, market data,
+search, AI and notification are all swappable and independently fakeable in
+tests.
 
-**The Router is where graceful degradation lives.** For every request it:
+**The market-data Router owns graceful degradation.** For every request it
+serves fresh cache, falls through providers in priority order, serves stale
+cache flagged `stale` before giving up entirely, and writes through on every
+success. A chart never silently substitutes one instrument's data for
+another's without saying so in `resolved_symbol`.
 
-1. serves the cache if the data is fresh *and* goes back far enough;
-2. otherwise tries each provider in priority order, writing through to cache;
-3. otherwise serves stale cache, flagged `stale` so the UI says so;
-4. and only fails when there is nothing cached at all.
+**Deterministic before AI, everywhere.** The scanner is pure statistics. The
+scan universe, sector taxonomy and entity resolution are all rule-based. The
+LLM is the last stage of the pipeline, never the first — it never decides
+*what* to look at, only helps explain what deterministic code already found.
 
-**Provenance is never hidden.** Every series carries the provider that served
-it, whether it came from cache, and — when a provider substituted a sibling
-listing — which one. A BSE chart quietly drawn from NSE prices would be a lie,
-so the UI labels it `via RELIANCE.NSE`.
+**Symbols are canonical and venue-qualified.** `AAPL` (bare — US is the
+default venue), `RELIANCE.NSE`, `GSPC.INDEX` for a benchmark index. One
+namespace across every table; no bare ticker can collide across venues (a
+real risk: `ABB` and `INFY` each name a different instrument on NSE versus
+the NYSE).
 
-**All times are stored in UTC and displayed in `DISPLAY_TZ`** (IST by default).
+**Three timestamps travel with every event**: `occurred_at` (when it really
+happened, if known), `published_at` (the publisher's own timestamp), and
+`discovered_at` (when this system found it — the only one ever used to
+reason about what was knowable at a given moment). This is what makes the
+event study honest and look-ahead bias structurally impossible rather than
+merely avoided by convention.
+
+**All times are stored in UTC**, displayed in `DISPLAY_TZ`, and scheduled
+per-venue (`CRON_TZ=` overrides) so a US-hours job runs on US market hours
+regardless of the display timezone an operator has set.
 
 ---
 
-## Data providers
+## Data sources
 
-| Provider | Key needed | Notes |
+A representative slice — the full catalogue is `internal/news/catalog.go`.
+
+| Source | Kind | Key needed |
 | --- | --- | --- |
-| **Yahoo Finance** | no | No request limit, so it leads by default. Unofficial and undocumented; parsing is isolated in `yahoo/parse.go` and fails soft. **Blocks datacenter IPs** — see below. |
-| **Twelve Data** | yes | Free tier ~800 requests/day. Carries NSE and BSE directly, and answers normally from datacenter IPs. The practical primary source on a rented server. |
-| **Alpha Vantage** | yes | Free tier ~25 requests/day. The budget is enforced **before** any network call and persisted, so restarting cannot reset it. |
-| **synthetic** | no | Generated, non-market data for evaluating the app without keys. Opt in with `ENABLE_SYNTHETIC_FALLBACK=true`. Always labelled `synthetic` in the UI. |
+| **SEC EDGAR** (8-K, Form 4, 13F, full-text search) | Official filings | no — needs a declared `SEC_USER_AGENT` contact string |
+| **Federal Register** | Regulatory/policy, with structured agency metadata | no |
+| **House Clerk** | Congressional STOCK Act disclosures | no |
+| **NSE / BSE corporate announcements** | Official filings | no |
+| **Federal Reserve, Treasury, White House** | Official releases | no |
+| **GDELT** | Global event index | no |
+| **Google News** (targeted queries per event class) | Discovery layer | no |
+| **Yahoo Finance / yfinance sidecar** | Price history, both venues, 5+ years | no |
+| **Twelve Data, Alpha Vantage** | Price history, budgeted fallback | yes (free tier) |
+| **Tavily, Brave** | Research search | yes (free tier) |
 
 ### If you are running on a rented server
 
-Yahoo rate-limits datacenter IP ranges. On Hetzner, DigitalOcean, AWS and
-similar it will return `429` to **every** request — not intermittently, but
-always. The app degrades correctly when that happens (it falls through to the
-next provider, and serves cached prices if none answer), but you do not want
-your primary source to be one that never works.
-
-Drop it and lead with Twelve Data:
+Yahoo's unauthenticated feed rate-limits datacenter IP ranges — on Hetzner,
+DigitalOcean, AWS and similar it returns `429` to *every* request, not
+intermittently. The app degrades correctly (falls through to the next
+provider, serves stale cache), but you do not want your primary source to be
+one that never works:
 
 ```
-MARKETDATA_ORDER=twelvedata,alphavantage
+MARKETDATA_ORDER=yfinance,twelvedata,alphavantage
 ```
 
-Both budgets are enforced before any network call and shown on the Settings
-page, so you can see exactly how much of each allowance a day actually costs.
+The yfinance sidecar runs inside the compose network and is unaffected.
 
-### Symbol format
+---
 
-Canonical symbols use the Alpha Vantage spelling — `RELIANCE.BSE`, `TCS.NSE`,
-`AAPL` (US needs no suffix). Adapters translate into their own dialect;
-provider-specific spellings never escape into storage or the API. Yahoo wants
-`RELIANCE.BO`; Twelve Data wants `symbol=RELIANCE&exchange=BSE`; Alpha Vantage
-takes the canonical form as-is.
+## Configuration
 
-Yahoo's coverage of some Indian listings is patchy — its `RELIANCE.BO` feed
-returns a single bar. When the requested venue yields too little history to
-chart, the adapter tries the sibling venue and **reports the substitution** in
-`resolved_symbol` rather than passing it off as the venue you asked for.
+Everything is read from the environment, loaded from `.env` at startup;
+variables already exported win over `.env`. See
+[`.env.example`](.env.example) for the fully annotated list.
+
+**Secrets are never written to the database and never returned by the API.**
+The settings page reports only whether each dependency is configured.
+
+The app degrades feature by feature rather than refusing to start — with no
+keys at all it still serves cached and Yahoo/yfinance prices, and every AI
+feature reports itself unavailable rather than the app failing to boot.
+
+---
+
+## Symbol format
+
+Canonical form is `TICKER` (US, the default venue) or `TICKER.VENUE`
+(`RELIANCE.NSE`, `TCS.BSE`). A benchmark index uses `TICKER.INDEX`
+(`GSPC.INDEX` → S&P 500, rendered `^GSPC` to Yahoo/yfinance). Class shares
+use a hyphen the way the SEC itself does (`BRK-B`), never a dot — a dot is
+reserved for the venue separator.
+
+Every stored symbol round-trips through `marketdata.ParseSymbol` /
+`.String()`; no bare ticker is ever ambiguous across venues, and no vendor
+suffix (`.NS`, `.BO`) ever escapes into storage or the API.
 
 ---
 
 ## API
 
-All endpoints are under `/api` and protected by HTTP basic auth (any username,
-`APP_PASSWORD` as the password).
+All endpoints are under `/api`, JSON in and out, and — once at least one API
+key exists — require a signed-in session (`POST /api/auth/login` exchanges a
+key for an `HttpOnly` cookie). Errors are always
+`{"error": {"code": "...", "message": "..."}}`; validation failures add a
+`fields` array so a form can show each message inline.
+
+A representative slice — the full route table is `internal/server/server.go`:
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/meta` | App info, display timezone, which features are configured |
 | `GET` | `/api/health` | Per-dependency status, degraded flag, request budgets |
 | `GET` | `/api/watchlist` | Watchlist with quotes and sparklines |
-| `POST` | `/api/watchlist` | `{"symbol": "RELIANCE.BSE", "note": ""}` |
-| `DELETE` | `/api/watchlist/{symbol}` | Remove a symbol |
 | `GET` | `/api/symbols/{symbol}/candles?interval=1d&limit=300` | OHLCV series |
-| `GET` | `/api/symbols/{symbol}/quote` | Latest quote |
-| `GET` | `/api/algorithms` | List algorithms |
-| `POST` | `/api/algorithms` | Create one |
-| `GET`/`PUT`/`DELETE` | `/api/algorithms/{id}` | Read, replace, remove |
-| `POST` | `/api/algorithms/{id}/run` | Evaluate now, delivering any alerts |
-| `GET` | `/api/algorithms/{id}/evaluations` | Last outcome per symbol |
-| `POST` | `/api/algorithms/validate` | Check a draft without saving |
-| `POST` | `/api/algorithms/preview` | Evaluate a draft against live data, sending nothing |
-| `GET` | `/api/algorithms/templates` | The four prebuilt templates |
-| `GET` | `/api/algorithms/vocabulary` | Indicators, operators, intervals the engine supports |
-| `GET` | `/api/alerts` | Alert feed (`limit`, `unread`, `symbol`, `algorithm_id`) |
-| `POST` | `/api/alerts/{id}/read` | Acknowledge one alert |
-| `POST` | `/api/alerts/read-all` | Acknowledge everything unread |
-| `GET` | `/api/ai/status` | AI availability and the month's token budget |
-| `GET`/`POST` | `/api/ai/brief`, `/api/ai/brief/generate` | Morning brief |
-| `GET` | `/api/ai/briefs` | Brief archive |
-| `POST` | `/api/symbols/{symbol}/explain` | Sourced explanation of today's move |
-| `POST` | `/api/symbols/{symbol}/outlook` | Scenario outlook, logged for scoring |
-| `GET` | `/api/ai/outlooks` | Every logged outlook and its resolution |
-| `POST` | `/api/ai/outlooks/resolve` | Score due outlooks (no AI call) |
-| `GET` | `/api/ai/calibration` | The model's measured track record |
-| `POST` | `/api/ai/calc` | Position sizing (arithmetic in Go) |
-| `GET`/`POST` | `/api/news`, `/api/news/poll` | Collected articles; collect now |
-| `POST` | `/api/ai/digest/run` | Score collected articles now |
-
-Errors are always `{"error": {"code": "...", "message": "..."}}`. Validation
-failures add a `fields` array of `{field, message}` so the builder can show
-each message inline against the input that caused it.
+| `GET` | `/api/symbols/{symbol}/fundamentals` | Valuation and peer comparison |
+| `POST` | `/api/scan/run` | Trigger a market scan by hand |
+| `GET` | `/api/events` | The classified event feed (`type`, `symbol`, `universe`, …) |
+| `GET` | `/api/symbols/sectors?symbols=AAPL,MSFT` | Which sector each symbol sits in |
+| `GET` | `/api/congress/filings?symbol=NVDA` | Congressional PTR disclosures |
+| `GET` | `/api/eventstudy?type=EARNINGS&days=5` | Abnormal-return study for an event type |
+| `GET` | `/api/algorithms`, `POST /api/algorithms/{id}/run` | Rule CRUD and manual evaluation |
+| `GET` | `/api/alerts` | Alert feed |
+| `POST` | `/api/symbols/{symbol}/explain` | Sourced AI explanation of today's move |
+| `GET` | `/api/ai/calibration` | The model's measured forecasting track record |
+| `POST` | `/api/research/ask` | Multi-source deep research, cited |
 
 ---
 
@@ -256,7 +309,7 @@ An algorithm is a JSON document:
 ```json
 {
   "name": "Momentum watch",
-  "symbols": ["RELIANCE.BSE", "TCS.BSE"],
+  "symbols": ["AAPL", "MSFT"],
   "interval": "1d",
   "all": [
     {"indicator": "rsi", "period": 14, "op": "<", "value": 35},
@@ -270,258 +323,127 @@ An algorithm is a JSON document:
 
 **Indicators:** `close`, `open`, `high`, `low`, `volume`, `sma`, `ema`, `rsi`,
 `atr`, `vol_avg`, `vwap`, `session_vwap`, `macd`, `macd_signal`, `macd_hist`,
-`high_52w`, `low_52w`.
-
-**Operators:** `<` `<=` `>` `>=` `==` `!=` `crosses_above` `crosses_below`.
-
-**Groups:** `all` (AND) or `any` (OR), nestable one level deep.
-
-**Operand modifiers:** `mult` scales a value (`1.5x` its average), `offset`
-adds to it, and `shift` reads it *n* bars back — which is what makes a breakout
-rule expressible, since today's 52-week high already contains today's high.
+`high_52w`, `low_52w`. **Operators:** `<` `<=` `>` `>=` `==` `!=`
+`crosses_above` `crosses_below`. **Groups:** `all` (AND) or `any` (OR),
+nestable one level deep. **Operand modifiers:** `mult` scales a value, `offset`
+adds to it, `shift` reads it *n* bars back.
 
 ### Three rules the evaluator will not bend
 
 **Missing data is never zero.** An indicator with no value yet makes its
-condition *unknown*, and unknown never fires an alert. A 200-day average on 60
-bars of history has no value; reading it as 0 would make "close above SMA200"
-trivially true and alert on every symbol from day one.
+condition *unknown*, and unknown never fires an alert.
 
 **Unknown is a third truth value, combined under Kleene logic.** A definite
-`false` settles an AND regardless of unknown siblings, and a definite `true`
-settles an OR. So an `any` group still fires when one branch is satisfied and
-another lacks data.
+`false` settles an AND regardless of unknown siblings; a definite `true`
+settles an OR.
 
-**A crossover is not a comparison.** `crosses_above` requires the previous bar
-to be at or below and the current bar to be strictly above. `>` asks only about
-the current bar. Conflating them turns a one-off signal into a daily one.
-
-### Cooldowns
-
-`cooldown_hours` suppresses repeat alerts per *(algorithm, symbol)*. The clock
-lives in SQLite, so restarting the process cannot reset it. If the cooldown
-state cannot be read, the engine **fails closed** and stays quiet: alert spam
-destroys trust in every future alert.
-
-### Evaluation schedule
-
-Each interval has a cron expression, interpreted in `DISPLAY_TZ`. Daily rules
-are checked several times through the Indian and US sessions rather than once,
-so a trigger reaches the operator the same day; cooldowns keep that from
-becoming repetition.
-
----
-
-## Alert pipeline
-
-```
-evaluate -> cooldown check -> enrich -> optional AI context -> deliver -> persist
-```
-
-Persisting happens last but **unconditionally**. A Telegram outage does not
-cost the operators the record that their rule fired; the alert lands in the
-in-app feed with a failed delivery record attached.
-
-Every alert stores its complete evaluation snapshot — each condition's label,
-operator, both values, and result — so a surprising notification can be audited
-months later against the numbers that actually produced it.
-
-Non-firing evaluations are recorded too. Without them, a rule that silently
-reports insufficient data every morning looks identical to one whose conditions
-are simply not being met. The Algorithms page shows the last outcome per
-symbol, which is what answers "why didn't this alert?".
-
-Telegram messages are plain text, never markdown: an indicator label such as
-`MACD(12,26,9)` or a value containing an underscore would otherwise be mangled
-or rejected as malformed entities.
-
----
-
-## Extending
-
-### Add a market data provider
-
-1. Create `internal/marketdata/<name>/`, implementing `marketdata.Provider`:
-   `Name()`, `Candles(...) (Bars, error)`, `Quote(...) (Quote, error)`.
-2. Keep **all** knowledge of the upstream's wire format in a pure `parse.go`
-   that operates on `[]byte`, and test it against recorded payloads in
-   `testdata/`. Adapters must return `ErrNotSupported`, `ErrBudgetExhausted`,
-   or `ErrNoData` for expected non-answers so the Router treats them as
-   "try someone else" rather than as faults.
-3. Never return a zero price for missing data — drop the bar and log it.
-4. Register it in `buildProviders` in `cmd/tradesys/main.go` and add it to the
-   `MARKETDATA_ORDER` allow-list in `internal/config`.
-
-### Add an indicator
-
-1. Write the maths in `internal/indicators/` as a pure function returning a
-   `Series` **aligned index-for-index with its input**, with NaN — never zero —
-   wherever the indicator is not yet defined. That alignment is what lets the
-   evaluator tell "no value yet" from "the value is zero".
-2. Add a table-driven test verifying it against published known-good values.
-   RSI and EMA are checked against Wilder's own dataset; if your indicator has
-   a canonical worked example, use it.
-3. Register it in `registry` in `internal/algo/registry.go` with its parameter
-   kind, a `Describe` function for alert text, and a `MinBars` function so the
-   scheduler fetches enough history. Nothing else needs to change — the builder
-   UI reads its dropdowns from `/api/algorithms/vocabulary`.
-
-### Add a notification channel
-
-Implement `alerts.Notifier` (`Channel`, `Configured`, `Send`) in
-`internal/notify/<name>/`, wrap it in `notify.WithHealth` so it lights a status
-dot, and add it to the notifier list in `cmd/tradesys/main.go`. An unconfigured
-channel must report `Configured() == false` rather than failing sends: the
-pipeline skips it silently instead of recording a delivery failure.
-
-### Add an AI feature
-
-1. Write the prompt as a **file** in `internal/ai/prompts/`. Prompts are the
-   specification of a feature's behaviour; burying one in Go source makes it
-   invisible to everyone not reading the code. Templates are parsed at startup,
-   so a malformed one panics immediately rather than at 08:30 inside a cron job.
-2. Add a `Feature*` constant so the token spend is attributed on the settings
-   page.
-3. Build the request in a method on `ai.Service`. Call `s.guard(ctx)` first: it
-   turns an unavailable AI layer into a `Status` the UI can render rather than
-   an error that looks like a bug.
-4. For structured output use `CompleteJSON`, which appends the JSON
-   instruction, extracts the value from whatever wrapping the model adds, and
-   retries once with the parse error before giving up.
-5. Add the prompt to `TestEveryPromptParsesAndRenders`, including a case with
-   empty collections — "no sources were retrieved" is the common path.
-
-**No AI feature may be load-bearing.** Alerts fire, charts render, and
-algorithms evaluate whether or not the model is reachable.
+**A crossover is not a comparison.** `crosses_above` requires the previous
+bar at or below and the current bar strictly above — conflating it with `>`
+turns a one-off signal into a daily one.
 
 ---
 
 ## The AI layer
 
-Points at any OpenAI-compatible chat-completions endpoint. It assumes **neither
-function calling nor JSON-schema enforcement**, because the model this was
-built for supports neither.
+Points at any OpenAI-compatible chat-completions endpoint, assuming
+**neither function calling nor JSON-schema enforcement**. Structured output
+is prompted and parsed defensively: fences and surrounding prose stripped,
+one corrective retry on a parse failure, then the feature degrades rather
+than looping.
 
-### Five features
+**No AI feature is load-bearing.** Prices render, algorithms evaluate, and
+alerts fire whether or not the model is reachable.
 
-| Feature | When | Model tier |
-| --- | --- | --- |
-| **Morning brief** | 08:30 on weekdays, in `DISPLAY_TZ` | main |
-| **News digest** | hourly, scoring collected articles per symbol | cheap |
-| **Explain this move** | on demand, per symbol, with sources | main |
-| **Outlook** | on demand — scenarios with probabilities, logged for scoring | main |
-| **Position sizing** | on demand — **arithmetic in Go**, model only explains | main |
+**The token budget is enforced before the call and recorded after.** A
+request whose prompt alone would overshoot `LLM_MONTHLY_TOKEN_BUDGET` is
+refused before it reaches the network; when the usage counter cannot be
+read, the client fails closed rather than spending against an unknown
+balance.
 
-Alerts additionally carry an optional three-sentence context brief.
+**Model output is never presented as fact.** Every AI response sits inside
+one shared panel component that renders a badge, a timestamp and the model
+name. A citation pointing at a source that was not actually supplied is
+stripped from the text.
 
-### Three rules
-
-**Structured output is prompted and parsed defensively.** The model is asked
-for JSON; the response is stripped of markdown fences and surrounding prose,
-and if it still does not parse, the model is shown its own output and the error
-and asked once to correct it. A second failure degrades the feature. There is
-no third attempt: a model that has failed twice will not comply on the third,
-and the tokens are real.
-
-**The token budget is enforced before the call and recorded after.** Set
-`LLM_MONTHLY_TOKEN_BUDGET`. A request whose prompt alone would overshoot is
-refused before it reaches the network. If the usage counter cannot be read the
-client **fails closed**, because spending against an unknown balance risks an
-unbounded bill. When the budget is spent, AI features report "budget reached"
-and everything else carries on.
-
-**Model output is never data.** Every AI response in the UI sits inside one
-shared panel component that renders a visible badge, a timestamp, and the model
-name — so the rule cannot be forgotten in one place. Citations pointing at
-sources that were not supplied are **stripped from the text**, because a `[1]`
-with no source behind it is an assertion of evidence that never existed.
+**Prompts are files, not Go strings** (`internal/ai/prompts/*.md`) — a
+prompt is the specification of a feature's behaviour, and burying one in
+source makes it invisible to anyone not reading the code. Every prompt is
+parsed at startup, so a malformed one panics immediately rather than at
+08:30 inside a cron job, and every prompt is exercised by
+`TestEveryPromptParsesAndRenders`.
 
 ### Calibration
 
-Every outlook is logged with its horizon (10 trading days) and its three stated
-probabilities. Once the horizon passes, the realised move decides which
-scenario happened, and the forecast is scored with a multi-category Brier
-score. The calibration page plots stated probability against observed
-frequency: **of the forecasts where the model said 70%, about 70% should have
-come true.**
-
-The mean Brier is shown beside the score a uniform guess would achieve
-(0.667), because a Brier number without that reference means nothing to a
-reader. Scoring runs daily and **needs no LLM call**, so the track record stays
-current even when the budget is spent — which is exactly when an operator most
-wants to know how far to trust the model.
+Every outlook is logged with its horizon and stated probabilities. Once the
+horizon passes, the realised move scores it with a multi-category Brier
+score against a uniform-guess baseline (0.667) — *of the forecasts where the
+model said 70%, about 70% should have come true.* Scoring runs daily and
+needs no LLM call, so the track record stays current even when the token
+budget is spent — exactly when an operator most wants to know how far to
+trust the model.
 
 ---
 
-## News and search
+## Event study
 
-**News** polls Google News RSS per watchlist symbol, hourly. Feed parsing is
-tolerant by necessity: real feeds embed HTML entities that strict XML rejects,
-and a single malformed item is skipped rather than discarding the feed. An
-unparseable date stays empty rather than defaulting to "now". Articles are
-stored per `(symbol, url)` — the same story reached through two symbols is
-scored twice, because relevance is a per-symbol judgement.
+The feature that closes the loop: does an event type actually move the
+stocks it names, historically, or does it only look that way on a chart?
 
-**Search** sits behind `search.Provider`, with Tavily and Brave adapters. The
-configured preference is tried first and the other is the fallback. Results are
-cached for an hour, and stale cache is served when both providers fail: search
-only decorates an answer, so old sources beat none.
+For a chosen type, every event's symbol is compared against its own venue
+benchmark (S&P 500 or NIFTY 50) over N trading days *after the event was
+discovered* — never after it occurred or was published, because that is the
+only anchor a downstream decision could actually have acted on. The result
+reports mean, median and hit-rate abnormal return, a real sample size, and
+an explicit warning both for small samples and for events excluded by a
+price-history coverage gap, rather than silently dropping them.
 
----
-
-## Acceptance walkthrough
-
-The path this was built against, and which is verified end to end:
-
-1. **Fresh clone, fill `.env`, `docker compose up`** → app on `:8080`, healthy,
-   seeded, all schedules registered.
-2. **`RELIANCE.BSE` in the watchlist** → the chart renders real daily bars with
-   SMA overlays. Yahoo's BSE feed for this name is broken, so the adapter falls
-   back to NSE and the header says `via RELIANCE.NSE`.
-3. **Create an algorithm with a threshold you know will trigger, run it** →
-   a Telegram message arrives within one evaluation cycle carrying the
-   indicator snapshot and the AI context.
-4. **Break the Alpha Vantage key** → the settings page marks it degraded, the
-   dashboard shows a banner naming it, and prices keep coming from Yahoo and
-   cache.
-5. **Ask "explain this move"** → a sourced answer with an AI badge, a
-   timestamp, and citation links, with any citation to a source that was not
-   supplied stripped out.
-6. **Exhaust the LLM budget** (set `LLM_MONTHLY_TOKEN_BUDGET=1000`) → AI
-   features report "budget reached", and alerts keep firing carrying
-   `AI: AI context unavailable`.
+Price history for the computation comes largely for free: the scanner
+already fetches a full year of daily bars for the whole scan universe on
+every pass to compute its own statistics. That series is now persisted
+(`internal/scanner`'s `Result.Series` → `SaveCandles`) instead of being
+discarded the moment its metrics are derived — the event study's whole price
+data prerequisite, at effectively no extra cost.
 
 ---
 
 ## Design
 
-Dark, dense, calm. Near-black ground, one amber accent, and red/green reserved
-strictly for price movement — so a green number always means "up" and never
-"success". Tabular numerals throughout; Inter for prose, JetBrains Mono for
-every ticker and figure. Fonts are bundled, not fetched from a CDN: a
-self-hosted dashboard should not phone home to render.
+Dark, dense, calm. Near-black ground, one amber accent, red/green reserved
+strictly for price movement. Tabular numerals throughout; Inter for prose,
+JetBrains Mono for every ticker and figure. Fonts are bundled, not fetched
+from a CDN.
 
-**Empty, loading, and error states are treated as first-class**, not as
-afterthoughts. Loading skeletons match the exact height of the rows they stand
-in for, so nothing shifts under the cursor when data lands. Every empty state
-says what would fill it and how to make that happen.
+**Empty, loading and error states are first-class.** Loading skeletons match
+the exact height of the rows they stand in for. Every empty state says what
+would fill it and how.
 
 **Provenance is always visible.** Cached data says `cached`. A substituted
-listing says `via RELIANCE.NSE`. Model output sits inside one shared panel
-component that renders a badge, a timestamp, and the model name — so the rule
-cannot be forgotten in one place.
+listing says `via RELIANCE.NSE`. Model output always carries its badge,
+timestamp and model name.
 
-The three-column terminal layout holds at 1280px and above. Narrower than that
-the rails stack beneath the chart, because squeezing three fixed columns into a
-laptop width collapses the quote header onto itself.
+The three-column terminal layout holds at 1280px and above; narrower, the
+rails stack beneath the main pane.
 
 ---
 
 ## Operational notes
 
-- **SQLite** runs in WAL mode. The database is a single file; back it up by
-  copying `DB_PATH` and its `-wal`/`-shm` siblings.
 - **Migrations** apply automatically at startup and are recorded in
-  `schema_migrations`. Never edit a shipped migration; append a new one.
-- **`APP_PASSWORD` empty disables authentication.** That is intended for local
-  development only, and the server warns loudly at startup.
+  `schema_migrations`, SQL and Go migrations interleaved by name. Never edit
+  a shipped migration; append a new one. A numbered Go migration not
+  registered in code is a hard startup failure, not a silent skip.
+- **Access is by API key**, issued on the server only — there is no
+  endpoint for it, so the ability to grant access is tied to shell access:
+  ```
+  docker compose exec tradesys tradesys -issue-key -name "you" -role owner
+  docker compose exec tradesys tradesys -list-keys
+  docker compose exec tradesys tradesys -revoke-key tsk_xxxxxxxx
+  ```
+  Roles: `owner` (may manage keys), `operator` (full use), `viewer`
+  (read-only). A deployment with **no keys issued is open** — intended only
+  long enough to issue the first one.
+- **`-sync-congress`** runs the daily congressional-filings fetch on demand
+  (backfill or resync), reusing the exact path the cron job calls.
+- **`-reprocess`** discards all derived events and rebuilds them from stored
+  raw items — for when a classification rule changes and history should get
+  the correction too.
