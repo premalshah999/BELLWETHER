@@ -799,7 +799,13 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 		// — and the only one that costs nothing and answers in milliseconds.
 		&research.LocalScraper{Store: store, Window: 45 * 24 * time.Hour},
 		&research.GoogleNewsScraper{Client: client, HL: "en-IN", GL: "IN"},
+		&research.GoogleNewsScraper{Client: client, HL: "en-US", GL: "US"},
 		&research.GDELTScraper{Client: client, Country: "india", Timespan: "7d"},
+		// GDELT's sourcecountry takes a country name, not a two-letter
+		// code, as one token with no internal space -- see the comment on
+		// gdelt-us-business in internal/news/catalog.go for what was and
+		// was not confirmed live.
+		&research.GDELTScraper{Client: client, Country: "unitedstates", Timespan: "7d"},
 		// The publishers worth reading on Indian markets that will not serve
 		// a search endpoint directly, reached by scoping discovery to their
 		// domain. What comes back is a headline and a link to them.
@@ -808,6 +814,28 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 		&research.PublisherScraper{Client: client, Domain: "business-standard.com", Label: "business_standard", TrustLevel: news.TrustMajorFin},
 		&research.PublisherScraper{Client: client, Domain: "moneycontrol.com", Label: "moneycontrol", TrustLevel: news.TrustMajorFin},
 		&research.PublisherScraper{Client: client, Domain: "livemint.com", Label: "mint", TrustLevel: news.TrustMajorFin},
+		// The US publishers worth reading the same way: CNBC and MarketWatch
+		// already have direct feeds in the ingestion catalog, but a research
+		// question needs their archive, not just what they published this
+		// week, which is what scoping discovery to their domain reaches.
+		&research.PublisherScraper{Client: client, Domain: "cnbc.com", Label: "cnbc", TrustLevel: news.TrustMajorFin},
+		&research.PublisherScraper{Client: client, Domain: "marketwatch.com", Label: "marketwatch", TrustLevel: news.TrustMajorFin},
+		&research.PublisherScraper{Client: client, Domain: "barrons.com", Label: "barrons", TrustLevel: news.TrustMajorFin},
+	}
+
+	// The Federal Register: every proposed and final rule, executive order
+	// and agency notice the US government publishes, free and keyless --
+	// unrelated to SEC and so not gated on SEC_USER_AGENT.
+	scrapers = append(scrapers, &research.FederalRegisterScraper{Client: client})
+
+	// SEC's own text, searched directly -- not a headline about a filing,
+	// the filing itself. Gated on the same declared contact every other SEC
+	// endpoint in this app requires; omitted rather than registered to fail
+	// every call when SEC_USER_AGENT is unset.
+	if cfg.SECUserAgent != "" {
+		scrapers = append(scrapers, &research.SECFullTextScraper{Client: client, UserAgent: cfg.SECUserAgent})
+	} else {
+		log.Warn("SEC_USER_AGENT is not set; the SEC full-text research scraper is disabled")
 	}
 
 	// The private metasearch node, when one is running. Two configurations

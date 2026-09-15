@@ -372,16 +372,25 @@ func DefaultSources() []Source {
 		Trust: TrustAggregator, Refresh: 30 * time.Minute, Timeout: 90 * time.Second,
 		Usage: UsagePublicReviewed, Display: DisplayLinkOnly, Enabled: true,
 	})
-	// Same query, US-scoped. Not independently re-verified live (GDELT's
-	// shared-IP rate limit -- one request per five seconds, enforced more
-	// strictly than that in practice -- was already exhausted probing the
-	// rest of this catalog by the time this was added); the mechanism and
-	// query syntax are identical to gdelt-india-business above, which is
-	// live in production, and sourcecountry is a documented two-letter-code
-	// filter with no reason "us" would behave differently from "india".
+	// Same query, US-scoped. sourcecountry takes a country NAME, not a
+	// two-letter code: "sourcecountry:us" parses without error but matches
+	// nothing (empty result set, HTTP 200) -- confirmed live -- and the
+	// existing India source's own return payloads show the field populated
+	// as "India", not "IN" (see the sourcecountry fixture in
+	// internal/news/engine_test.go). A quoted "united states" is rejected
+	// outright ("You put quotes around a parameter that does not accept
+	// quotes" -- also confirmed live), so the value has to be one token.
+	// GDELT's documented convention for a multi-word country is that token
+	// with the space removed ("unitedkingdom", "southkorea"), which is what
+	// this uses; GDELT's shared-IP rate limit -- exhausted probing the rest
+	// of this catalog -- prevented a final live confirmation of a non-empty
+	// result specifically for "unitedstates" before this was written. If
+	// health checks ever show this source persistently empty where
+	// gdelt-india-business is not, that unconfirmed step is where to look
+	// first.
 	out = append(out, Source{
 		ID: "gdelt-us-business", Name: "GDELT US Business",
-		URL:    "https://api.gdeltproject.org/api/v2/doc/doc?query=(stocks%20OR%20shares%20OR%20earnings)%20sourcecountry:us&mode=ArtList&format=json&maxrecords=75&timespan=60min",
+		URL:    "https://api.gdeltproject.org/api/v2/doc/doc?query=(stocks%20OR%20shares%20OR%20earnings)%20sourcecountry:unitedstates&mode=ArtList&format=json&maxrecords=75&timespan=60min",
 		Method: MethodGDELT, Category: "discovery", Country: "US", Language: "en",
 		Trust: TrustAggregator, Refresh: 30 * time.Minute, Timeout: 90 * time.Second,
 		Usage: UsagePublicReviewed, Display: DisplayLinkOnly, Enabled: true,
