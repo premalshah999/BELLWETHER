@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Filter,
   FlaskConical,
+  Globe2,
   LayoutDashboard,
   Newspaper,
   Radar,
@@ -66,6 +67,7 @@ const NAV: Entry[] = [
       { to: "/scanner/signals", label: "Signals", icon: Radar },
       { to: "/scanner/screens", label: "Screens", icon: Filter },
       { to: "/news", label: "News", icon: Newspaper },
+      { to: "/geopolitics", label: "Geopolitics", icon: Globe2 },
     ],
   },
   {

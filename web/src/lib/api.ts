@@ -1152,6 +1152,17 @@ export const api = {
 
   event: (id: number) => request<MarketEvent>(`/api/events/${id}`),
 
+  /**
+   * Each symbol's industry, spelled to match an event's own `sectors`
+   * directly (an "US: " prefix for a US/GICS symbol, the bare NSE industry
+   * name otherwise) -- see internal/server/events.go's handleSymbolSectors.
+   */
+  symbolSectors: (symbols: string[]) => {
+    if (symbols.length === 0) return Promise.resolve({ sectors: {} as Record<string, string> });
+    const p = new URLSearchParams({ symbols: symbols.join(",") });
+    return request<{ sectors: Record<string, string> }>(`/api/symbols/sectors?${p.toString()}`);
+  },
+
 
 
 

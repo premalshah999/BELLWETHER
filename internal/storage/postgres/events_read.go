@@ -201,6 +201,9 @@ func (d *DB) ListEvents(ctx context.Context, f EventFilter) ([]news.Event, error
 	if err := d.attachEntities(ctx, out, ids); err != nil {
 		return nil, err
 	}
+	if err := d.attachSectors(ctx, out, ids); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -291,6 +294,39 @@ ORDER BY match_confidence DESC, symbol`, ids)
 	return nil
 }
 
+// attachSectors fills in the industries each event reaches, the same
+// batch-by-id shape as attachEntities. Only events with a SectorScope type
+// ever have rows in event_sectors, so this is a no-op for the (large)
+// majority of company-specific events.
+func (d *DB) attachSectors(ctx context.Context, list []news.Event, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := d.db.QueryContext(ctx, `
+SELECT event_id, sector FROM event_sectors WHERE event_id = ANY($1::bigint[]) ORDER BY sector`, ids)
+	if err != nil {
+		return fmt.Errorf("postgres: load event sectors: %w", err)
+	}
+	defer rows.Close()
+
+	byEvent := map[int64][]string{}
+	for rows.Next() {
+		var id int64
+		var sector string
+		if err := rows.Scan(&id, &sector); err != nil {
+			return fmt.Errorf("postgres: scan event sector: %w", err)
+		}
+		byEvent[id] = append(byEvent[id], sector)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range list {
+		list[i].Sectors = byEvent[list[i].ID]
+	}
+	return nil
+}
+
 // GetEvent returns one event with all its evidence attached.
 func (d *DB) GetEvent(ctx context.Context, id int64) (news.Event, error) {
 	rows, err := d.db.QueryContext(ctx,
@@ -307,6 +343,9 @@ func (d *DB) GetEvent(ctx context.Context, id int64) (news.Event, error) {
 		return news.Event{}, sql.ErrNoRows
 	}
 	if err := d.attachEntities(ctx, list, ids); err != nil {
+		return news.Event{}, err
+	}
+	if err := d.attachSectors(ctx, list, ids); err != nil {
 		return news.Event{}, err
 	}
 

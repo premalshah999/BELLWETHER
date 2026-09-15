@@ -58,3 +58,39 @@ func (d *DB) CountIndexConstituents(ctx context.Context) (int, error) {
 	}
 	return n, nil
 }
+
+// SectorsFor reports each symbol's industry, already normalised to the same
+// spelling InferSectors and SectorsForAgency use ("US: " prefixed for a
+// GICS/US row, unprefixed NSE industry name otherwise) -- so a caller can
+// compare an event's Sectors directly against what it gets back here without
+// separately knowing or re-deriving each symbol's venue.
+//
+// Symbols absent from index_constituents (a custom watchlist addition
+// outside the scan universe) are simply missing from the result rather
+// than erroring: an unknown industry is not a fetch failure.
+func (d *DB) SectorsFor(ctx context.Context, symbols []string) (map[string]string, error) {
+	if len(symbols) == 0 {
+		return map[string]string{}, nil
+	}
+	rows, err := d.db.QueryContext(ctx,
+		`SELECT symbol, industry, venue FROM index_constituents
+		 WHERE symbol = ANY($1::text[]) AND industry IS NOT NULL AND industry <> ''`,
+		symbols)
+	if err != nil {
+		return nil, fmt.Errorf("sectors for: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]string, len(symbols))
+	for rows.Next() {
+		var symbol, industry, venue string
+		if err := rows.Scan(&symbol, &industry, &venue); err != nil {
+			return nil, fmt.Errorf("sectors for: scan: %w", err)
+		}
+		if venue == "US" {
+			industry = "US: " + industry
+		}
+		out[symbol] = industry
+	}
+	return out, rows.Err()
+}

@@ -32,6 +32,50 @@ func (s *Server) eventReader() (EventReader, bool) {
 	return r, ok
 }
 
+// SectorsReader is the part of storage the "which holdings does this touch"
+// lookup needs.
+type SectorsReader interface {
+	SectorsFor(ctx context.Context, symbols []string) (map[string]string, error)
+}
+
+func (s *Server) sectorsReader() (SectorsReader, bool) {
+	r, ok := s.deps.Store.(SectorsReader)
+	return r, ok
+}
+
+// handleSymbolSectors reports each requested symbol's industry, already
+// normalised to the same spelling an event's own Sectors carries -- so the
+// Geopolitics & Policy page can find "which of my holdings does this touch"
+// with a plain set membership check, no per-venue logic of its own.
+func (s *Server) handleSymbolSectors(w http.ResponseWriter, r *http.Request) {
+	reader, ok := s.sectorsReader()
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "Sector lookup is not available.")
+		return
+	}
+	raw := strings.TrimSpace(r.URL.Query().Get("symbols"))
+	if raw == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"sectors": map[string]string{}})
+		return
+	}
+	var symbols []string
+	for _, s := range strings.Split(raw, ",") {
+		if s = strings.ToUpper(strings.TrimSpace(s)); s != "" {
+			symbols = append(symbols, s)
+		}
+	}
+	if len(symbols) > 100 {
+		symbols = symbols[:100]
+	}
+	sectors, err := reader.SectorsFor(r.Context(), symbols)
+	if err != nil {
+		s.deps.Log.Error("sector lookup failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "storage", "Could not read sectors.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sectors": sectors})
+}
+
 // eventEnvelope is one event as the UI receives it.
 type eventEnvelope struct {
 	news.Event
