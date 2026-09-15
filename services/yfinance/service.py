@@ -561,11 +561,57 @@ def _scan_metrics(frame) -> dict | None:
     }
 
 
+def _scan_series(frame) -> dict | None:
+    """A compact daily OHLCV series, alongside the derived metrics.
+
+    The scan already downloads a full year of bars per symbol and used to
+    throw them away once _scan_metrics reduced them to a handful of numbers
+    -- the fetch was the expensive part, and it was happening for nothing
+    the Go side kept. This is what lets the event study engine persist real
+    price history for the whole scanned universe (1,000+ symbols) instead
+    of only the ~86 that happen to have been charted or backtested.
+
+    Columnar rather than one object per bar, and the date as a YYYYMMDD int
+    rather than an ISO string: across ~1,250 symbols x ~250 trading days
+    that is the difference between a response near the Go client's decode
+    limit and one comfortably under it.
+    """
+    if frame is None or frame.empty:
+        return None
+    sub = frame.dropna(subset=["Open", "High", "Low", "Close"])
+    if sub.empty:
+        return None
+
+    def clean(x) -> float | None:
+        x = float(x)
+        return round(x, 4) if math.isfinite(x) else None
+
+    t, o, h, l, c, v = [], [], [], [], [], []
+    for ts, row in sub.iterrows():
+        if not isinstance(ts, pd.Timestamp):
+            continue
+        ov, hv, lv, cv = clean(row["Open"]), clean(row["High"]), clean(row["Low"]), clean(row["Close"])
+        if ov is None or hv is None or lv is None or cv is None:
+            continue
+        vol = row.get("Volume", 0)
+        vol = 0.0 if pd.isna(vol) else float(vol)
+        t.append(int(ts.strftime("%Y%m%d")))
+        o.append(ov)
+        h.append(hv)
+        l.append(lv)
+        c.append(cv)
+        v.append(round(vol, 2))
+    if not t:
+        return None
+    return {"t": t, "o": o, "h": h, "l": l, "c": c, "v": v}
+
+
 def scan(symbols: list[str]) -> dict:
     """Fetch a universe in batches and reduce each symbol to its metrics."""
     import yfinance as yf
 
     out: dict[str, dict] = {}
+    series: dict[str, dict] = {}
     failed: list[str] = []
 
     for start in range(0, len(symbols), SCAN_CHUNK):
@@ -591,8 +637,14 @@ def scan(symbols: list[str]) -> dict:
                 failed.append(sym)
                 continue
             out[sym] = metrics
+            try:
+                s = _scan_series(sub)
+            except Exception:
+                s = None
+            if s is not None:
+                series[sym] = s
 
-    return {"metrics": out, "failed": failed,
+    return {"metrics": out, "series": series, "failed": failed,
             "as_of": datetime.now(timezone.utc).isoformat()}
 
 

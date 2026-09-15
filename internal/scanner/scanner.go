@@ -223,6 +223,14 @@ type Result struct {
 	// are nothing but a query over it.
 	All     []Metrics `json:"-"`
 	Elapsed string    `json:"elapsed"`
+
+	// Series is the same year of daily bars the sidecar fetched to compute
+	// All, keyed by the symbol it belongs to. Nothing in this package reads
+	// it -- it exists so Runner.Run can persist it, which is the event
+	// study engine's whole price-history prerequisite: the scan already
+	// pays for this fetch on every pass, and it used to be discarded the
+	// moment the metrics were reduced from it.
+	Series map[marketdata.Symbol][]marketdata.Candle `json:"-"`
 }
 
 // Client talks to the price sidecar.
@@ -232,10 +240,57 @@ type Client struct {
 }
 
 type scanResponse struct {
-	Metrics map[string]Metrics `json:"metrics"`
-	Failed  []string           `json:"failed"`
-	AsOf    string             `json:"as_of"`
-	Elapsed float64            `json:"elapsed_seconds"`
+	Metrics map[string]Metrics    `json:"metrics"`
+	Series  map[string]scanSeries `json:"series"`
+	Failed  []string              `json:"failed"`
+	AsOf    string                `json:"as_of"`
+	Elapsed float64               `json:"elapsed_seconds"`
+}
+
+// scanSeries is one symbol's daily bars in the sidecar's columnar wire
+// format -- one array per field rather than one object per bar. Across the
+// full scan universe (1,000+ symbols, ~250 trading days each) that is the
+// difference between a response comfortably under the client's decode limit
+// and one pressed right up against it; the single-symbol chart endpoint
+// (yfin.go) has no such volume problem and keeps the more legible
+// one-object-per-bar shape.
+type scanSeries struct {
+	T []int64   `json:"t"` // YYYYMMDD
+	O []float64 `json:"o"`
+	H []float64 `json:"h"`
+	L []float64 `json:"l"`
+	C []float64 `json:"c"`
+	V []float64 `json:"v"`
+}
+
+// candles decodes the columnar form into ordinary bars, skipping any row
+// that does not carry every field (a truncated array from a chunk that
+// partly failed) or that fails the same OHLC sanity check candles' own
+// storage-layer CHECK constraint enforces -- filtered here rather than left
+// for Postgres to reject, because SaveCandles writes a symbol's whole batch
+// in one transaction and a single bad row would otherwise cost that
+// symbol's entire day of history for this pass, not just the one row.
+func (s scanSeries) candles() []marketdata.Candle {
+	n := len(s.T)
+	if len(s.O) != n || len(s.H) != n || len(s.L) != n || len(s.C) != n || len(s.V) != n {
+		return nil
+	}
+	out := make([]marketdata.Candle, 0, n)
+	for i := 0; i < n; i++ {
+		o, h, l, c, v := s.O[i], s.H[i], s.L[i], s.C[i], s.V[i]
+		if !(h >= l && h >= o && h >= c && l <= o && l <= c) || v < 0 {
+			continue
+		}
+		y, m, d := int(s.T[i]/10000), int(s.T[i]/100%100), int(s.T[i]%100)
+		if y == 0 || m == 0 || d == 0 {
+			continue
+		}
+		out = append(out, marketdata.Candle{
+			Time: time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC),
+			Open: o, High: h, Low: l, Close: c, Volume: v,
+		})
+	}
+	return out
 }
 
 // Scan fetches a universe and returns what is behaving abnormally.
@@ -257,6 +312,7 @@ func (c *Client) Scan(ctx context.Context, symbols []marketdata.Symbol, maxFindi
 
 	suffixed := make([]string, 0, len(symbols))
 	canonicalOf := make(map[string]string, len(symbols))
+	symbolOf := make(map[string]marketdata.Symbol, len(symbols))
 	for _, sym := range symbols {
 		vendor, ok := vendorTicker(sym)
 		if !ok {
@@ -264,6 +320,7 @@ func (c *Client) Scan(ctx context.Context, symbols []marketdata.Symbol, maxFindi
 		}
 		suffixed = append(suffixed, vendor)
 		canonicalOf[vendor] = sym.String()
+		symbolOf[vendor] = sym
 	}
 
 	body, err := json.Marshal(map[string]any{"symbols": suffixed})
@@ -294,7 +351,11 @@ func (c *Client) Scan(ctx context.Context, symbols []marketdata.Symbol, maxFindi
 	}
 
 	var raw scanResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(&raw); err != nil {
+	// 96MB: the metrics payload is small, but the columnar series for a
+	// full-year, ~1,250-symbol universe measures in the tens of megabytes on
+	// its own (see scanSeries's doc), and this must have real headroom above
+	// that rather than sit right at the edge of it.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 96<<20)).Decode(&raw); err != nil {
 		return Result{}, fmt.Errorf("scanner: decode response: %w", err)
 	}
 
@@ -328,6 +389,20 @@ func (c *Client) Scan(ctx context.Context, symbols []marketdata.Symbol, maxFindi
 			Metrics: m, Signals: signals, Score: score(m, signals),
 		})
 	}
+
+	if len(raw.Series) > 0 {
+		out.Series = make(map[marketdata.Symbol][]marketdata.Candle, len(raw.Series))
+		for vendorSym, s := range raw.Series {
+			sym, ok := symbolOf[vendorSym]
+			if !ok {
+				continue
+			}
+			if candles := s.candles(); len(candles) > 0 {
+				out.Series[sym] = candles
+			}
+		}
+	}
+
 	sort.Slice(out.All, func(i, j int) bool { return out.All[i].Symbol < out.All[j].Symbol })
 	sort.Slice(out.Findings, func(i, j int) bool {
 		if out.Findings[i].Score != out.Findings[j].Score {

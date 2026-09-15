@@ -582,6 +582,31 @@ export interface CongressFiling {
   doc_url: string;
 }
 
+/** One event type's population size in the archive -- internal/storage/postgres/eventstudy.go. */
+export interface EventTypeCount {
+  event_type: string;
+  count: number;
+}
+
+/**
+ * Does this event type actually move the stocks it names, historically --
+ * see internal/eventstudy's package doc for the method. Every abnormal
+ * return is against the symbol's own venue benchmark (S&P 500 or NIFTY 50),
+ * not a fixed zero line.
+ */
+export interface EventStudyResult {
+  event_type: string;
+  benchmark: string;
+  holding_days: number;
+  total_events: number;
+  samples: number;
+  mean_abnormal_return_pct: number;
+  median_abnormal_return_pct: number;
+  stddev_pct: number;
+  hit_rate: number;
+  warnings?: string[];
+}
+
 export interface EventQuery {
   symbol?: string;
   q?: string;
@@ -1191,6 +1216,15 @@ export const api = {
     if (opts.limit) p.set("limit", String(opts.limit));
     const qs = p.toString();
     return request<{ filings: CongressFiling[] }>(`/api/congress/filings${qs ? `?${qs}` : ""}`);
+  },
+
+  /** Event types the archive actually holds events under, most populous first. */
+  eventStudyTypes: () => request<{ types: EventTypeCount[] }>("/api/eventstudy/types"),
+
+  /** Does this event type actually move the stocks it names -- internal/eventstudy. */
+  eventStudy: (type: string, days = 5) => {
+    const p = new URLSearchParams({ type, days: String(days) });
+    return request<EventStudyResult>(`/api/eventstudy?${p.toString()}`);
   },
 
 

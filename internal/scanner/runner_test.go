@@ -19,6 +19,9 @@ func (fakeRunnerStore) SaveScan(ctx context.Context, res Result) (int64, error) 
 func (fakeRunnerStore) MarkExplained(ctx context.Context, id int64, explained bool) error {
 	return nil
 }
+func (fakeRunnerStore) SaveCandles(ctx context.Context, sym marketdata.Symbol, interval marketdata.Interval, source string, bars marketdata.Bars, requestedLimit int) error {
+	return nil
+}
 
 // stubSidecar serves whatever metrics the test wants back, echoing the
 // vendor-suffixed symbols it was asked for so Client.Scan's re-tagging path
