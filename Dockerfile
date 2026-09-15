@@ -46,12 +46,16 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # ---------------------------------------------------------------------------
 # 3. Runtime.
 #
-# Nothing but the binary, CA certificates for outbound HTTPS, and a data
-# directory. The timezone database is compiled into the binary.
+# The binary, CA certificates for outbound HTTPS, poppler-utils for
+# congressional-disclosure PDF text extraction (see internal/congress --
+# pdftotext -layout preserves the table-row ordering of these government
+# PDFs far more reliably than the pure-Go PDF libraries tried first, a
+# tradeoff worth an 8MB runtime dependency for), and a data directory. The
+# timezone database is compiled into the binary.
 # ---------------------------------------------------------------------------
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates \
+RUN apk add --no-cache ca-certificates poppler-utils \
     && adduser -D -u 10001 -h /data tradesys \
     && mkdir -p /data \
     && chown tradesys:tradesys /data

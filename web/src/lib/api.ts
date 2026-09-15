@@ -567,6 +567,21 @@ export interface EventListResponse {
   offset: number;
 }
 
+/** One House Clerk STOCK Act disclosure -- see internal/congress and internal/server/congress.go. */
+export interface CongressFiling {
+  doc_id: string;
+  chamber: string;
+  member: string;
+  state_district: string;
+  filing_type: string;
+  filing_date: string;
+  symbols: string[];
+  unresolved_tickers?: string[];
+  earliest_transaction_date?: string;
+  disclosure_delay_days?: number;
+  doc_url: string;
+}
+
 export interface EventQuery {
   symbol?: string;
   q?: string;
@@ -1163,8 +1178,20 @@ export const api = {
     return request<{ sectors: Record<string, string> }>(`/api/symbols/sectors?${p.toString()}`);
   },
 
-
-
+  /**
+   * Recent House Clerk STOCK Act disclosures, optionally narrowed to one
+   * symbol -- see internal/server/congress.go. Document-level, not
+   * row-level: `symbols` is everything a filing names, not a per-trade
+   * breakdown (internal/congress's package doc explains why the source
+   * PDFs do not support that split reliably).
+   */
+  congressFilings: (opts: { symbol?: string; limit?: number } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.symbol) p.set("symbol", opts.symbol);
+    if (opts.limit) p.set("limit", String(opts.limit));
+    const qs = p.toString();
+    return request<{ filings: CongressFiling[] }>(`/api/congress/filings${qs ? `?${qs}` : ""}`);
+  },
 
 
   /** Valuation, reported periods and peer position for one company. */

@@ -1,6 +1,9 @@
 package postgres
 
-import "context"
+import (
+	"context"
+	"database/sql"
+)
 
 // ResolveTicker looks up a bare ticker against the full listed universe and
 // reports the single venue it belongs to.
@@ -34,4 +37,28 @@ func (d *DB) ResolveTicker(ctx context.Context, ticker string) (venue string, ok
 		return "", false, nil
 	}
 	return venues[0], true, nil
+}
+
+// ResolveUSTicker validates a ticker against the US listed universe and
+// returns its canonical symbol -- which for US is the ticker itself -- when
+// it is a real, active listing.
+//
+// Unlike ResolveTicker, this does not need to worry about cross-venue
+// ambiguity (ABB, INFY): its callers already know the ticker is a US
+// instrument by context (a congressional PTR filing, for instance, can name
+// nothing else), so the only question worth asking here is real-vs-noise --
+// whether a regex match over a noisy source is an actual listed symbol.
+func (d *DB) ResolveUSTicker(ctx context.Context, ticker string) (symbol string, ok bool, err error) {
+	var sym string
+	err = d.db.QueryRowContext(ctx,
+		`SELECT symbol FROM listings WHERE ticker = upper($1) AND venue = 'US' AND active LIMIT 1`,
+		ticker,
+	).Scan(&sym)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return sym, true, nil
 }
