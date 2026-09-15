@@ -308,15 +308,43 @@ func (d *DB) qualify(ctx context.Context, raw string) string {
 	if strings.Contains(raw, ".") {
 		return raw
 	}
-	var found bool
-	err := d.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM index_constituents WHERE symbol = upper($1))`,
-		strings.TrimSpace(raw)).Scan(&found)
-	if err != nil || !found {
+	ticker := strings.ToUpper(strings.TrimSpace(raw))
+
+	// listings is the full referenceable universe, both venues, not just the
+	// ~750/504-name scan subset -- a ticker worth watching is not necessarily
+	// one the scanner covers.
+	var onNSE, onUS bool
+	err := d.db.QueryRowContext(ctx, `
+		SELECT
+		    EXISTS (SELECT 1 FROM listings WHERE symbol = $1 || '.NSE'),
+		    EXISTS (SELECT 1 FROM listings WHERE symbol = $1 AND venue = 'US')`,
+		ticker).Scan(&onNSE, &onUS)
+	if err != nil {
 		// A lookup failure falls back to the parser's own default rather than
 		// rejecting the symbol: being wrong about the exchange is recoverable,
 		// refusing to add anything is not.
 		return raw
 	}
-	return strings.ToUpper(strings.TrimSpace(raw)) + ".NSE"
+	switch {
+	case onNSE && !onUS:
+		return ticker + ".NSE"
+	case onUS && !onNSE:
+		return ticker
+	case onNSE && onUS:
+		// A genuine collision (ABB, INFY): the same ticker names two
+		// different instruments, one per venue. There is no way to guess
+		// which one an operator meant from the bare string alone -- ideally
+		// this would be reported back as ambiguous and let them pick, but
+		// AddToWatchlist's three-way added/skipped/rejected contract has no
+		// fourth bucket for it yet. Left bare (US) rather than defaulting to
+		// NSE, matching this build's US-first default; add the venue suffix
+		// explicitly (INFY.NSE) to reach the other one.
+		return ticker
+	default:
+		// Neither master recognizes it. Left bare rather than rejected --
+		// ParseSymbol's own default (US) is a reasonable guess, and an
+		// operator watching something not yet in either reference file
+		// should not be blocked by that gap.
+		return raw
+	}
 }

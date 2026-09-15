@@ -99,7 +99,7 @@ func (s *Service) ExplainMove(ctx context.Context, sym marketdata.Symbol) (Expla
 		})
 	}
 	var measured string
-	if st := research.Measure(sym.Ticker, bars); st != nil {
+	if st := research.Measure(sym.String(), bars); st != nil {
 		parts := make([]string, 0, len(st.Returns))
 		for _, r := range st.Returns {
 			parts = append(parts, fmt.Sprintf("%s %+.2f%%", r.Horizon, r.Percent))
@@ -184,6 +184,11 @@ func (s *Service) gatherCitations(ctx context.Context, sym marketdata.Symbol) []
 	index := 1
 
 	if s.search != nil && s.search.Configured() {
+		// Deliberately the bare ticker, not the canonical symbol: a search
+		// engine reads "RELIANCE.NSE stock news" as a literal, broken
+		// phrase, not as an instrument to disambiguate. Precision against a
+		// same-named instrument on another venue is a smaller loss than a
+		// query that returns nothing.
 		query := sym.Ticker + " stock news"
 		results, err := s.search.Search(ctx, search.Query{Text: query, MaxResults: 5, Days: 3})
 		if err != nil {

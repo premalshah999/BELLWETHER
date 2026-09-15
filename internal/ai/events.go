@@ -20,6 +20,11 @@ type EventStore interface {
 	ListUnclassifiedEvents(ctx context.Context, limit int) ([]news.Event, error)
 	EventFacts(ctx context.Context, eventID int64) (map[string]string, error)
 	SaveEventClassification(ctx context.Context, c events.Classification) error
+	// ResolveTicker reports the single venue a bare ticker belongs to, or
+	// ok=false if it names nothing or names something on both venues (ABB,
+	// INFY) -- a model-supplied entity has no other signal to break that tie
+	// with, so it is dropped rather than guessed.
+	ResolveTicker(ctx context.Context, ticker string) (venue string, ok bool, err error)
 }
 
 // classifyBatchSize is how many events go into one request.
@@ -224,9 +229,29 @@ func (s *Service) classifyBatch(ctx context.Context, store EventStore, batch []n
 		c := buildClassification(src, r.EventType, r.Importance, r.Confidence,
 			r.Summary, r.WhyItMatters, resp.Model, s.now())
 		for _, ent := range r.Entities {
-			sym := strings.ToUpper(strings.TrimSpace(ent.Symbol))
-			if sym == "" {
+			ticker := strings.ToUpper(strings.TrimSpace(ent.Symbol))
+			if ticker == "" {
 				continue
+			}
+			// A model-supplied symbol is a guess, not a citation, so it is
+			// only trusted when the listed universe confirms it -- and
+			// confirms it unambiguously. Storing it bare would either
+			// silently reintroduce the pre-migration namespace collision or
+			// (for a name on neither venue) attach the classification to an
+			// instrument that does not exist.
+			venue, ok, rerr := store.ResolveTicker(ctx, ticker)
+			if rerr != nil {
+				s.log.Warn("could not resolve model-supplied ticker", "ticker", ticker, "err", rerr)
+				continue
+			}
+			if !ok {
+				s.log.Debug("dropped unresolvable or ambiguous model-supplied ticker",
+					"ticker", ticker, "event", src.ID)
+				continue
+			}
+			sym := ticker
+			if venue != "US" {
+				sym = ticker + "." + venue
 			}
 			c.Entities = append(c.Entities, events.EntityReading{
 				Symbol:         sym,
