@@ -26,6 +26,13 @@ const (
 	MethodNSEAnnounce Method = "nse_announcements"
 	// MethodGDELT is the GDELT DOC API, used as a coverage-expansion layer.
 	MethodGDELT Method = "gdelt"
+	// MethodSECFiling is an SEC EDGAR "current filings" Atom feed (8-K,
+	// Form 4, 13F). Same generic Atom shape as MethodRSS -- SEC embeds its
+	// filer, accession number and (for 8-K) item codes as HTML inside the
+	// <summary> element rather than as distinct fields, so the structured
+	// reading happens in events.ParseSECFiling, exactly where NSE's
+	// pipe-delimited facts are read from an otherwise-generic feed item.
+	MethodSECFiling Method = "sec_filing"
 )
 
 // UsageClass records what we are permitted to do with a source's content.
@@ -101,6 +108,13 @@ type Source struct {
 	Category string // markets, companies, economy, filings, ...
 	Country  string // ISO-3166 alpha-2; "" for global
 	Language string // ISO-639-1
+
+	// UserAgent overrides the engine's default (deliberately empty) header
+	// for this one source. SEC enforces its fair-access policy by refusing
+	// any request that does not declare a real contact in the User-Agent --
+	// an empty header, which gets every other source in the catalog through,
+	// gets SEC sources a 403. Left empty, a source gets the default.
+	UserAgent string
 
 	Trust   int
 	Refresh time.Duration

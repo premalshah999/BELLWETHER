@@ -45,3 +45,26 @@ func buildScanUniverse(nse *company.Master, usListings []company.USListing) scan
 // value rather than a closure over a slice -- so a future refresh can swap
 // u.symbols without every caller needing to know that happened.
 func (u *scanUniverse) Symbols() []marketdata.Symbol { return u.symbols }
+
+// buildUSCIKIndex builds the CIK -> ticker map SEC filing entity resolution
+// needs, from the full SEC ticker reference (not just the scan universe --
+// a filer worth attributing a filing to is not necessarily one of the 504
+// S&P 500 names).
+func buildUSCIKIndex(usTickers []company.USTicker) map[string]string {
+	byCIK := make(map[string]string, len(usTickers))
+	for _, t := range usTickers {
+		if t.CIK == "" {
+			continue
+		}
+		// A handful of CIKs are shared by dual-class shares (BRK-A/BRK-B).
+		// The first ticker encountered wins; us_tickers.csv is generated
+		// from SEC's own file in its original order, which is not
+		// alphabetical, so this is not a meaningful ranking -- it is simply
+		// deterministic, which is what matters for a value that must not
+		// change between runs.
+		if _, exists := byCIK[t.CIK]; !exists {
+			byCIK[t.CIK] = t.Symbol
+		}
+	}
+	return byCIK
+}

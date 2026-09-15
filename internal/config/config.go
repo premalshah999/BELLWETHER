@@ -71,6 +71,14 @@ type Config struct {
 	DisplayTZ   *time.Location
 	DisplayTZID string
 
+	// SECUserAgent is the contact string SEC EDGAR's fair-access policy
+	// requires on every request: "AppName/1.0 (contact@example.com)". A
+	// generic or empty User-Agent gets 403'd outright -- verified live
+	// against this host. Left empty, SEC sources are not registered at all
+	// rather than being registered and failing every request; see
+	// buildSECSources' caller.
+	SECUserAgent string
+
 	LogLevel slog.Level
 }
 
@@ -116,6 +124,7 @@ func Load(envFile string) (*Config, error) {
 		BraveAPIKey:    envStr("BRAVE_API_KEY", ""),
 		SearchProvider: envStr("SEARCH_PROVIDER", "tavily"),
 		DisplayTZID:    envStr("DISPLAY_TZ", "Asia/Kolkata"),
+		SECUserAgent:   envStr("SEC_USER_AGENT", ""),
 	}
 
 	// The cheap tier defaults to the main model so a single-model deployment
