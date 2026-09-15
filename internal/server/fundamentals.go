@@ -34,10 +34,12 @@ func (s *Server) handleFundamentals(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "Fundamentals are not available.")
 		return
 	}
+	// The symbol arrives already canonical (RELIANCE.NSE, AAPL) -- stripping
+	// everything after the dot used to be here, which silently turned every
+	// venue-qualified lookup into a bare-ticker one and, once fundamentals
+	// storage moved to canonical symbols, would have made this endpoint find
+	// nothing for any NSE symbol at all.
 	symbol := strings.ToUpper(strings.TrimSpace(chi.URLParam(r, "symbol")))
-	if i := strings.IndexByte(symbol, '.'); i > 0 {
-		symbol = symbol[:i]
-	}
 	if symbol == "" {
 		writeError(w, http.StatusBadRequest, "bad_request", "A symbol is required.")
 		return

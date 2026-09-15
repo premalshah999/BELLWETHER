@@ -23,7 +23,27 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/tradesys/dashboard/internal/marketdata"
 )
+
+// vendorTicker renders a canonical symbol in the price sidecar's dialect —
+// the same .NS/.BO/bare mapping yfin.vendorSymbol uses, duplicated here
+// because the scanner talks to the sidecar directly rather than through the
+// market-data router. ok is false for a venue the sidecar cannot scan (an
+// index has no fundamentals-style bar history worth scanning).
+func vendorTicker(sym marketdata.Symbol) (vendor string, ok bool) {
+	switch sym.Exchange {
+	case marketdata.ExchangeUS:
+		return sym.Ticker, true
+	case marketdata.ExchangeNSE:
+		return sym.Ticker + ".NS", true
+	case marketdata.ExchangeBSE:
+		return sym.Ticker + ".BO", true
+	default:
+		return "", false
+	}
+}
 
 // Metrics are one instrument's behaviour, reduced to what a scanner reasons
 // about.
@@ -220,26 +240,30 @@ type scanResponse struct {
 
 // Scan fetches a universe and returns what is behaving abnormally.
 //
-// Symbols are NSE tickers; the venue suffix the price source expects is added
-// here so no caller has to know about it.
-func (c *Client) Scan(ctx context.Context, tickers []string, maxFindings int) (Result, error) {
+// symbols are canonical, venue-qualified instruments (RELIANCE.NSE, AAPL).
+// The vendor suffix each venue's price source actually expects is translated
+// here so no caller has to know about it, and every Metrics that comes back
+// is re-tagged with the same canonical form it was requested under.
+func (c *Client) Scan(ctx context.Context, symbols []marketdata.Symbol, maxFindings int) (Result, error) {
 	if c == nil || strings.TrimSpace(c.BaseURL) == "" {
 		return Result{}, fmt.Errorf("scanner: no price service configured")
 	}
-	if len(tickers) == 0 {
+	if len(symbols) == 0 {
 		return Result{}, fmt.Errorf("scanner: empty universe")
 	}
 	if maxFindings <= 0 {
 		maxFindings = 40
 	}
 
-	suffixed := make([]string, 0, len(tickers))
-	for _, t := range tickers {
-		t = strings.ToUpper(strings.TrimSpace(t))
-		if t == "" {
+	suffixed := make([]string, 0, len(symbols))
+	canonicalOf := make(map[string]string, len(symbols))
+	for _, sym := range symbols {
+		vendor, ok := vendorTicker(sym)
+		if !ok {
 			continue
 		}
-		suffixed = append(suffixed, t+".NS")
+		suffixed = append(suffixed, vendor)
+		canonicalOf[vendor] = sym.String()
 	}
 
 	body, err := json.Marshal(map[string]any{"symbols": suffixed})
@@ -286,8 +310,15 @@ func (c *Client) Scan(ctx context.Context, tickers []string, maxFindings int) (R
 		out.AsOf = time.Now().UTC()
 	}
 
-	for sym, m := range raw.Metrics {
-		m.Symbol = strings.TrimSuffix(sym, ".NS")
+	for vendorSym, m := range raw.Metrics {
+		canonical, ok := canonicalOf[vendorSym]
+		if !ok {
+			// The sidecar echoed a symbol we never asked for. Silently
+			// mapping it to a guessed venue would risk writing a US metric
+			// row under an NSE symbol or vice versa, so it is dropped.
+			continue
+		}
+		m.Symbol = canonical
 		out.All = append(out.All, m)
 		signals := Classify(m)
 		if len(signals) == 0 {

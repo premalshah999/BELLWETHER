@@ -10,7 +10,25 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/tradesys/dashboard/internal/marketdata"
 )
+
+// vendorTicker mirrors scanner.vendorTicker: the price sidecar's dialect for
+// a canonical symbol. Duplicated rather than shared because the two packages
+// must not import each other, and the mapping is three lines.
+func vendorTicker(sym marketdata.Symbol) (vendor string, ok bool) {
+	switch sym.Exchange {
+	case marketdata.ExchangeUS:
+		return sym.Ticker, true
+	case marketdata.ExchangeNSE:
+		return sym.Ticker + ".NS", true
+	case marketdata.ExchangeBSE:
+		return sym.Ticker + ".BO", true
+	default:
+		return "", false
+	}
+}
 
 // Client fetches fundamentals from the price sidecar.
 type Client struct {
@@ -56,33 +74,38 @@ type Company struct {
 	RawPeriods map[string]map[string]float64
 }
 
-// Fetch retrieves fundamentals for a set of symbols.
-func (c *Client) Fetch(ctx context.Context, tickers []string) (map[string]Company, []string, error) {
+// Fetch retrieves fundamentals for a set of canonical, venue-qualified
+// symbols. The returned map and failed list are keyed by that same canonical
+// form, not by the vendor's dialect.
+func (c *Client) Fetch(ctx context.Context, symbols []marketdata.Symbol) (map[string]Company, []string, error) {
 	if c == nil || strings.TrimSpace(c.BaseURL) == "" {
 		return nil, nil, fmt.Errorf("fundamentals: no price service configured")
 	}
-	out := make(map[string]Company, len(tickers))
+	out := make(map[string]Company, len(symbols))
 	var failed []string
 
-	for start := 0; start < len(tickers); start += batchSize {
+	for start := 0; start < len(symbols); start += batchSize {
 		end := start + batchSize
-		if end > len(tickers) {
-			end = len(tickers)
+		if end > len(symbols) {
+			end = len(symbols)
 		}
-		batch := tickers[start:end]
+		batch := symbols[start:end]
 
 		suffixed := make([]string, 0, len(batch))
-		for _, t := range batch {
-			t = strings.ToUpper(strings.TrimSpace(t))
-			if t != "" {
-				suffixed = append(suffixed, t+".NS")
+		canonicalOf := make(map[string]string, len(batch))
+		for _, sym := range batch {
+			vendor, ok := vendorTicker(sym)
+			if !ok {
+				continue
 			}
+			suffixed = append(suffixed, vendor)
+			canonicalOf[vendor] = sym.String()
 		}
 		if len(suffixed) == 0 {
 			continue
 		}
 
-		got, bad, err := c.fetchBatch(ctx, suffixed)
+		got, bad, err := c.fetchBatch(ctx, suffixed, canonicalOf)
 		if err != nil {
 			return out, failed, err
 		}
@@ -94,7 +117,7 @@ func (c *Client) Fetch(ctx context.Context, tickers []string) (map[string]Compan
 	return out, failed, nil
 }
 
-func (c *Client) fetchBatch(ctx context.Context, symbols []string) (map[string]Company, []string, error) {
+func (c *Client) fetchBatch(ctx context.Context, symbols []string, canonicalOf map[string]string) (map[string]Company, []string, error) {
 	body, err := json.Marshal(map[string]any{"symbols": symbols})
 	if err != nil {
 		return nil, nil, err
@@ -128,13 +151,20 @@ func (c *Client) fetchBatch(ctx context.Context, symbols []string) (map[string]C
 	}
 
 	out := make(map[string]Company, len(raw.Fundamentals))
-	for sym, wc := range raw.Fundamentals {
-		ticker := strings.TrimSuffix(sym, ".NS")
-		out[ticker] = buildCompany(ticker, wc)
+	for vendorSym, wc := range raw.Fundamentals {
+		canonical, ok := canonicalOf[vendorSym]
+		if !ok {
+			// The sidecar echoed a symbol we never asked for; do not guess
+			// its venue.
+			continue
+		}
+		out[canonical] = buildCompany(canonical, wc)
 	}
 	failed := make([]string, 0, len(raw.Failed))
 	for _, f := range raw.Failed {
-		failed = append(failed, strings.TrimSuffix(f, ".NS"))
+		if canonical, ok := canonicalOf[f]; ok {
+			failed = append(failed, canonical)
+		}
 	}
 	return out, failed, nil
 }

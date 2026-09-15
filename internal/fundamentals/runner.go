@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
 // Store is the persistence the runner needs.
@@ -15,7 +17,7 @@ type Store interface {
 type Runner struct {
 	Client   *Client
 	Store    Store
-	Universe func() []string
+	Universe func() []marketdata.Symbol
 	Log      *slog.Logger
 
 	// Batch is how many symbols one pass covers.

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
 // Store is the persistence the runner needs.
@@ -41,7 +43,7 @@ type Runner struct {
 	Store     Store
 	Explainer Explainer
 	Observe   Observer
-	Universe  func() []string
+	Universe  func() []marketdata.Symbol
 	Log       *slog.Logger
 
 	// OnFinding is called for each anomaly as the scan resolves it, so a
