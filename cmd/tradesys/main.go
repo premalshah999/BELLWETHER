@@ -740,7 +740,11 @@ func openStore(ctx context.Context, cfg *config.Config, log *slog.Logger) (*post
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is not set; Postgres is required")
 	}
-	store, err := postgres.Open(ctx, cfg.DatabaseURL, postgres.WithLogger(log))
+	migrationOpt, err := venueMigrationOption()
+	if err != nil {
+		return nil, fmt.Errorf("prepare venue migration: %w", err)
+	}
+	store, err := postgres.Open(ctx, cfg.DatabaseURL, postgres.WithLogger(log), migrationOpt)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}

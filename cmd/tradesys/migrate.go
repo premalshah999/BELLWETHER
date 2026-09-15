@@ -30,7 +30,20 @@ func runDataMigration(ctx context.Context, log *slog.Logger, sqlitePath, databas
 	}
 	defer src.Close()
 
-	dst, err := postgres.Open(ctx, databaseURL, postgres.WithLogger(log))
+	// Every table this importer copies (watchlist, candles, quotes,
+	// series_coverage, alerts, ai_outputs, outlooks, news_articles,
+	// algorithm_symbol_state) already stored canonical, venue-qualified
+	// symbols in SQLite — the venue-qualification migration's rewrite is
+	// scoped to a disjoint set (index_constituents, scan_metrics,
+	// scan_findings, fundamentals_snapshot, financials, event_entities),
+	// none of which this importer touches; it deliberately leaves derived
+	// data to be rebuilt by -reprocess. So this needs no guard against
+	// reintroducing bare symbols — there is nothing here to reintroduce.
+	migrationOpt, err := venueMigrationOption()
+	if err != nil {
+		return fmt.Errorf("prepare venue migration: %w", err)
+	}
+	dst, err := postgres.Open(ctx, databaseURL, postgres.WithLogger(log), migrationOpt)
 	if err != nil {
 		return fmt.Errorf("open postgres target: %w", err)
 	}
