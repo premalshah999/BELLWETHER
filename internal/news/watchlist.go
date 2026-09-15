@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
 // WatchlistSource builds a discovery source for one instrument.
@@ -20,7 +22,13 @@ import (
 // company — the heat mechanism had nothing to act on before this existed.
 // Watched is one instrument to follow, and why.
 type Watched struct {
-	Ticker  string
+	Ticker string
+	// Venue decides locale: which Google News edition is searched and which
+	// market words pad a bare-ticker query. The zero value is
+	// marketdata.ExchangeUS, so a Watched built without setting this is
+	// treated as American -- callers that mean an NSE/BSE instrument must
+	// say so explicitly.
+	Venue   marketdata.Exchange
 	Company string
 	// Attention marks an instrument the scanner flagged as moving with no
 	// explanation in the archive. The question then is not "keep me posted"
@@ -29,13 +37,14 @@ type Watched struct {
 	Attention bool
 }
 
-func WatchlistSource(ticker, company string) Source {
-	return watchedSource(Watched{Ticker: ticker, Company: company})
+func WatchlistSource(sym marketdata.Symbol, company string) Source {
+	return watchedSource(Watched{Ticker: sym.Ticker, Venue: sym.Exchange, Company: company})
 }
 
 func watchedSource(w Watched) Source {
 	ticker, company := w.Ticker, w.Company
-	query := watchlistQuery(ticker, company, w.Attention)
+	indian := w.Venue == marketdata.ExchangeNSE || w.Venue == marketdata.ExchangeBSE
+	query := watchlistQuery(ticker, company, w.Attention, indian)
 	refresh := 4 * time.Minute
 	if w.Attention {
 		// The move already happened; the explanation is arriving now or in
@@ -43,14 +52,27 @@ func watchedSource(w Watched) Source {
 		// how the answer shows up after it stopped being useful.
 		refresh = 90 * time.Second
 	}
+	hl, gl, country := "en-US", "US", "US"
+	if indian {
+		hl, gl, country = "en-IN", "IN", "IN"
+	}
+	// The id carries the venue for every symbol that needs disambiguating
+	// from it (NSE/BSE), and stays bare for US, matching
+	// marketdata.Symbol{...}.String() lowercased -- the same rule the
+	// venue-qualification migration applied to every id already on record,
+	// so a source created today and one migrated from before it look alike.
+	id := "watch-" + strings.ToLower(ticker)
+	if w.Venue != marketdata.ExchangeUS {
+		id += "." + strings.ToLower(string(w.Venue))
+	}
 	return Source{
-		ID:   "watch-" + strings.ToLower(ticker),
+		ID:   id,
 		Name: displayName(ticker, company, w.Attention),
-		URL:  GoogleNewsSearch(query, "en-IN", "IN"),
+		URL:  GoogleNewsSearch(query, hl, gl),
 
 		Method:   MethodGoogleNews,
 		Category: "watchlist",
-		Country:  "IN",
+		Country:  country,
 		Language: "en",
 
 		Trust: TrustMajorFin,
@@ -92,7 +114,7 @@ func watchedSource(w Watched) Source {
 // articles arriving on every poll, about the companies the operator cares most
 // about. The same query with a window returned 61 items, none older than two
 // days.
-func watchlistQuery(ticker, company string, attention bool) string {
+func watchlistQuery(ticker, company string, attention, indian bool) string {
 	// An instrument the scanner just flagged is a question about today, so the
 	// window closes to a single day. A followed instrument is a standing
 	// interest and three days lets a weekend's news arrive.
@@ -105,7 +127,11 @@ func watchlistQuery(ticker, company string, attention bool) string {
 	if company == "" {
 		// With no name to work from, the ticker is paired with market words
 		// so it lands in a financial context rather than a linguistic one.
-		return fmt.Sprintf("%q (shares OR stock OR NSE) %s", ticker, window)
+		marketWords := "shares OR stock OR NASDAQ OR NYSE"
+		if indian {
+			marketWords = "shares OR stock OR NSE"
+		}
+		return fmt.Sprintf("%q (%s) %s", ticker, marketWords, window)
 	}
 	// The legal suffix is dropped: publishers write "Reliance Industries",
 	// not "Reliance Industries Limited", and the phrase must match how they
@@ -145,13 +171,18 @@ func WatchlistSources(items []Watched) []Source {
 		if w.Ticker == "" {
 			continue
 		}
-		if at, dup := seen[w.Ticker]; dup {
+		// Keyed by ticker and venue together: the same string can be two
+		// different instruments (INFY.NSE vs the NYSE-listed INFY), and
+		// collapsing them into one source would silently follow the wrong
+		// one whichever happened to sort first.
+		key := w.Ticker + "." + string(w.Venue)
+		if at, dup := seen[key]; dup {
 			if w.Attention && !out[at].Attention() {
 				out[at] = watchedSource(w)
 			}
 			continue
 		}
-		seen[w.Ticker] = len(out)
+		seen[key] = len(out)
 		out = append(out, watchedSource(w))
 	}
 	return out

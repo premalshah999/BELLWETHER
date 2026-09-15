@@ -305,6 +305,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load company master: %w", err)
 	}
+	_, usListings, err := company.LoadEmbeddedUS()
+	if err != nil {
+		return fmt.Errorf("load us company master: %w", err)
+	}
+	universe := buildScanUniverse(companyMaster, usListings)
+	log.Info("scan universe ready", "nse", len(companyMaster.IndexConstituents()), "us", len(usListings))
 
 	// The market scanner: the half of the intelligence layer that does not
 	// wait to be told.
@@ -328,10 +334,10 @@ func run() error {
 			Store:     store,
 			Explainer: store,
 			Observe:   attention.ObserveSignal,
-			Universe:  companyMaster.ScanUniverse,
+			Universe:  universe.Symbols,
 			Log:       log,
 		}
-		log.Info("market scanner ready", "universe", len(companyMaster.ScanUniverse()))
+		log.Info("market scanner ready", "universe", len(universe.symbols))
 	} else {
 		log.Warn("market scanner disabled: no YFINANCE_URL configured")
 	}
@@ -339,7 +345,7 @@ func run() error {
 	// The index constituent list, refreshed from the embedded master on every
 	// start. It decides what the default market feed is about, so it must not
 	// be allowed to drift from the company data the rest of the system uses.
-	if err := store.ReplaceIndexConstituents(ctx, companyMaster.IndexConstituents()); err != nil {
+	if err := store.ReplaceIndexConstituents(ctx, universe.listings); err != nil {
 		// Not fatal: an empty list makes the feed show everything, which is
 		// the old behaviour rather than a broken one.
 		log.Error("could not record index constituents", "err", err)
@@ -389,7 +395,7 @@ func run() error {
 				HTTP:    &http.Client{Timeout: 15 * time.Minute},
 			},
 			Store:    store,
-			Universe: companyMaster.ScanUniverse,
+			Universe: universe.Symbols,
 			Log:      log,
 		}
 	}
@@ -943,25 +949,36 @@ func syncWatchlistSources(
 	watched := make(map[string]bool, len(symbols))
 	items := make([]news.Watched, 0, len(symbols))
 	for _, sym := range symbols {
-		watched[sym.Ticker] = true
-		w := news.Watched{Ticker: sym.Ticker}
+		watched[sym.String()] = true
+		w := news.Watched{Ticker: sym.Ticker, Venue: sym.Exchange}
 		// The registered name makes a far better query than a bare ticker,
-		// and the master has it for every listed instrument.
-		if c, found := master.Lookup(sym.Ticker); found {
-			w.Company = c.Name
+		// and the master has it for every NSE-listed instrument. There is no
+		// equivalent US text master yet (Phase 2), so a US company name is
+		// left blank and the query falls back to the ticker plus market
+		// words -- still correct, just less precise.
+		if sym.Exchange != marketdata.ExchangeUS {
+			if c, found := master.Lookup(sym.Ticker); found {
+				w.Company = c.Name
+			}
 		}
 		items = append(items, w)
 	}
 
 	var fromScanner int
 	if marketScanner != nil {
-		for _, ticker := range marketScanner.AttentionSymbols() {
-			if watched[ticker] {
+		for _, canonical := range marketScanner.AttentionSymbols() {
+			sym, err := marketdata.ParseSymbol(canonical)
+			if err != nil {
 				continue
 			}
-			w := news.Watched{Ticker: ticker, Attention: true}
-			if c, found := master.Lookup(ticker); found {
-				w.Company = c.Name
+			if watched[sym.String()] {
+				continue
+			}
+			w := news.Watched{Ticker: sym.Ticker, Venue: sym.Exchange, Attention: true}
+			if sym.Exchange != marketdata.ExchangeUS {
+				if c, found := master.Lookup(sym.Ticker); found {
+					w.Company = c.Name
+				}
 			}
 			items = append(items, w)
 			fromScanner++

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
 	"github.com/tradesys/dashboard/internal/news/company"
 )
@@ -502,6 +503,15 @@ func classifyPolicy(src news.Source, title string) Type {
 // on top of it. An NSE filing whose document path names a symbol has told us
 // the company outright, and running a text resolver over the headline as well
 // would only add opportunities to be wrong.
+// nseSymbol renders a bare NSE ticker (what company.Master resolves text
+// against) as the canonical, venue-qualified symbol everything downstream of
+// entity resolution is stored under. p.master is always the NSE master here
+// -- there is no US text resolver wired into this pipeline yet -- so every
+// resolution this function produces is unambiguously NSE.
+func nseSymbol(ticker string) string {
+	return marketdata.Symbol{Ticker: ticker, Exchange: marketdata.ExchangeNSE}.String()
+}
+
 func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline, summary string, facts map[string]string) []news.EventEntity {
 	if p.master == nil {
 		return nil
@@ -522,7 +532,7 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 		want := strings.ToUpper(src.Symbols[0])
 		if c, listed := p.master.Lookup(want); listed {
 			out := []news.EventEntity{{
-				Symbol: c.Symbol, Relationship: news.RelPrimary,
+				Symbol: nseSymbol(c.Symbol), Relationship: news.RelPrimary,
 				// High, but below a filing naming itself: a scoped search
 				// does return the occasional unrelated result.
 				MatchConfidence: 0.9, MatchMethod: "watchlist_query",
@@ -539,7 +549,7 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 					continue
 				}
 				out = append(out, news.EventEntity{
-					Symbol: m.Symbol, Relationship: news.RelMentioned,
+					Symbol: nseSymbol(m.Symbol), Relationship: news.RelMentioned,
 					MatchConfidence: m.Confidence, MatchMethod: string(m.Method),
 				})
 			}
@@ -551,7 +561,7 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 	if sym, ok := facts["NSE_SYMBOL_PATH"]; ok {
 		if c, listed := p.master.Lookup(sym); listed {
 			return []news.EventEntity{{
-				Symbol: c.Symbol, Relationship: news.RelPrimary,
+				Symbol: nseSymbol(c.Symbol), Relationship: news.RelPrimary,
 				MatchConfidence: 0.99, MatchMethod: "nse_document_path",
 			}}
 		}
@@ -583,7 +593,7 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 			rel = news.RelPrimary
 		}
 		out = append(out, news.EventEntity{
-			Symbol: m.Symbol, Relationship: rel,
+			Symbol: nseSymbol(m.Symbol), Relationship: rel,
 			MatchConfidence: m.Confidence, MatchMethod: string(m.Method),
 		})
 	}

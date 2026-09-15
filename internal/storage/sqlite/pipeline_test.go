@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tradesys/dashboard/internal/events"
+	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
 	"github.com/tradesys/dashboard/internal/news/company"
 	"github.com/tradesys/dashboard/internal/storage"
@@ -77,7 +78,7 @@ func TestPipelineFilingBecomesEvent(t *testing.T) {
 	if e.Importance == nil || *e.Importance < 7 {
 		t.Errorf("importance = %v, want the ORDER_WIN baseline", e.Importance)
 	}
-	if len(e.Entities) != 1 || e.Entities[0].Symbol != "LT" {
+	if len(e.Entities) != 1 || e.Entities[0].Symbol != "LT.NSE" {
 		t.Fatalf("entities = %+v, want LT resolved from the document path", e.Entities)
 	}
 	if e.Entities[0].MatchMethod != "nse_document_path" {
@@ -293,7 +294,7 @@ func TestListEventsFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bySymbol, _ := db.ListEvents(ctx, EventFilter{Symbol: "INFY"})
+	bySymbol, _ := db.ListEvents(ctx, EventFilter{Symbol: "INFY.NSE"})
 	if len(bySymbol) != 1 {
 		t.Errorf("symbol filter returned %d, want 1", len(bySymbol))
 	}
@@ -368,7 +369,7 @@ func TestClusteringSurvivesABacklog(t *testing.T) {
 		t.Errorf("merged = %d, want the duplicate filing attached to the existing event", res.Merged)
 	}
 
-	suzlon, err := db.ListEvents(ctx, EventFilter{Symbol: "SUZLON"})
+	suzlon, err := db.ListEvents(ctx, EventFilter{Symbol: "SUZLON.NSE"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +402,7 @@ func TestFilingHeadlineDropsBoilerplate(t *testing.T) {
 	if _, err := p.ProcessBatch(ctx, 100); err != nil {
 		t.Fatal(err)
 	}
-	list, _ := db.ListEvents(ctx, EventFilter{Symbol: "INFY"})
+	list, _ := db.ListEvents(ctx, EventFilter{Symbol: "INFY.NSE"})
 	if len(list) == 0 {
 		t.Fatal("expected events")
 	}
@@ -470,7 +471,8 @@ func TestWatchlistItemsAreAttributedToTheirCompany(t *testing.T) {
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 
 	// A registry containing one watchlist source, as the running system builds.
-	registry, err := news.NewRegistry(news.WatchlistSource("RELIANCE", "Reliance Industries Limited"))
+	registry, err := news.NewRegistry(news.WatchlistSource(
+		marketdata.Symbol{Ticker: "RELIANCE", Exchange: marketdata.ExchangeNSE}, "Reliance Industries Limited"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +481,7 @@ func TestWatchlistItemsAreAttributedToTheirCompany(t *testing.T) {
 
 	ctx := context.Background()
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{
-		item("watch-reliance", "w1",
+		item("watch-reliance.nse", "w1",
 			"Ambani weighs aluminium entry, setting up potential clash", "",
 			"https://news.google.com/rss/articles/abc", now),
 	}); err != nil {
@@ -495,16 +497,16 @@ func TestWatchlistItemsAreAttributedToTheirCompany(t *testing.T) {
 			res.Created, res.Filtered)
 	}
 
-	list, err := db.ListEvents(ctx, storage.EventFilter{Symbol: "RELIANCE"})
+	list, err := db.ListEvents(ctx, storage.EventFilter{Symbol: "RELIANCE.NSE"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(list) != 1 {
-		t.Fatalf("found %d events for RELIANCE, want 1", len(list))
+		t.Fatalf("found %d events for RELIANCE.NSE, want 1", len(list))
 	}
 	ents := list[0].Entities
-	if len(ents) == 0 || ents[0].Symbol != "RELIANCE" {
-		t.Fatalf("entities = %+v, want RELIANCE attributed from the query", ents)
+	if len(ents) == 0 || ents[0].Symbol != "RELIANCE.NSE" {
+		t.Fatalf("entities = %+v, want RELIANCE.NSE attributed from the query", ents)
 	}
 	if ents[0].Relationship != news.RelPrimary {
 		t.Errorf("relationship = %s, want primary", ents[0].Relationship)
@@ -523,7 +525,7 @@ func TestWatchlistBypassesTheRelevanceFilter(t *testing.T) {
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 
 	// A US name the content filter would otherwise discard as unactionable.
-	registry, err := news.NewRegistry(news.WatchlistSource("AAPL", ""))
+	registry, err := news.NewRegistry(news.WatchlistSource(marketdata.Symbol{Ticker: "AAPL"}, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
