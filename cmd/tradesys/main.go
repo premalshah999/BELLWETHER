@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -1095,7 +1096,22 @@ func startAISchedules(
 			log.Error("could not schedule an AI job", "job", name, "cron", spec, "err", err)
 			return
 		}
-		log.Info("scheduled", "job", name, "cron", spec, "tz", cfg.DisplayTZ.String())
+		// A spec carrying its own CRON_TZ= prefix (robfig/cron's per-job
+		// override, used by the venue-scoped market scans below) runs in
+		// that zone, not the scheduler's shared DisplayTZ -- logging
+		// DisplayTZ unconditionally here would tell an operator debugging
+		// scan timing the wrong zone for exactly those jobs.
+		tz := cfg.DisplayTZ.String()
+		if rest, ok := strings.CutPrefix(spec, "CRON_TZ="); ok {
+			if zone, _, ok := strings.Cut(rest, " "); ok {
+				tz = zone
+			}
+		} else if rest, ok := strings.CutPrefix(spec, "TZ="); ok {
+			if zone, _, ok := strings.Cut(rest, " "); ok {
+				tz = zone
+			}
+		}
+		log.Info("scheduled", "job", name, "cron", spec, "tz", tz)
 	}
 
 	add := func(name, spec string, job func(context.Context)) {

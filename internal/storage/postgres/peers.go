@@ -127,7 +127,7 @@ WITH snapshots AS (
     SELECT DISTINCT ON (f.symbol) f.*
     FROM fundamentals_snapshot f
     JOIN index_constituents ic ON ic.symbol = f.symbol
-    WHERE ic.industry = $1 AND ic.taxonomy = $3
+    WHERE ic.industry = $1 AND ic.taxonomy = $2
     ORDER BY f.symbol, f.id DESC
 ),
 fcf AS (
@@ -152,7 +152,13 @@ latest AS (
     LEFT JOIN fcf ON fcf.symbol = l.symbol
 )`
 
-	if err := d.db.QueryRowContext(ctx, base+` SELECT count(*) FROM latest`, industry, "", taxonomy).
+	// $2 (taxonomy) must actually appear in base's own text for Postgres to
+	// infer its type -- a positional gap (passing a dummy value for an
+	// unreferenced placeholder) fails with "could not determine data type
+	// of parameter $n" rather than being silently ignored, which is why
+	// industry and taxonomy are $1/$2 here and symbol is pushed to $3 below
+	// instead of sitting in the middle.
+	if err := d.db.QueryRowContext(ctx, base+` SELECT count(*) FROM latest`, industry, taxonomy).
 		Scan(&out.Peers); err != nil {
 		return out, fmt.Errorf("compare peers: count: %w", err)
 	}
@@ -168,15 +174,15 @@ latest AS (
 		// had one would move everyone else's rank for no reason.
 		q := fmt.Sprintf(`%s
 SELECT
-    (SELECT %[2]s FROM latest WHERE symbol = $2),
+    (SELECT %[2]s FROM latest WHERE symbol = $3),
     (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY %[2]s) FROM latest WHERE %[2]s IS NOT NULL),
     (SELECT count(*) FROM latest WHERE %[2]s IS NOT NULL),
     (SELECT count(*) FROM latest WHERE %[2]s IS NOT NULL
-        AND %[2]s < (SELECT %[2]s FROM latest WHERE symbol = $2))`, base, m.column)
+        AND %[2]s < (SELECT %[2]s FROM latest WHERE symbol = $3))`, base, m.column)
 
 		var value, median sql.NullFloat64
 		var reporting, below int
-		if err := d.db.QueryRowContext(ctx, q, industry, symbol, taxonomy).
+		if err := d.db.QueryRowContext(ctx, q, industry, taxonomy, symbol).
 			Scan(&value, &median, &reporting, &below); err != nil {
 			return out, fmt.Errorf("compare peers: %s: %w", m.label, err)
 		}
