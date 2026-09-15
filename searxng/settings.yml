@@ -1,0 +1,48 @@
+# SearXNG configuration.
+#
+# Run as a private metasearch node, not a public instance. It aggregates other
+# engines' results and returns them as JSON, which is the whole reason it is
+# here: one interface over many indexes, no API key, no per-query cost, and no
+# single provider deciding what this system is allowed to see.
+#
+# The trade is that it is scraping engines that do not want to be scraped, so
+# any individual engine may start refusing at any time. That is survivable
+# because it is one provider among several in the research fan-out — but it is
+# why it is not the only one.
+
+use_default_settings: true
+
+general:
+  instance_name: "tradesys"
+  # No public instance, so none of the discovery surface is needed.
+  enable_metrics: false
+
+server:
+  secret_key: "0847bebd48e21b9079efa95144615136b50a27941c2ba5f49e07f051bd614c83"
+  limiter: false
+  image_proxy: false
+  # Bound to the compose network only; nothing publishes this to the host.
+  bind_address: "0.0.0.0"
+  port: 8080
+
+search:
+  # JSON is the point: this is consumed by a program, never by a browser.
+  formats:
+    - json
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  # Slower than a single engine, and worth it: a query that reaches six
+  # indexes and waits five seconds beats one that reaches a single index
+  # instantly and misses what the others had.
+  max_page: 2
+
+outgoing:
+  request_timeout: 8.0
+  max_request_timeout: 12.0
+  pool_connections: 50
+  pool_maxsize: 20
+  enable_http2: true
+
+ui:
+  static_use_hash: true

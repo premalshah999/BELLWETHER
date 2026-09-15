@@ -1,0 +1,319 @@
+services:
+  tradesys:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-docker}
+    image: tradesys:latest
+    container_name: tradesys
+
+    # Every setting comes from .env. Copy .env.example to .env and edit it;
+    # nothing here needs changing for a normal deployment.
+    env_file:
+      - .env
+
+    environment:
+      # Fixed inside the container regardless of what .env says, because the
+      # port mapping and the volume mount below depend on them.
+      HTTP_ADDR: ":8080"
+      DB_PATH: "/data/tradesys.db"
+      # Postgres is reached over the compose network. Credentials come from
+      # .env so the same file configures both this service and the database.
+      DATABASE_URL: "postgres://${POSTGRES_USER:-tradesys}:${POSTGRES_PASSWORD:-tradesys}@postgres:5432/${POSTGRES_DB:-tradesys}?sslmode=disable"
+      # The private metasearch node, reachable only inside this network.
+      SEARXNG_URL: "http://searxng:8080"
+
+    # Bound to loopback only: Caddy is the sole public entry point, so the
+    # app is never reachable over plain HTTP from the internet.
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8080}:8080"
+
+    # A self-hosted model often runs on the same machine as this container.
+    # Point LLM_BASE_URL at http://host.docker.internal:PORT to reach it.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      yfinance:
+        condition: service_started
+
+    volumes:
+      # The SQLite file and its WAL siblings live here. Back the app up by
+      # copying this volume.
+      - tradesys-data:/data
+
+    restart: unless-stopped
+
+    # A dashboard is not a memory-hungry service; these caps turn a runaway
+    # loop into a restart rather than a wedged host.
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # The database. Reachable only inside the compose network — it publishes no
+  # port to the host, so the only route to it is through the application.
+  postgres:
+    image: postgres:17-alpine
+    container_name: tradesys-postgres
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tradesys}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tradesys}
+      POSTGRES_DB: ${POSTGRES_DB:-tradesys}
+      # Checksums catch silent corruption at read time rather than letting it
+      # propagate into query results.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+
+    # Bound to loopback only. The application reaches Postgres over the
+    # compose network and does not need this; it exists so integration tests
+    # and psql can connect from the host. It is not reachable from the
+    # internet, which is the property that matters.
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+
+    volumes:
+      - tradesys-pgdata:/var/lib/postgresql/data
+
+    # The app waits on this, so it has to report readiness accurately rather
+    # than merely being up.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tradesys} -d ${POSTGRES_DB:-tradesys}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+    restart: unless-stopped
+
+    # Tuned for a small box rather than left at the defaults, which assume a
+    # dedicated database server. shared_buffers and cache size are the two
+    # that actually matter at this scale; the rest keeps the WAL bounded.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=192MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=40
+      - -c
+      - wal_compression=on
+      - -c
+      - max_wal_size=1GB
+      - -c
+      - min_wal_size=128MB
+      - -c
+      - random_page_cost=1.1
+
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # SearXNG: a private metasearch node.
+  #
+  # It aggregates results from many engines behind one JSON interface, with no
+  # API key and no per-query cost. That matters here for a specific reason:
+  # every other search provider in the research fan-out is a company that
+  # decides what this system may see and what it costs to see it. This one is
+  # ours.
+  #
+  # It is not a replacement for the others. It works by scraping engines that
+  # do not want to be scraped, so any individual engine can start refusing at
+  # any moment — which is survivable precisely because it is one provider
+  # among several rather than the only one.
+  searxng:
+    image: searxng/searxng:latest
+    container_name: tradesys-searxng
+
+    environment:
+      # Used only for internal URL generation; nothing is published.
+      SEARXNG_BASE_URL: "http://searxng:8080/"
+      # A private instance serving one process needs one worker.
+      UWSGI_WORKERS: "2"
+      UWSGI_THREADS: "4"
+
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+
+    # No ports. Reachable only from the application over the compose network,
+    # which is the correct posture for something that exists to make outbound
+    # requests on our behalf.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Backups.
+  #
+  # The point of this application is an archive that accumulates: raw evidence
+  # that cannot be re-fetched once the source drops it, and the derived event
+  # history that Phase 2 will be tested against. Losing the volume loses all of
+  # it, and until now nothing stood between that and a bad disk.
+  #
+  # A dump rather than a volume snapshot, because a dump can be restored into a
+  # different Postgres version and inspected without starting a server.
+  backup:
+    image: postgres:17-alpine
+    container_name: tradesys-backup
+
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-tradesys}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-tradesys}
+      PGDATABASE: ${POSTGRES_DB:-tradesys}
+      # How many daily dumps to keep. Two weeks is enough to notice corruption
+      # that only shows up when somebody looks, and small enough that the
+      # compressed dumps stay a rounding error next to the database.
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+
+    volumes:
+      - tradesys-backups:/backups
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    # A plain loop rather than cron: one process, its schedule visible here,
+    # and its output in the same log stream as everything else.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        echo "backup service started; dumping every 6h, keeping $$KEEP_DAYS days"
+        while true; do
+          stamp=$$(date -u +%Y%m%dT%H%M%SZ)
+          target="/backups/tradesys-$$stamp.sql.gz"
+          # --clean --if-exists so the dump can be restored over an existing
+          # database without hand-editing it first.
+          if pg_dump --clean --if-exists --no-owner --no-privileges                | gzip -9 > "$$target.partial"; then
+            # Renamed only on success, so a dump interrupted halfway is never
+            # mistaken for a good one by whoever comes looking in a crisis.
+            mv "$$target.partial" "$$target"
+            echo "backup written: $$target ($$(du -h "$$target" | cut -f1))"
+          else
+            echo "backup FAILED at $$stamp" >&2
+            rm -f "$$target.partial"
+          fi
+          find /backups -name 'tradesys-*.sql.gz' -mtime +$$KEEP_DAYS -delete 2>/dev/null || true
+          sleep 21600
+        done
+
+    restart: unless-stopped
+
+    # pg_dump piped through gzip. The pipe means neither the dump nor the
+    # archive is ever held whole in memory, so this is generous.
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Wraps the yfinance library. Reachable only inside the compose network:
+  # it has no authentication of its own and no business being public.
+  yfinance:
+    build:
+      context: ./services/yfinance
+    image: tradesys-yfinance:latest
+    container_name: tradesys-yfinance
+    restart: unless-stopped
+
+    # The heaviest service by far: pandas frames for a 750-name scan and a
+    # full statement history per company. Measured at ~400MB in normal use,
+    # so a gigabyte leaves headroom while still turning a runaway request
+    # into one restarted container rather than an out-of-memory host.
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    expose:
+      - "8787"
+    environment:
+      YFIN_PORT: "8787"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: tradesys-caddy
+    restart: unless-stopped
+
+    # A reverse proxy holding no state. It has never needed more than about
+    # 15MB; the cap exists so a request flood cannot take the host with it.
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    depends_on:
+      - tradesys
+
+    # 80 is needed for the ACME challenge and the redirect to HTTPS.
+    ports:
+      - "80:80"
+      - "443:443"
+
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME in .env}
+
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys. Losing this volume means
+      # re-issuing, which Let's Encrypt rate-limits, so keep it.
+      - caddy-data:/data
+      - caddy-config:/config
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  tradesys-backups:
+  tradesys-pgdata:
+  tradesys-data:
+  caddy-data:
+  caddy-config:

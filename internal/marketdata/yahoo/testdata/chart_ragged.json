@@ -1,0 +1,22 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {"currency": "USD", "symbol": "RAGGED", "regularMarketPrice": 12.0},
+        "timestamp": [1755178200, 1755264600, 1755351000],
+        "indicators": {
+          "quote": [
+            {
+              "open":   [10.0, 11.0, 12.0],
+              "high":   [10.5, 11.5],
+              "low":    [9.5,  10.5, 11.5],
+              "close":  [10.2, 11.2, 12.2],
+              "volume": [100,  200,  300]
+            }
+          ]
+        }
+      }
+    ],
+    "error": null
+  }
+}

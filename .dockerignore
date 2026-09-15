@@ -1,0 +1,21 @@
+# Never ship secrets into an image layer.
+.env
+
+# Build outputs and local state
+/data/
+*.db
+*.db-shm
+*.db-wal
+/tradesys
+
+# Rebuilt inside the image
+/web/node_modules/
+/web/dist/
+/web/tsconfig.tsbuildinfo
+
+# Not needed at build time
+.git/
+.github/
+README.md
+*.md
+!web/package.json

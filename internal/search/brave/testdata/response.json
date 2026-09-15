@@ -1,0 +1,20 @@
+{
+  "type": "news",
+  "results": [
+    {
+      "title": "Apple hits fresh high as services revenue beats",
+      "url": "https://www.cnbc.com/2026/08/24/apple-services.html",
+      "description": "Apple <strong>shares</strong> rose after services revenue beat consensus for the fourth straight quarter.",
+      "age": "3 hours ago",
+      "page_age": "2026-08-24T10:15:00",
+      "meta_url": {"hostname": "cnbc.com"}
+    },
+    {
+      "title": "Analysts trim iPhone unit forecasts",
+      "url": "https://www.bloomberg.com/news/articles/2026-08-24/iphone-units",
+      "description": "Several analysts cut unit forecasts, citing a longer replacement cycle.",
+      "age": "1 day ago",
+      "meta_url": {"hostname": ""}
+    }
+  ]
+}

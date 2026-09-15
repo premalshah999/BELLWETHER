@@ -1,0 +1,199 @@
+# Ordinary English words that must never, on their own, identify a company.
+#
+# Roughly a thousand NSE names begin with a word distinctive enough to stand in
+# for the company — "Suzlon", "Havells", "Polycab". Seventy-odd begin with a
+# word that is also everyday English: Solar Industries, Energy Development,
+# Network People, General Insurance. Indexing those as leads would make
+# "Solar Capacity Grows In Gujarat" a story about SOLARINDS.
+#
+# Case is no defence here, because headlines are frequently title-cased. So the
+# discrimination has to be lexical, and this is the lexicon. One word per line;
+# blank lines and # comments ignored.
+about above accel access accord acquire action active add advance advanced advantage
+agency agree aim air alliance allied alpha alter ambition amount anchor annual answer
+apex appeal apply approach approve archer area arrow ascent aspire assam asset assist
+atlas august aurum author auto autumn avenue award aware
+balance bank banking baroda base basic batch bear begin best beta better beyond bharat
+bid big bill blue board body bond bonus book boost border bottom bound brand break
+bridge brief bright brilliant broad budget build bull business buy
+call cancel candid capital care career carry case cash cause center central century
+certain chain chair champion chance change channel charge chart check chemical chief
+choice circle citizen city civil claim class classic clean clear client climate close
+cloud coast coastal code cold collect color combine comfort command comment commit
+common compact company compare compass compete complete concord conduct confidence
+connect consider consistent contact contain content contest continue contract control
+core corner correct cost count country course cover craft create creative credit crisis
+critical cross crown crystal culture current custom cycle
+daily data deal debt decent decide deep defence deliver demand depend deposit design
+detail develop diamond digital direct discount display dispute distance divide dolphin
+domain double doubt draft drive drop dynamic
+eagle early earn east eastern easy economy edge effect effort elect elegant element
+elite emerald emerge empire employ enable energy engage engineer engineers enter
+enterprise entire equal equity escape essence estate eternal even event ever every exact
+exceed excel except exchange excite exclusive execute exercise exist expand expect expert
+explore explorer export express extend extra
+face facility fact factor fair faith fall family fashion fast favour feature federal feed
+field figure file final finance financial find fine finish fire firm first fiscal fixed
+flag flash flat fleet flex float flow focus follow food force foreign forever form formal
+forward foundation frame free freedom fresh friend front frontier fuel full function fund
+fusion future
+gain galaxy game garden gateway gather general generation generic genesis genius gentle
+genuine giant gift give glass global globe glory gold golden good govern grace grade
+graduate grand grant graphite grasp great green greenlam grid gross ground group grow
+growth guarantee guard guide
+habit half hand handle happy harbour hard harmony head health heart heavy help heritage
+high hold home honest honour hope horizon host hotel hour house human hundred
+ideal identity image impact imperial import impress improve include income increase
+independent index indicate indus industry infinite influence inform initial inner
+innovative input inquire insight inspire install instant institute insurance integra
+integral intense interest internal invest invite issue item
+join joint journey judge jumbo junction junior justice
+keen keep kernel key keystone kind kinetic knowledge known
+label labour land large last late launch layer lead leader league learn lease legacy legal
+lend length level liberty life lifeline light limit lincoln line linear link liquid list
+listen live local lock logic long look loss loyal lucky lunar
+magnum main maintain majestic major make manage manner marathon marine mariner mark market
+master match material matrix matter mature maximum meaning measure media medical medium
+meet member mention mercury merge meridian merit metal method metro middle might mile
+million mind mineral minimum minor minute mirror mission mobile modal model modern modest
+module moment momentum monarch money monitor month moral motion motor mountain move
+multiple mutual
+narrow nation national natural nature navigate navigator near neat need network neutral
+never next noble normal north northern note notice nucleus number
+object observe obtain ocean offer office official offset olympic omega online only open
+operate opinion opportunity optimum option orange orbit order ordinary organic organise
+orient original other outlook output outside overseas owner
+pacific pack page paper paragon parallel parent park part partner passage patent path
+patron pattern peak peninsula people perfect perform period permanent person phase phoenix
+pick picture pillar pilot pinnacle pioneer place plain plan plant plastic platform platinum
+play plaza pledge plus point polar polaris policy poll pool popular port portal portfolio
+position positive possible post potential power practice precise precision predict premier
+premium prepare present preserve press prestige prevent price primary prime principal
+print prism private prize probe process produce product profile profit progress
+progressive project prominent promise promote proof proper property propose prosperity
+protect prove provide province public pulse pure purpose pursue pyramid
+quality quantum quarter query quest question quick quiet quote
+radiant radical radio rainbow raise range rapid rare rate ratio reach react read ready real
+reason rebound recall receive record recover reduce refer refine reflect reform regal
+regard regency region register regular related reliable relief remain remark remote
+renaissance render renew rent repair repeat replace report require rescue research reserve
+reset resolve resonance resource respect respond response rest restore result retail retain
+retire return revenue reverse review revival reward rhythm rich right ripple rise rising
+risk river riverside road robust rocket role roll room root rotate round route royal royale
+rule run rural
+safe sail salient sample sapphire satellite save scale scholar scope score screen script
+search season second secret section sector secure select senior sense sentinel serial serve
+service session settle seven several shape share sharp shelter shield shift shine shining
+ship shop short show side sight sign signal signature silver simple simplex sincere single
+site size skill skyline small smart social solar solid solution source south southern
+sovereign space spark special spectrum speed spend sphere splendid split spot spread spring
+square stable stage stake stallion stand standard star start state station status stay
+steady steel stellar step sterling stock stone stop storage store story straight strategic
+stream street strength strike strong structure studio study style subject submit succeed
+success sudden suggest suitable summit sun sunshine superior supply support suppose supreme
+sure surface surge surplus survey suspend sustain swift switch symbol symphony synergy
+system
+table tackle takeover talent target task team tempest tender term terrific test text thermal
+think third thought thread three thrive ticket tide tiger time title titanium today token
+tolerance tomorrow tone tool top torrent total touch tough tourism tower town trace track
+trade tradition traffic trail train transfer transform transit transport travel treasure
+treat trend trial trident trigger triple triumph tropical true trust truth turn twin
+ultimate unified union unique unit unite unity universal universe update uplift upper urban
+urgent usage useful usual utility
+valiant value vantage variety vector velocity venture verify veritas version vertical
+vessel veteran victory view vintage virtual vision vista vital voice volume voyage
+wage wait walk wall warrior watch water wave weather week weight welcome welfare well west
+western wheel white wide wild will win wind window winner wire wise wonder wood word work
+world worth worthy
+yield young
+zenith zodiac zone
+
+# ---------------------------------------------------------------------------
+# Place names.
+#
+# Indian companies are named after where they were founded far more often than
+# Western ones are: Chennai Petroleum, Karnataka Bank, Gujarat Gas, Bombay
+# Dyeing. Every one of those first words is also a place that appears in
+# political and general news constantly, so as a lead word each is a reliable
+# source of false attributions. The full registered name still resolves.
+andhra arunachal assam bihar chhattisgarh goa gujarat haryana himachal jharkhand
+karnataka kerala madhya maharashtra manipur meghalaya mizoram nagaland odisha orissa
+punjab rajasthan sikkim tamil telangana tripura uttar uttarakhand bengal delhi
+puducherry chandigarh ladakh kashmir jammu andaman lakshadweep daman dadra
+mumbai bombay chennai madras kolkata calcutta bangalore bengaluru hyderabad pune
+ahmedabad surat jaipur lucknow kanpur nagpur indore bhopal patna vadodara ludhiana
+agra nashik faridabad meerut rajkot varanasi srinagar aurangabad dhanbad amritsar
+allahabad ranchi coimbatore jabalpur gwalior vijayawada jodhpur madurai raipur kota
+guwahati solapur hubli mysore mysuru bareilly aligarh moradabad gurgaon gurugram
+noida thane kochi cochin trivandrum thiruvananthapuram bhubaneswar cuttack salem
+warangal guntur saharanpur gorakhpur bikaner amravati jamshedpur bhilai firozabad
+kollam nellore jhansi sangli belgaum tirunelveli malegaon udaipur kozhikode kurnool
+bokaro bellary patiala agartala bhagalpur muzaffarpur latur dhule rohtak korba
+bhilwara berhampur ahmednagar mathura kadapa anantapur bilaspur sambalpur satara
+bijapur rampur chandrapur junagadh thrissur alwar kakinada nizamabad parbhani tumkur
+khammam panipat darbhanga aizawl dewas karnal bathinda jalna eluru purnia satna
+sonipat farrukhabad sagar rourkela durg imphal ratlam hapur karimnagar etawah
+bharatpur begusarai gandhidham thanjavur bulandshahr sambhal singrauli nadiad
+secunderabad yamunanagar pallavaram bidar munger panchkula burhanpur kharagpur
+dindigul gandhinagar hospet malda ongole deoghar chapra haldia khandwa nandyal
+morena amroha anand bhind bhiwani ambala morbi fatehpur raebareli chittoor bhusawal
+orai bahraich vellore mehsana raiganj sirsa danapur guna jaunpur panvel shivpuri
+surendranagar unnao alappuzha kottayam shimla adoni udupi katni mahbubnagar saharsa
+dibrugarh jorhat hazaribagh hindupur nagaon sasaram hajipur bhimavaram madanapalle
+siwan bettiah guntakal srikakulam motihari gudivada phagwara suryapet karaikudi
+kishanganj jamalpur ballia kavali amaravati buxar jehanabad gangtok kohima itanagar
+shillong panaji silvassa mangalore mangaluru vizag visakhapatnam tirupati tiruchirappalli
+india indian bharat asia asian europe european america american china chinese japan
+japanese korea russia africa gulf arabia emirates dubai london newyork singapore
+
+# ---------------------------------------------------------------------------
+# Given names.
+#
+# Founder-named companies are common here — Lokesh Machines, Kirloskar, Bajaj —
+# and the given name half of that pattern collides with every politician,
+# executive and sportsperson in the news. The surname half is usually
+# distinctive enough to survive, so only forenames are listed.
+lokesh ramesh suresh mahesh rajesh ganesh dinesh naresh mukesh hitesh nilesh
+jignesh bhavesh paresh ritesh mitesh amit anil sunil vinod ashok arun rakesh
+manoj sanjay vijay ajay kishore krishna rama shiva shiv lakshmi kamal vishal
+deepak prakash rajendra narendra surendra devendra jitendra mahendra virendra
+yogesh umesh nitesh gaurav vikas vivek rahul rohit sachin sameer pankaj alok
+ashish atul chetan harish jayesh kunal manish nikhil pramod praveen rajiv
+sandeep sudhir tarun varun aditya arjun karan nitin rohan sagar siddharth
+abhishek akash ankit ankur bharat chirag darshan gagan hemant imran jatin
+kartik lalit mohit naveen nishant piyush pooja priya rajat ravi sahil shyam
+sourav tushar uday vikram vinay vishnu yash arvind bhupendra chandra devi
+gopal govind hari jagdish jayant keshav madan mohan mukund murali narayan
+nitya padma parth raghav rajan raman sanjeev shankar sharad subhash sushil
+swami tara tejas venkat vidya vinit yogendra
+
+# ---------------------------------------------------------------------------
+# Sector and commodity nouns.
+#
+# These name what a company does rather than which company it is. As a lead
+# word each one claims an entire industry's coverage: "coffee" would hand
+# every story about the crop to Coffee Day, and "campus" every story about a
+# building site to Campus Activewear.
+campus coffee cocoa sugar cotton jute silk wool cement clinker paper pulp glass
+rubber leather textile textiles spinning weaving knitting dyeing chemicals
+chemical petrochemical polymer plastics packaging pharma pharmaceutical
+pharmaceuticals healthcare hospital hospitals clinic diagnostics laboratory
+laboratories hotel hotels resort resorts tourism travel airline airways aviation
+shipping port ports logistics cargo freight courier telecom telecommunication
+cable wire wires pipe pipes tube tubes steel iron alloy alloys foundry forge
+forging casting castings bearing bearings gear gears pump pumps valve valves
+engine engines turbine boiler furnace mill mills plantation plantations estate
+estates farm farms dairy poultry feeds seed seeds fertiliser fertilizer
+fertilisers pesticide agro agri agriculture beverage beverages brewery
+breweries distillery distilleries spirits wine tobacco cigarette jewellery
+jewellers gems granite marble ceramic ceramics tiles sanitary watches apparel
+apparels garment garments fashion footwear retail mart bazaar store stores mall
+realty housing infra infrastructure construction builders developers projects
+engineering industries industrial manufacturing technologies technology systems
+solutions services consultancy consulting software digital cyber cloud mobile
+telecom media entertainment films studios broadcasting publishing education
+learning academy institute finance capital securities broking investment
+investments holdings ventures equity mutual insurance assurance credit leasing
+petroleum petro refinery refineries gas oils lubricants mining minerals metals
+metal aluminium copper zinc lead nickel coal lignite power electric electricals
+electronics semiconductor battery batteries renewable wind hydro thermal nuclear

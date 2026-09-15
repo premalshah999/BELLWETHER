@@ -1,0 +1,208 @@
+package events
+
+import "testing"
+
+func TestClassifyHeadline(t *testing.T) {
+	cases := []struct {
+		name     string
+		headline string
+		want     Type
+	}{
+		{"order win", "L&T bags Rs 4,200 crore metro contract", TypeOrderWin},
+		{"resignation", "Infosys CFO resigns with immediate effect", TypeManagementChange},
+		{"regulatory", "SEBI bars Karvy from securities market", TypeRegulatoryAction},
+		{"insolvency", "NCLT admits Company X for insolvency proceedings", TypeInsolvency},
+		{"auditor", "Deloitte resigns as auditor of Company Y", TypeAuditorChange},
+		{"results", "TCS Q1 results: net profit rises 12%", TypeEarnings},
+		{"acquisition", "Reliance acquires majority stake in retail chain", TypeAcquisition},
+		{"credit", "ICRA downgrades Company Z long-term rating", TypeCreditRating},
+		{"macro", "RBI holds repo rate at 6.5%", TypeMacroEvent},
+		{"commodity", "Brent crude rises 4% after OPEC decision", TypeCommodityEvent},
+		{"geopolitics", "US announces fresh tariff on steel imports", TypeGeopoliticalEvent},
+		{"buyback", "Wipro board approves share buyback", TypeBuyback},
+		{"pledge", "Promoter pledge rises to 42% in Company A", TypePledge},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, matched := ClassifyHeadline(tc.headline, "")
+			if !matched {
+				t.Fatalf("no rule matched %q", tc.headline)
+			}
+			if got.Type != tc.want {
+				t.Errorf("type = %s, want %s (matched %q)", got.Type, tc.want, got.Matched)
+			}
+			if got.Confidence <= 0 || got.Confidence > 0.7 {
+				t.Errorf("confidence = %.2f; the keyword pass should be modest about itself", got.Confidence)
+			}
+		})
+	}
+}
+
+// TestWordBoundariesPreventFalsePositives is why the patterns are anchored.
+// Without boundaries "order" matches "disorder" and "merger" matches "emerger".
+func TestWordBoundariesPreventFalsePositives(t *testing.T) {
+	cases := []struct{ headline string }{
+		{"Sleep disorder treatment maker files for approval"},
+		{"Tape recorder maker reports higher sales"},
+		{"Emerger fund launches new scheme"},
+		{"Company reappoints its longstanding advisor"},
+	}
+	for _, tc := range cases {
+		got, matched := ClassifyHeadline(tc.headline, "")
+		if matched && (got.Type == TypeOrderWin || got.Type == TypeMerger) {
+			t.Errorf("%q wrongly classified as %s via %q", tc.headline, got.Type, got.Matched)
+		}
+	}
+}
+
+// TestUnmatchedStaysUnclassified: a confident wrong label is worse than none.
+func TestUnmatchedStaysUnclassified(t *testing.T) {
+	for _, headline := range []string{
+		"Rupee leads Asian currencies higher",
+		"Markets end flat in a listless session",
+		"A profile of the country's oldest textile mill",
+	} {
+		got, matched := ClassifyHeadline(headline, "")
+		if matched {
+			t.Logf("note: %q matched %s via %q", headline, got.Type, got.Matched)
+		}
+		if got.Type != TypeUnclassified && !matched {
+			t.Errorf("%q returned %s without matching", headline, got.Type)
+		}
+	}
+}
+
+// TestHeadlineOutranksSummary: a match in the headline is stronger evidence.
+func TestHeadlineOutranksSummary(t *testing.T) {
+	inHeadline, _ := ClassifyHeadline("Company bags large order", "Some background text.")
+	inSummary, _ := ClassifyHeadline("Company publishes annual update", "The company bags a large order this quarter.")
+
+	if inHeadline.Confidence <= inSummary.Confidence {
+		t.Errorf("headline confidence %.2f should exceed summary confidence %.2f",
+			inHeadline.Confidence, inSummary.Confidence)
+	}
+}
+
+func TestUrgent(t *testing.T) {
+	urgent := []string{
+		"BREAKING: Company X CFO resigns",
+		"Trading halted in Company Y shares",
+		"SEBI bars promoter from the market",
+		"Company Z defaults on bond payment",
+	}
+	routine := []string{
+		"Company files its annual report",
+		"Board meeting scheduled for next Tuesday",
+		"Company publishes newspaper advertisement",
+	}
+	for _, h := range urgent {
+		if !Urgent(h, "") {
+			t.Errorf("%q should be urgent", h)
+		}
+	}
+	for _, h := range routine {
+		if Urgent(h, "") {
+			t.Errorf("%q should not be urgent", h)
+		}
+	}
+}
+
+// TestTroublePrecedesCommerce pins the ordering: a story that is both is
+// primarily the regulatory one.
+func TestTroublePrecedesCommerce(t *testing.T) {
+	got, matched := ClassifyHeadline("Company wins order after SEBI bars rival bidder", "")
+	if !matched {
+		t.Fatal("expected a match")
+	}
+	if got.Type != TypeRegulatoryAction {
+		t.Errorf("type = %s, want REGULATORY_ACTION: trouble outranks commerce", got.Type)
+	}
+}
+
+// TestMeasuredKeywordGaps covers wordings found missing against live data.
+func TestMeasuredKeywordGaps(t *testing.T) {
+	cases := []struct {
+		headline string
+		want     Type
+	}{
+		{"Ircon fined ₹9.66 lakh each by NSE, BSE for board non-compliance", TypeRegulatoryAction},
+		{"Company penalised for disclosure lapse", TypeRegulatoryAction},
+		{"Emerson Lands 13-Year Equinor Deal to Optimize Operations", TypeOrderWin},
+		{"Company receives order worth Rs 500 crore", TypeOrderWin},
+	}
+	for _, tc := range cases {
+		got, matched := ClassifyHeadline(tc.headline, "")
+		if !matched {
+			t.Errorf("no rule matched %q", tc.headline)
+			continue
+		}
+		if got.Type != tc.want {
+			t.Errorf("%q = %s, want %s (matched %q)", tc.headline, got.Type, tc.want, got.Matched)
+		}
+	}
+}
+
+// TestUnactionable separates foreign coverage that reaches Indian equities
+// from foreign coverage that does not.
+func TestUnactionable(t *testing.T) {
+	drop := []string{
+		"US stocks today: US stocks close higher on tech rebound",
+		// Escaped the old filter by mentioning inflation. A US index wrap is
+		// a US index wrap whatever else it mentions.
+		"Dow Jones| Nasdaq | S&P 500 | US Stock Market Today |Highlights: US stocks rebound ahead of Nvidia earnings, inflation data",
+		"Apple launches faster Mac mini, Mac Studio to tap AI boom",
+		"Alibaba launches Wan3.0 AI video model after $10 billion share sale",
+		"Dow Jones | Nasdaq | S&P 500 Highlights",
+		"Franklin's Araghi Says Nvidia Holders Want Map, Not Just a Beat",
+		"RSI Alert: Polestar Automotive Now Oversold",
+		"Danaos Corp stock hits 52-week high at 152.63 USD",
+		"Amazon.com Trades at Significant Discount to Intrinsic Value",
+	}
+	keep := []string{
+		// Foreign, and squarely relevant: these reach Indian companies
+		// through inputs, trade and rates.
+		"Crude oil prices slide 4% as markets look past Iran sanctions",
+		"Canada slaps retaliatory tariffs on US goods worth $20 billion",
+		"European LNG prices surge to highest level since 2023",
+		"Apple expands India manufacturing with third supplier",
+		"Four India-based companies bear the brunt of US Iran sanctions",
+		// Domestic, obviously.
+		"RBI holds repo rate at 6.5%",
+		"Reliance declares interim dividend",
+	}
+	for _, h := range drop {
+		if !Unactionable(h, "") {
+			t.Errorf("%q should be filtered as unactionable", h)
+		}
+	}
+	for _, h := range keep {
+		if Unactionable(h, "") {
+			t.Errorf("%q should be kept", h)
+		}
+	}
+}
+
+func TestNotReadableHere(t *testing.T) {
+	cases := []struct {
+		headline string
+		want     bool
+		why      string
+	}{
+		{"आईसीएटी ने 15-मीटर लंबी मल्टी-एक्सल स्लीपर बस के लिए पहला अनुपालन प्रमाण-पत्र", true,
+			"a wholly Devanagari headline, which topped an English feed at importance 6"},
+		{"Reliance Industries posts record quarterly profit", false, "plain English"},
+		{"HUL Q1 net profit rises 4% to ₹2,472 crore", false, "a rupee sign does not make it unreadable"},
+		{"Tata Motors' ₹18,000 crore capex plan for FY27", false, "currency and digits carry no script"},
+		{"Adani Ports (अदाणी पोर्ट्स) wins Colombo terminal deal", false,
+			"a parenthetical in another script inside an English headline"},
+		{"", false, "nothing to judge"},
+		{"2026-08-26 15:30", false, "digits and punctuation alone are not another script"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.why, func(t *testing.T) {
+			if got := NotReadableHere(tc.headline); got != tc.want {
+				t.Errorf("NotReadableHere(%q) = %v, want %v", tc.headline, got, tc.want)
+			}
+		})
+	}
+}

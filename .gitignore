@@ -1,0 +1,33 @@
+# Secrets
+.env
+
+# Runtime data
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Build output
+/tradesys
+
+# Frontend
+/web/node_modules/
+# The Go binary embeds web/dist, so the directory must exist in a fresh clone —
+# but its contents are build artefacts.
+/web/dist/*
+!/web/dist/.gitkeep
+
+# Tooling caches
+/web/.vite/
+
+# TypeScript incremental build state
+/web/tsconfig.tsbuildinfo
+
+# Logs
+*.log
+
+# Ad-hoc debug/probe binaries built at the repo root during development —
+# not part of the source tree, not referenced by any build step.
+/artprobe
+/fundload
+/scantest

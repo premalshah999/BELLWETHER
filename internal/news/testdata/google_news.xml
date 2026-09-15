@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <generator>NFE/5.0</generator>
+    <title>"Reliance Industries" - Google News</title>
+    <link>https://news.google.com/search?q=Reliance</link>
+    <language>en-IN</language>
+    <item>
+      <title>Reliance Industries slips 2% on refining margin concerns - Reuters</title>
+      <link>https://news.google.com/rss/articles/CBMiK2h0dHBz?oc=5</link>
+      <guid isPermaLink="false">CBMiK2h0dHBz</guid>
+      <pubDate>Mon, 24 Aug 2026 09:12:00 GMT</pubDate>
+      <description>&lt;a href="https://www.reuters.com/x"&gt;Reliance Industries slips&lt;/a&gt;&nbsp;&lt;font color="#6f6f6f"&gt;Reuters&lt;/font&gt;</description>
+      <source url="https://www.reuters.com">Reuters</source>
+    </item>
+    <item>
+      <title>Jio adds 3.1 million subscribers in July &amp; leads additions</title>
+      <link>https://economictimes.indiatimes.com/tech/jio/articleshow/1234.cms</link>
+      <pubDate>Mon, 24 Aug 2026 04:30:00 +0530</pubDate>
+      <source url="https://economictimes.indiatimes.com">The Economic Times</source>
+    </item>
+    <item>
+      <title>An item with no link at all</title>
+      <pubDate>Mon, 24 Aug 2026 04:30:00 +0530</pubDate>
+    </item>
+    <item>
+      <title></title>
+      <link>https://example.com/no-title</link>
+      <pubDate>Mon, 24 Aug 2026 04:30:00 +0530</pubDate>
+    </item>
+    <item>
+      <title>Undated story about Reliance</title>
+      <link>https://www.livemint.com/undated</link>
+      <pubDate>not a date at all</pubDate>
+      <source url="https://www.livemint.com">Mint</source>
+    </item>
+  </channel>
+</rss>

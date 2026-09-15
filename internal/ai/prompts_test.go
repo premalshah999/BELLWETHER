@@ -1,0 +1,216 @@
+package ai
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestEveryPromptParsesAndRenders(t *testing.T) {
+	// A malformed template must never be discovered at 08:30 IST inside a
+	// cron job, so every prompt is exercised here with representative data.
+	cases := map[string]any{
+		PromptSystem: nil,
+		PromptAlertContext: map[string]any{
+			"AlgorithmName": "Momentum watch",
+			"Symbol":        "RELIANCE.BSE",
+			"Summary":       "RSI(14)=32.10 < 35",
+			"Price":         "2,431.00",
+			"News": []map[string]string{
+				{"Title": "Reliance falls", "Source": "Reuters", "Age": "2h ago"},
+			},
+		},
+		PromptEventBrief: map[string]any{
+			"Headline":  "Time Technoplast Limited: securing order of Rs. 250 crore",
+			"Body":      "The company has secured an order worth Rs. 250 crore for composite cylinders, to be executed over eighteen months.",
+			"EventType": "CONTRACT",
+			"Companies": "TIMETECHNO",
+			"Source":    "NSE Corporate Announcements",
+			"Official":  true,
+			"Published": "2026-08-31T12:01:00Z",
+		},
+		PromptMorningBrief: map[string]any{
+			"Date": "24 Aug 2026", "TZ": "Asia/Kolkata",
+			"Symbols": []map[string]string{
+				{"Symbol": "AAPL", "Price": "310.34", "ChangePercent": "+0.61%", "Note": "above SMA20"},
+			},
+			"News":   []map[string]string{{"Symbol": "AAPL", "Title": "T", "Source": "S", "Age": "1h ago"}},
+			"Alerts": []map[string]string{{"AlgorithmName": "A", "Symbol": "AAPL", "Summary": "fired"}},
+		},
+		PromptEventClassify: map[string]any{
+			"Types": "ORDER_WIN, EARNINGS, DIVIDEND",
+			"Events": []map[string]any{{
+				"ID": "12", "Type": "ORDER_WIN", "Importance": "7",
+				"Headline": "Larsen & Toubro: receipt of an order worth Rs 4,200 crore",
+				"Summary":  "receipt of an order", "Facts": "PURPOSE=ORDER",
+				"Companies": "LT", "SourceCount": 3, "Official": true,
+			}},
+		},
+		PromptDeepResearch: map[string]any{
+			"Query": "Reliance retail demerger", "Symbols": "RELIANCE",
+			"History":  []map[string]string{{"Question": "How is Reliance doing?", "Answer": "Refining margins improved."}},
+			"Universe": []map[string]string{{"Industry": "Construction Materials", "Symbols": "ULTRACEMCO, ACC"}},
+			"Count":    2, "Scrapers": "google_news, gdelt",
+			"Sources": []map[string]any{{
+				"Index": 1, "Title": "Reliance weighs retail demerger",
+				"Publisher": "Reuters", "Snippet": "People familiar said…",
+				"Age": "2h ago", "Trust": 95,
+			}},
+		},
+		PromptResearchFollowup: map[string]any{
+			"Question": "what about their debt?", "Symbols": "SUZLON",
+			"History": []map[string]string{{"Question": "How is Suzlon doing?", "Answer": "It won orders."}},
+		},
+		PromptSymbolDebrief: map[string]any{
+			"Symbol": "SUZLON", "Company": "Suzlon Energy Limited",
+			"Period": "last 30 days", "Count": 12, "Official": 9,
+			"Industry": "Capital Goods",
+			"Events": []map[string]any{{
+				"ID": 4, "When": "25 Aug 14:32", "Type": "ORDER_WIN", "Official": true,
+				"Importance": 7, "Headline": "Suzlon bags 250 MW order",
+				"Summary": "from Torrent Green Energy", "Facts": "PURPOSE=ORDER",
+			}},
+		},
+		PromptNewsDigest: map[string]any{
+			"Symbol": "RELIANCE.BSE", "Company": "Reliance Industries",
+			"Articles": []map[string]string{{"ID": "a1", "Title": "T", "Source": "S", "Age": "1h ago"}},
+		},
+		PromptExplainMove: map[string]any{
+			"Symbol": "AAPL", "Price": "310.34", "Change": "+1.88", "ChangePercent": "+0.61%",
+			"DayLow": "308", "DayHigh": "312", "Volume": "27.8M", "VolumeNote": "0.5x average",
+			"TrendNote": "below its 20-day average",
+			"Sources": []map[string]any{
+				{"Index": 1, "Title": "T", "URL": "https://example.com", "Snippet": "S"},
+			},
+		},
+		PromptOutlook: map[string]any{
+			"Symbol": "AAPL", "HorizonDays": 10, "Price": "310.34", "Volatility": "1.4% daily",
+			"TrendNote": "sideways", "RSI": "48.8", "FromHigh": "-8.2%", "FromLow": "+31.0%",
+			"News": []map[string]string{{"Title": "T", "Source": "S", "Age": "1h ago"}},
+		},
+		PromptCalcHelper: map[string]any{
+			"Question": "How many shares for 1% risk?",
+			"Inputs":   []map[string]string{{"Label": "Account", "Value": "1,000,000"}},
+			"Results":  []map[string]string{{"Label": "Shares", "Value": "134"}},
+			"Warnings": []string{"Position exceeds 20% of the account."},
+		},
+	}
+
+	for name, data := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, err := RenderPrompt(name, data)
+			if err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			if strings.TrimSpace(got) == "" {
+				t.Fatal("rendered to nothing")
+			}
+			// An unfilled placeholder means a field name changed without the
+			// template being updated.
+			if strings.Contains(got, "<no value>") {
+				t.Errorf("template has an unfilled placeholder:\n%s", got)
+			}
+			if strings.Contains(got, "{{") {
+				t.Errorf("template left raw syntax in the output:\n%s", got)
+			}
+		})
+	}
+}
+
+func TestAllPromptFilesAreCovered(t *testing.T) {
+	// Every file in prompts/ must be exercised by the test above, or a
+	// template could rot unnoticed.
+	covered := map[string]bool{
+		PromptSystem: true, PromptAlertContext: true, PromptMorningBrief: true,
+		PromptNewsDigest: true, PromptExplainMove: true, PromptOutlook: true,
+		PromptCalcHelper: true, PromptEventClassify: true, PromptDeepResearch: true,
+		PromptResearchFollowup: true, PromptSymbolDebrief: true,
+		PromptEventBrief: true,
+	}
+	for _, name := range PromptNames() {
+		if !covered[name] {
+			t.Errorf("prompt %q has no coverage in TestEveryPromptParsesAndRenders", name)
+		}
+	}
+	if len(PromptNames()) != len(covered) {
+		t.Errorf("found %d prompts, expected %d", len(PromptNames()), len(covered))
+	}
+}
+
+func TestPromptsRenderWithEmptyCollections(t *testing.T) {
+	// The common degraded case: search returned nothing, no news was
+	// collected, no algorithms fired. The prompt must still make sense and
+	// must tell the model that the section is genuinely empty, so it does not
+	// invent entries.
+	tests := []struct {
+		name     string
+		prompt   string
+		data     any
+		wantText string
+	}{
+		{
+			name:   "alert context without news",
+			prompt: PromptAlertContext,
+			data: map[string]any{
+				"AlgorithmName": "A", "Symbol": "S", "Summary": "x", "Price": "1", "News": nil,
+			},
+			wantText: "No recent news",
+		},
+		{
+			name:   "explain move without sources",
+			prompt: PromptExplainMove,
+			data: map[string]any{
+				"Symbol": "S", "Price": "1", "Change": "0", "ChangePercent": "0%",
+				"DayLow": "1", "DayHigh": "1", "Volume": "1", "TrendNote": "flat", "Sources": nil,
+			},
+			wantText: "No sources were retrieved",
+		},
+		{
+			name:   "morning brief with nothing to report",
+			prompt: PromptMorningBrief,
+			data: map[string]any{
+				"Date": "d", "TZ": "t", "Symbols": nil, "News": nil, "Alerts": nil,
+			},
+			wantText: "No algorithms fired",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := RenderPrompt(tc.prompt, tc.data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(got, tc.wantText) {
+				t.Errorf("rendered prompt does not say %q:\n%s", tc.wantText, got)
+			}
+		})
+	}
+}
+
+func TestSystemPromptForbidsAdvice(t *testing.T) {
+	// This application is explicitly not an advice tool, and the system
+	// prompt is where that is enforced for every feature at once.
+	// Whitespace is normalised before matching. These phrases are prose, and
+	// prose gets rewrapped: an earlier edit put a line break between "price"
+	// and "targets", which broke this test without weakening the prompt at
+	// all. A test that fails on reflowing invites being weakened to make it
+	// pass, and this is the one guarantee that should never be weakened.
+	sys := strings.Join(strings.Fields(SystemMessage().Content), " ")
+	for _, phrase := range []string{"recommendation", "price target", "Never invent"} {
+		if !strings.Contains(sys, phrase) {
+			t.Errorf("the system prompt does not forbid %q", phrase)
+		}
+	}
+	if SystemMessage().Role != RoleSystem {
+		t.Error("SystemMessage has the wrong role")
+	}
+}
+
+func TestUnknownPrompt(t *testing.T) {
+	if _, err := RenderPrompt("no_such_prompt", nil); err == nil {
+		t.Error("want an error for an unknown prompt name")
+	}
+	if _, err := UserPrompt("no_such_prompt", nil); err == nil {
+		t.Error("want an error from UserPrompt too")
+	}
+}
