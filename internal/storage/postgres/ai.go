@@ -1,0 +1,393 @@
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/tradesys/dashboard/internal/ai"
+	"github.com/tradesys/dashboard/internal/search"
+)
+
+// LLMTokensUsed reports total consumption in a period.
+func (d *DB) LLMTokensUsed(ctx context.Context, period string) (int, error) {
+	var total sql.NullInt64
+	if err := d.db.QueryRowContext(ctx,
+		`SELECT sum(total_tokens) FROM llm_usage WHERE period = $1`, period).Scan(&total); err != nil {
+		return 0, fmt.Errorf("postgres: llm tokens used: %w", err)
+	}
+	return int(total.Int64), nil
+}
+
+// RecordLLMUsage appends one usage record.
+func (d *DB) RecordLLMUsage(ctx context.Context, rec ai.UsageRecord) error {
+	_, err := d.db.ExecContext(ctx, `
+INSERT INTO llm_usage (period, feature, model, prompt_tokens, completion_tokens, total_tokens, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		rec.Period, rec.Feature, rec.Model,
+		rec.Usage.PromptTokens, rec.Usage.CompletionTokens, rec.Usage.TotalTokens, rec.At.UTC())
+	if err != nil {
+		return fmt.Errorf("postgres: record llm usage: %w", err)
+	}
+	return nil
+}
+
+// LLMUsageByFeature breaks a period's consumption down by feature.
+func (d *DB) LLMUsageByFeature(ctx context.Context, period string) (map[string]int, error) {
+	rows, err := d.db.QueryContext(ctx,
+		`SELECT feature, sum(total_tokens) FROM llm_usage WHERE period = $1 GROUP BY feature`, period)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: llm usage by feature: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]int{}
+	for rows.Next() {
+		var (
+			feature string
+			total   sql.NullInt64
+		)
+		if err := rows.Scan(&feature, &total); err != nil {
+			return nil, fmt.Errorf("postgres: scan llm usage: %w", err)
+		}
+		out[feature] = int(total.Int64)
+	}
+	return out, rows.Err()
+}
+
+// SaveOutput stores a generated AI artefact.
+func (d *DB) SaveOutput(ctx context.Context, out *ai.Output) (int64, error) {
+	var id int64
+	// Content is JSONB, so a malformed payload is rejected at the write
+	// rather than discovered when the archive page tries to render it.
+	err := d.db.QueryRowContext(ctx, `
+INSERT INTO ai_outputs (kind, symbol, created_at, model, tokens, content)
+VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		out.Kind, out.Symbol, out.CreatedAt.UTC(), out.Model, out.Tokens, []byte(out.Content)).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("postgres: save ai output: %w", err)
+	}
+	out.ID = id
+	return id, nil
+}
+
+const aiOutputColumns = `id, kind, symbol, created_at, model, tokens, content`
+
+func scanOutput(r rowScanner) (ai.Output, error) {
+	var (
+		o       ai.Output
+		content []byte
+	)
+	if err := r.Scan(&o.ID, &o.Kind, &o.Symbol, &o.CreatedAt, &o.Model, &o.Tokens, &content); err != nil {
+		return ai.Output{}, err
+	}
+	o.CreatedAt = o.CreatedAt.UTC()
+	o.Content = content
+	return o, nil
+}
+
+// LatestOutput returns the newest artefact of a kind.
+func (d *DB) LatestOutput(ctx context.Context, kind, symbol string) (ai.Output, bool, error) {
+	query := `SELECT ` + aiOutputColumns + ` FROM ai_outputs WHERE kind = $1`
+	args := []any{kind}
+	if symbol != "" {
+		query += " AND symbol = $2"
+		args = append(args, symbol)
+	}
+	query += " ORDER BY created_at DESC, id DESC LIMIT 1"
+
+	out, err := scanOutput(d.db.QueryRowContext(ctx, query, args...))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ai.Output{}, false, nil
+	}
+	if err != nil {
+		return ai.Output{}, false, fmt.Errorf("postgres: latest ai output: %w", err)
+	}
+	return out, true, nil
+}
+
+// ListOutputs returns recent artefacts for the archive page.
+func (d *DB) ListOutputs(ctx context.Context, kind string, limit int) ([]ai.Output, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	query := `SELECT ` + aiOutputColumns + ` FROM ai_outputs`
+	args := []any{}
+	if kind != "" {
+		query += " WHERE kind = $1"
+		args = append(args, kind)
+	}
+	args = append(args, limit)
+	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d", len(args))
+
+	rows, err := d.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list ai outputs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ai.Output
+	for rows.Next() {
+		o, err := scanOutput(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan ai output: %w", err)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+const outlookColumns = `id, symbol, created_at, horizon_days, price_at_creation,
+    base_probability, base_move, base_reasoning,
+    bull_probability, bull_move, bull_reasoning,
+    bear_probability, bear_move, bear_reasoning,
+    key_risk, model, resolved_at, realized_price, realized_move,
+    actual_scenario, brier_score`
+
+func scanOutlook(r rowScanner) (ai.Outlook, error) {
+	var (
+		o                           ai.Outlook
+		resolvedAt                  sql.NullTime
+		realizedPrice, realizedMove sql.NullFloat64
+		brier                       sql.NullFloat64
+	)
+	if err := r.Scan(&o.ID, &o.Symbol, &o.CreatedAt, &o.HorizonDays, &o.PriceAtCreation,
+		&o.Base.Probability, &o.Base.MovePercent, &o.Base.Reasoning,
+		&o.Bull.Probability, &o.Bull.MovePercent, &o.Bull.Reasoning,
+		&o.Bear.Probability, &o.Bear.MovePercent, &o.Bear.Reasoning,
+		&o.KeyRisk, &o.Model, &resolvedAt, &realizedPrice, &realizedMove,
+		&o.ActualScenario, &brier); err != nil {
+		return ai.Outlook{}, err
+	}
+	o.CreatedAt = o.CreatedAt.UTC()
+	if resolvedAt.Valid {
+		t := resolvedAt.Time.UTC()
+		o.ResolvedAt = &t
+	}
+	// These stay nil when unresolved. A pointer distinguishes "not scored
+	// yet" from "scored zero", and a Brier score of zero is a perfect
+	// forecast rather than a missing one.
+	if realizedPrice.Valid {
+		v := realizedPrice.Float64
+		o.RealizedPrice = &v
+	}
+	if realizedMove.Valid {
+		v := realizedMove.Float64
+		o.RealizedMove = &v
+	}
+	if brier.Valid {
+		v := brier.Float64
+		o.BrierScore = &v
+	}
+	return o, nil
+}
+
+// SaveOutlook records a forecast.
+func (d *DB) SaveOutlook(ctx context.Context, o *ai.Outlook) (int64, error) {
+	var id int64
+	err := d.db.QueryRowContext(ctx, `
+INSERT INTO outlooks (
+    symbol, created_at, horizon_days, price_at_creation,
+    base_probability, base_move, base_reasoning,
+    bull_probability, bull_move, bull_reasoning,
+    bear_probability, bear_move, bear_reasoning,
+    key_risk, model)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+RETURNING id`,
+		o.Symbol, o.CreatedAt.UTC(), o.HorizonDays, o.PriceAtCreation,
+		o.Base.Probability, o.Base.MovePercent, o.Base.Reasoning,
+		o.Bull.Probability, o.Bull.MovePercent, o.Bull.Reasoning,
+		o.Bear.Probability, o.Bear.MovePercent, o.Bear.Reasoning,
+		o.KeyRisk, o.Model).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("postgres: save outlook: %w", err)
+	}
+	o.ID = id
+	return id, nil
+}
+
+// ListOutlooks returns recorded forecasts.
+func (d *DB) ListOutlooks(ctx context.Context, symbol string, limit int) ([]ai.Outlook, error) {
+	if limit <= 0 || limit > 2000 {
+		limit = 200
+	}
+	query := `SELECT ` + outlookColumns + ` FROM outlooks`
+	args := []any{}
+	if symbol != "" {
+		query += " WHERE symbol = $1"
+		args = append(args, symbol)
+	}
+	args = append(args, limit)
+	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d", len(args))
+
+	rows, err := d.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list outlooks: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ai.Outlook
+	for rows.Next() {
+		o, err := scanOutlook(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan outlook: %w", err)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// DueOutlooks returns unresolved forecasts whose horizon has elapsed.
+//
+// The horizon is in trading days, so it is stretched by seven fifths to reach
+// a calendar date. Postgres does that arithmetic in interval terms rather than
+// in seconds, which keeps it correct across a daylight-saving boundary — not
+// something India observes, but the global feeds this system reads do.
+func (d *DB) DueOutlooks(ctx context.Context, before time.Time) ([]ai.Outlook, error) {
+	rows, err := d.db.QueryContext(ctx, `
+SELECT `+outlookColumns+` FROM outlooks
+WHERE resolved_at IS NULL
+  AND created_at + make_interval(days => (horizon_days * 7 / 5)) < $1
+ORDER BY created_at ASC
+LIMIT 200`, before.UTC())
+	if err != nil {
+		return nil, fmt.Errorf("postgres: due outlooks: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ai.Outlook
+	for rows.Next() {
+		o, err := scanOutlook(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan due outlook: %w", err)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// ResolveOutlook scores a forecast against what happened.
+//
+// The guard on resolved_at makes this idempotent: a second attempt affects no
+// rows rather than overwriting a score with a later, different one.
+func (d *DB) ResolveOutlook(ctx context.Context, o *ai.Outlook) error {
+	if o.ResolvedAt == nil {
+		return fmt.Errorf("postgres: cannot resolve outlook %d without a resolution time", o.ID)
+	}
+	_, err := d.db.ExecContext(ctx, `
+UPDATE outlooks
+SET resolved_at = $1, realized_price = $2, realized_move = $3,
+    actual_scenario = $4, brier_score = $5
+WHERE id = $6 AND resolved_at IS NULL`,
+		o.ResolvedAt.UTC(), o.RealizedPrice, o.RealizedMove,
+		o.ActualScenario, o.BrierScore, o.ID)
+	if err != nil {
+		return fmt.Errorf("postgres: resolve outlook: %w", err)
+	}
+	return nil
+}
+
+// LoadSearch reads a cached search result.
+func (d *DB) LoadSearch(ctx context.Context, key string) (search.Results, bool, error) {
+	var (
+		raw             []byte
+		query, provider string
+		fetchedAt       time.Time
+	)
+	err := d.db.QueryRowContext(ctx,
+		`SELECT query, provider, results, fetched_at FROM search_cache WHERE key = $1`, key).
+		Scan(&query, &provider, &raw, &fetchedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return search.Results{}, false, nil
+	}
+	if err != nil {
+		return search.Results{}, false, fmt.Errorf("postgres: load search: %w", err)
+	}
+	var out search.Results
+	// A cached payload that no longer decodes is treated as a miss rather
+	// than an error: the caller simply fetches again.
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return search.Results{}, false, nil
+	}
+	out.Query, out.Provider = query, provider
+	out.FetchedAt = fetchedAt.UTC()
+	return out, true, nil
+}
+
+// SaveSearch stores a search result.
+func (d *DB) SaveSearch(ctx context.Context, key string, r search.Results) error {
+	raw, err := json.Marshal(r)
+	if err != nil {
+		return fmt.Errorf("postgres: encode search results: %w", err)
+	}
+	_, err = d.db.ExecContext(ctx, `
+INSERT INTO search_cache (key, query, provider, results, fetched_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (key) DO UPDATE SET
+    query = excluded.query, provider = excluded.provider,
+    results = excluded.results, fetched_at = excluded.fetched_at`,
+		key, r.Query, r.Provider, raw, r.FetchedAt.UTC())
+	if err != nil {
+		return fmt.Errorf("postgres: save search: %w", err)
+	}
+	return nil
+}
+
+// DeleteOutput removes one stored AI artefact.
+//
+// Generated output is disposable by nature — a morning brief is a snapshot of
+// a morning, and a wrong or stale one is clutter rather than a record. The
+// events and prices it was drawn from are untouched, so anything deleted here
+// can be regenerated.
+func (d *DB) DeleteOutput(ctx context.Context, id int64) error {
+	res, err := d.db.ExecContext(ctx, `DELETE FROM ai_outputs WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("postgres: delete ai output: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteOutputsOfKind clears every artefact of one kind.
+func (d *DB) DeleteOutputsOfKind(ctx context.Context, kind string) (int, error) {
+	if strings.TrimSpace(kind) == "" {
+		return 0, fmt.Errorf("postgres: no kind given")
+	}
+	res, err := d.db.ExecContext(ctx, `DELETE FROM ai_outputs WHERE kind = $1`, kind)
+	if err != nil {
+		return 0, fmt.Errorf("postgres: delete ai outputs of kind %q: %w", kind, err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// DeleteOutlook removes one recorded forecast.
+//
+// Deliberately refuses to delete a resolved one. A resolved outlook is a
+// scored prediction, and the calibration page is only honest if the record it
+// averages cannot be pruned of its failures. Unresolved forecasts have not
+// been scored yet and are safe to discard.
+func (d *DB) DeleteOutlook(ctx context.Context, id int64) error {
+	var resolved bool
+	err := d.db.QueryRowContext(ctx,
+		`SELECT resolved_at IS NOT NULL FROM outlooks WHERE id = $1`, id).Scan(&resolved)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("postgres: look up outlook: %w", err)
+	}
+	if resolved {
+		return fmt.Errorf("outlook %d has been scored and forms part of the calibration record", id)
+	}
+	if _, err := d.db.ExecContext(ctx, `DELETE FROM outlooks WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("postgres: delete outlook: %w", err)
+	}
+	return nil
+}

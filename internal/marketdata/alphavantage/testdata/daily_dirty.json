@@ -1,0 +1,15 @@
+{
+    "Meta Data": {
+        "1. Information": "Daily Prices (open, high, low, close) and Volumes",
+        "2. Symbol": "TEST",
+        "3. Last Refreshed": "2026-08-21",
+        "4. Output Size": "Compact",
+        "5. Time Zone": "US/Eastern"
+    },
+    "Time Series (Daily)": {
+        "2026-08-21": {"1. open": "10.0000", "2. high": "11.0000", "3. low": "9.5000", "4. close": "10.5000", "5. volume": "1000"},
+        "2026-08-20": {"1. open": "9.0000", "2. high": "", "3. low": "8.5000", "4. close": "9.5000", "5. volume": "900"},
+        "not-a-date":  {"1. open": "1.0000", "2. high": "1.0000", "3. low": "1.0000", "4. close": "1.0000", "5. volume": "1"},
+        "2026-08-19": {"1. open": "8.0000", "2. high": "8.8000", "3. low": "7.9000", "4. close": "8.6000", "5. volume": ""}
+    }
+}

@@ -1,0 +1,128 @@
+// Package ai wraps a single OpenAI-compatible chat-completions endpoint and
+// the features built on top of it.
+//
+// Three constraints shape everything here.
+//
+// The endpoint is assumed to support neither function calling nor JSON-schema
+// enforcement, because the model this is pointed at does not. Structured
+// output is therefore *asked for* in the prompt and parsed defensively, with
+// one repair attempt, and a graceful degradation when that fails.
+//
+// Tokens cost money on a fixed monthly budget. Every call is counted against
+// it before it is made and recorded after, and once the budget is spent the AI
+// features say so plainly instead of failing in ways that look like bugs.
+//
+// Model output is never data. Everything produced here is labelled as AI, with
+// a timestamp, all the way to the UI, and no AI feature is ever load-bearing:
+// alerts fire, charts render, and algorithms evaluate whether or not the model
+// is reachable.
+package ai
+
+import (
+	"context"
+	"errors"
+	"time"
+)
+
+// ErrBudgetExhausted is returned when the monthly token budget is spent. It is
+// an expected condition, not a fault: features surface "budget reached" and
+// carry on without AI.
+var ErrBudgetExhausted = errors.New("ai: monthly token budget exhausted")
+
+// ErrNotConfigured is returned when no LLM credentials were supplied.
+var ErrNotConfigured = errors.New("ai: no LLM configured")
+
+// ErrBadJSON is returned when the model could not be coaxed into emitting
+// parseable JSON, after the repair attempt.
+var ErrBadJSON = errors.New("ai: model did not return usable JSON")
+
+// Status describes why an AI feature has no output, for display in the UI.
+type Status string
+
+const (
+	// StatusOK means the model answered.
+	StatusOK Status = "ok"
+	// StatusUnconfigured means no credentials were supplied.
+	StatusUnconfigured Status = "unconfigured"
+	// StatusBudgetReached means the monthly token budget is spent.
+	StatusBudgetReached Status = "budget_reached"
+	// StatusUnavailable means the model was asked and could not answer.
+	StatusUnavailable Status = "unavailable"
+)
+
+// Role values for chat messages.
+const (
+	RoleSystem    = "system"
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+)
+
+// Message is one turn in a chat completion.
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// Usage is the token accounting for one call.
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// UsageRecord is one billed call, stored for the budget meter and the
+// settings page.
+type UsageRecord struct {
+	// Period is the budget bucket, a UTC month such as "2026-08".
+	Period  string
+	Feature string
+	Model   string
+	Usage   Usage
+	At      time.Time
+}
+
+// BudgetStore persists token consumption. Declared here, at the point of use,
+// so this package does not depend on the storage package.
+type BudgetStore interface {
+	// LLMTokensUsed reports total tokens consumed in a period.
+	LLMTokensUsed(ctx context.Context, period string) (int, error)
+	// RecordLLMUsage stores one call's consumption.
+	RecordLLMUsage(ctx context.Context, rec UsageRecord) error
+	// LLMUsageByFeature breaks a period down for the settings page.
+	LLMUsageByFeature(ctx context.Context, period string) (map[string]int, error)
+}
+
+// BudgetState is what the UI renders on the budget meter.
+type BudgetState struct {
+	Period    string         `json:"period"`
+	Used      int            `json:"used"`
+	Limit     int            `json:"limit"`
+	Exhausted bool           `json:"exhausted"`
+	ByFeature map[string]int `json:"by_feature,omitempty"`
+}
+
+// Remaining is how many tokens are left in the period.
+func (b BudgetState) Remaining() int {
+	if b.Limit <= 0 {
+		return 0
+	}
+	if b.Used >= b.Limit {
+		return 0
+	}
+	return b.Limit - b.Used
+}
+
+// Feature names, used for usage attribution and for the settings breakdown.
+const (
+	FeatureMorningBrief    = "morning_brief"
+	FeatureNewsDigest      = "news_digest"
+	FeatureExplainMove     = "explain_move"
+	FeatureOutlook         = "outlook"
+	FeatureCalcHelper      = "calc_helper"
+	FeatureAlertContext    = "alert_context"
+	FeatureEventBrief      = "event_brief"
+	FeatureEventClassify   = "event_classify"
+	FeatureDeepResearch    = "deep_research"
+	FeatureResearchRewrite = "research_rewrite"
+	FeatureSymbolDebrief   = "symbol_debrief"
+)

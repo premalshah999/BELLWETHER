@@ -1,0 +1,37 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "currency": "INR",
+          "symbol": "RELIANCE.BO",
+          "exchangeName": "BSE",
+          "instrumentType": "EQUITY",
+          "regularMarketTime": 1755846000,
+          "gmtoffset": 19800,
+          "exchangeTimezoneName": "Asia/Kolkata",
+          "regularMarketPrice": 2431.4,
+          "chartPreviousClose": 2402.85,
+          "regularMarketDayHigh": 2440.0,
+          "regularMarketDayLow": 2418.6,
+          "regularMarketVolume": 4128900,
+          "dataGranularity": "1d",
+          "range": "5d"
+        },
+        "timestamp": [1755155400, 1755241800, 1755501000, 1755587400, 1755846000],
+        "indicators": {
+          "quote": [
+            {
+              "open":   [2398.0, 2405.5, 2410.0, 2419.9, 2425.0],
+              "high":   [2412.4, 2419.0, 2428.5, 2433.0, 2440.0],
+              "low":    [2390.1, 2398.7, 2404.2, 2412.5, 2418.6],
+              "close":  [2404.9, 2412.3, 2421.0, 2402.85, 2431.4],
+              "volume": [3110200, 2984400, 3542100, 3998700, 4128900]
+            }
+          ]
+        }
+      }
+    ],
+    "error": null
+  }
+}

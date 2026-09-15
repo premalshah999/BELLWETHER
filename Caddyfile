@@ -1,0 +1,56 @@
+# Reverse proxy with automatic HTTPS.
+#
+# PUBLIC_HOSTNAME is a real DNS name that resolves to this server, which is
+# what lets Let's Encrypt issue a certificate. If you do not own a domain,
+# sslip.io resolves any IP-shaped hostname to that IP at no cost:
+#
+#   203-0-113-10.sslip.io  ->  203.0.113.10
+#
+# Caddy obtains and renews the certificate on its own; there is nothing to
+# schedule and nothing to remember.
+{$PUBLIC_HOSTNAME} {
+	# The live stream is proxied separately, before anything else can touch
+	# it, because the two defaults that make a proxy fast make a stream
+	# broken.
+	#
+	# Compression buffers: an encoder holds bytes back until it has enough to
+	# compress well, which is exactly wrong for a feed whose messages are
+	# small and whose value is arriving immediately. And the reverse proxy
+	# buffers its own writes unless told not to, so events would queue here
+	# rather than reaching the browser.
+	#
+	# Neither failure is visible in a health check. The connection opens, the
+	# headers arrive, and the data simply turns up late or in bursts — which
+	# reads as a slow market rather than a misconfigured proxy.
+	handle /api/stream {
+		reverse_proxy tradesys:8080 {
+			# -1 flushes immediately rather than on a timer.
+			flush_interval -1
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	handle {
+		encode zstd gzip
+
+		# The app itself handles authentication. Caddy's job is transport
+		# security and nothing more.
+		reverse_proxy tradesys:8080 {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	header {
+		# The dashboard is same-origin and self-hosted; these cost nothing and
+		# close off the obvious footguns.
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
