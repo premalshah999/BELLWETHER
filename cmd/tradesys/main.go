@@ -60,28 +60,29 @@ var version = "dev"
 // seedSymbols populate an empty watchlist on first run.
 //
 // A fresh install opening on two tickers looks like a demo, so this is a
-// working set an Indian-and-US operator would plausibly start from: large-cap
-// Indian names across sectors, plus the US megacaps. Anything else is a search
-// away, and the whole list can be removed in a few clicks.
+// working set a US-first operator would plausibly start from: US megacaps
+// across sectors, plus a handful of large-cap Indian names since NSE stays a
+// supported second venue. Anything else is a search away, and the whole list
+// can be removed in a few clicks.
 var seedSymbols = []string{
+	// United States, across sectors rather than tech alone.
+	"AAPL",
+	"MSFT",
+	"NVDA",
+	"GOOGL",
+	"AMZN",
+	"META",
+	"JPM",
+	"XOM",
+	"JNJ",
+	"WMT",
+
 	// India — NSE, which has deeper history than BSE on most of these.
 	"RELIANCE.NSE",
 	"TCS.NSE",
 	"HDFCBANK.NSE",
 	"INFY.NSE",
 	"ICICIBANK.NSE",
-	"SBIN.NSE",
-	"BHARTIARTL.NSE",
-	"ITC.NSE",
-	"LT.NSE",
-	"HINDUNILVR.NSE",
-
-	// United States.
-	"AAPL",
-	"MSFT",
-	"NVDA",
-	"GOOGL",
-	"AMZN",
 }
 
 func main() {
