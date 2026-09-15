@@ -250,9 +250,10 @@ func (s *Server) routes() {
 				r.Delete("/{symbol}", s.handleWatchlistRemove)
 			})
 
-			// Declared before the {symbol} routes so "search" is never
-			// parsed as a ticker.
+			// Declared before the {symbol} routes so "search" and "sectors"
+			// are never parsed as a ticker.
 			r.Get("/symbols/search", s.handleSearchSymbols)
+			r.Get("/symbols/sectors", s.handleSymbolSectors)
 
 			r.Route("/symbols/{symbol}", func(r chi.Router) {
 				r.Get("/candles", s.handleCandles)
