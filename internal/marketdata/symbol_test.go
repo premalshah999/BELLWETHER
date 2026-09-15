@@ -26,6 +26,14 @@ func TestParseSymbol(t *testing.T) {
 		{name: "no ticker", in: ".BSE", wantErr: true},
 		{name: "unknown exchange", in: "FOO.LSE", wantErr: true},
 		{name: "yahoo dialect rejected", in: "RELIANCE.NS", wantErr: true},
+		{name: "class share with dot", in: "BRK.B", want: Symbol{"BRK-B", ExchangeUS}, canonical: "BRK-B", currency: "USD"},
+		{name: "class share with dot lowercase", in: "bf.b", want: Symbol{"BF-B", ExchangeUS}, canonical: "BF-B", currency: "USD"},
+		{name: "class share already hyphenated", in: "BRK-B", want: Symbol{"BRK-B", ExchangeUS}, canonical: "BRK-B", currency: "USD"},
+		{name: "index caret", in: "^GSPC", want: Symbol{"GSPC", ExchangeIndex}, canonical: "GSPC.INDEX", currency: "USD"},
+		{name: "index caret lowercase", in: "^vix", want: Symbol{"VIX", ExchangeIndex}, canonical: "VIX.INDEX", currency: "USD"},
+		{name: "index canonical form", in: "GSPC.INDEX", want: Symbol{"GSPC", ExchangeIndex}, canonical: "GSPC.INDEX", currency: "USD"},
+		{name: "two-letter suffix still rejected", in: "FOO.XX", wantErr: true},
+		{name: "empty class suffix rejected", in: "FOO.", wantErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

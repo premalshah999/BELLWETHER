@@ -73,6 +73,10 @@ func vendorSymbol(sym marketdata.Symbol) (string, error) {
 		return sym.Ticker + ".BO", nil
 	case marketdata.ExchangeNSE:
 		return sym.Ticker + ".NS", nil
+	case marketdata.ExchangeIndex:
+		// Yahoo's own dialect for a benchmark index: a caret prefix, no
+		// suffix. "^GSPC", not "GSPC.INDEX".
+		return "^" + sym.Ticker, nil
 	default:
 		return "", fmt.Errorf("%w: yahoo has no mapping for exchange %q", marketdata.ErrNotSupported, sym.Exchange)
 	}

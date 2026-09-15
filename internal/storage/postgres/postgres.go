@@ -29,13 +29,15 @@ import (
 	"github.com/tradesys/dashboard/internal/storage"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations/*.sql migrations/*.manifest
 var migrationFS embed.FS
 
 // DB is the storage handle.
 type DB struct {
 	db  *sql.DB
 	log *slog.Logger
+
+	goMigrations []goMigration
 }
 
 // Option configures a DB.
@@ -43,6 +45,27 @@ type Option func(*DB)
 
 // WithLogger sets the logger used for migration and maintenance reporting.
 func WithLogger(l *slog.Logger) Option { return func(d *DB) { d.log = l } }
+
+// goMigration pairs a migration name with the Go function that applies it.
+type goMigration struct {
+	name string
+	run  func(ctx context.Context, tx *sql.Tx) error
+}
+
+// WithGoMigration registers a migration that cannot be plain SQL — one that
+// needs to resolve data against something only Go code can read, such as an
+// embedded company master. It runs inside the same transaction-per-migration,
+// same-ledger discipline as every embedded .sql file, in the same sorted
+// sequence: name should sort exactly where the change belongs, e.g.
+// "0019_venue_qualify.go" runs immediately after "0018_listings.sql".
+//
+// Every name listed in migrations/go_migrations.manifest must be registered
+// through this before Open is called, or migrate fails outright — a Go
+// migration silently skipped because nobody wired it into main is worse than
+// the process refusing to start.
+func WithGoMigration(name string, fn func(ctx context.Context, tx *sql.Tx) error) Option {
+	return func(d *DB) { d.goMigrations = append(d.goMigrations, goMigration{name: name, run: fn}) }
+}
 
 // Pool sizing.
 //
@@ -144,27 +167,67 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 	if err != nil {
 		return fmt.Errorf("postgres: read migrations: %w", err)
 	}
-	names := make([]string, 0, len(entries))
+
+	// migrationStep is one schema change, whether it came from an embedded
+	// .sql file or a registered Go function. Both are applied and ledgered
+	// identically from this point on.
+	type migrationStep struct {
+		name string
+		sql  string                                      // empty for a Go step
+		run  func(ctx context.Context, tx *sql.Tx) error // nil for a SQL step
+	}
+
+	steps := make([]migrationStep, 0, len(entries)+len(d.goMigrations))
+	var required []string
 	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".sql") {
-			names = append(names, e.Name())
+		switch {
+		case strings.HasSuffix(e.Name(), ".sql"):
+			body, err := migrationFS.ReadFile("migrations/" + e.Name())
+			if err != nil {
+				return fmt.Errorf("postgres: read migration %s: %w", e.Name(), err)
+			}
+			steps = append(steps, migrationStep{name: e.Name(), sql: string(body)})
+		case strings.HasSuffix(e.Name(), ".manifest"):
+			body, err := migrationFS.ReadFile("migrations/" + e.Name())
+			if err != nil {
+				return fmt.Errorf("postgres: read manifest %s: %w", e.Name(), err)
+			}
+			for _, line := range strings.Split(string(body), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				required = append(required, line)
+			}
 		}
 	}
-	// Lexical order is the apply order, which is why the files are numbered.
-	sort.Strings(names)
+	for _, g := range d.goMigrations {
+		steps = append(steps, migrationStep{name: g.name, run: g.run})
+	}
+	for _, name := range required {
+		found := false
+		for _, g := range d.goMigrations {
+			if g.name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("postgres: migration %q is required by the manifest but was never registered via WithGoMigration", name)
+		}
+	}
+	// Lexical order is the apply order, which is why the files (and the Go
+	// migration names, which follow the same numbering) are numbered.
+	sort.Slice(steps, func(i, j int) bool { return steps[i].name < steps[j].name })
 
-	for _, name := range names {
+	for _, st := range steps {
 		var applied bool
 		if err := conn.QueryRowContext(ctx,
-			`SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE name = $1)`, name).Scan(&applied); err != nil {
-			return fmt.Errorf("postgres: check migration %s: %w", name, err)
+			`SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE name = $1)`, st.name).Scan(&applied); err != nil {
+			return fmt.Errorf("postgres: check migration %s: %w", st.name, err)
 		}
 		if applied {
 			continue
-		}
-		body, err := migrationFS.ReadFile("migrations/" + name)
-		if err != nil {
-			return fmt.Errorf("postgres: read migration %s: %w", name, err)
 		}
 
 		// Each migration is one transaction. Postgres supports transactional
@@ -172,21 +235,26 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 		// which is the single biggest practical reason to prefer it here.
 		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
-			return fmt.Errorf("postgres: begin migration %s: %w", name, err)
+			return fmt.Errorf("postgres: begin migration %s: %w", st.name, err)
 		}
-		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
+		if st.run != nil {
+			if err := st.run(ctx, tx); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("postgres: apply migration %s: %w", st.name, err)
+			}
+		} else if _, err := tx.ExecContext(ctx, st.sql); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("postgres: apply migration %s: %w", name, err)
+			return fmt.Errorf("postgres: apply migration %s: %w", st.name, err)
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO schema_migrations (name) VALUES ($1)`, name); err != nil {
+			`INSERT INTO schema_migrations (name) VALUES ($1)`, st.name); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("postgres: record migration %s: %w", name, err)
+			return fmt.Errorf("postgres: record migration %s: %w", st.name, err)
 		}
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("postgres: commit migration %s: %w", name, err)
+			return fmt.Errorf("postgres: commit migration %s: %w", st.name, err)
 		}
-		d.log.Info("applied migration", "name", name)
+		d.log.Info("applied migration", "name", st.name)
 	}
 	return nil
 }

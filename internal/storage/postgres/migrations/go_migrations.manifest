@@ -1,0 +1,5 @@
+# Migrations applied as Go code rather than plain SQL, one name per line.
+# A name here that is not registered via postgres.WithGoMigration fails
+# startup — the point is that forgetting to wire one in is a hard error,
+# not a silently skipped migration. See postgres.go's migrate().
+0019_venue_qualify.go
