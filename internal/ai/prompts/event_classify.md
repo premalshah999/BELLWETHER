@@ -1,9 +1,10 @@
-You are classifying market events for an Indian equities analysis tool. Each
-event below has already been through a deterministic pipeline: its company was
-resolved from the NSE listed master, and where the source was an exchange
-filing, its category came from the exchange itself. Your job is the part that
-software cannot do — judging how much each event matters and what it means for
-each company involved.
+You are classifying market events for a US and Indian equities analysis tool.
+Each event below has already been through a deterministic pipeline: its
+company was resolved from the listed master (SEC's exchange-listed universe
+for US names, NSE's for Indian ones), and where the source was an exchange or
+regulatory filing (SEC, NSE, SEBI), its category often came from the filer or
+the exchange itself. Your job is the part that software cannot do — judging
+how much each event matters and what it means for each company involved.
 
 Events:
 {{range .Events}}
@@ -26,10 +27,11 @@ almost always right; override it only when the detail shows the subject was
 generic and the substance is specific. Choose from:
 {{.Types}}
 
-**importance** — an integer 0 to 10, for an Indian equity operator.
-Judge it against the company involved, not in the abstract: a 500 crore order
-is transformative for a small-cap and routine for a large one. Confirmation by
-an exchange or regulator raises importance; a single low-trust source lowers it.
+**importance** — an integer 0 to 10, for an equity operator on either venue.
+Judge it against the company involved, not in the abstract: a $50 million
+contract (or a 500 crore order) is transformative for a small-cap and routine
+for a large one. Confirmation by an exchange or regulator raises importance; a
+single low-trust source lowers it.
 Guide: 9-10 rewrites the investment case (insolvency, regulator bars trading,
 auditor resigns citing irregularities). 7-8 moves the stock (results surprise,
 large order, credit downgrade, CEO exit). 4-6 is worth reading (board meeting
@@ -46,16 +48,18 @@ Facts only. No advice, no speculation about the share price.
 business. Omit entirely if the honest answer is that it does not matter much.
 
 **entities** — one entry per affected company, with:
-  - symbol: the NSE symbol. Use only symbols listed under the event, unless
-    a company is named unmistakably in the text and you are certain of its
-    NSE symbol. Never invent a symbol.
+  - symbol: the instrument's own listed ticker — bare for a US company,
+    NSE-suffixed for an Indian one. Use only symbols listed under the event,
+    unless a company is named unmistakably in the text and you are certain of
+    its ticker. Never invent a symbol.
   - relationship: "primary" (the event is about this company), "peer" (a
     competitor likely to be read across to), or "sector" (affected through
     its industry rather than by name).
   - direction: "positive", "negative", or "unclear" **for this company
     specifically**. The same event points opposite ways for different
-    companies — crude oil rising is positive for ONGC and negative for
-    IndiGo — so decide per company, never once for the event.
+    companies — crude oil rising is positive for ExxonMobil and negative for
+    an airline that burns jet fuel — so decide per company, never once for
+    the event.
   - impact_strength: 0 to 1, how much this event moves the needle for this
     company. Small for a passing mention, large for a company-defining event.
 
@@ -77,7 +81,7 @@ Return JSON in exactly this shape and nothing else:
       "summary": "…",
       "why_it_matters": "…",
       "entities": [
-        {"symbol": "LT", "relationship": "primary", "direction": "positive", "impact_strength": 0.6}
+        {"symbol": "CAT", "relationship": "primary", "direction": "positive", "impact_strength": 0.6}
       ]
     }
   ]

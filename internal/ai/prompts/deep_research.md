@@ -1,4 +1,4 @@
-Answer a research question about Indian equities using only the sources below.
+Answer a research question about US and Indian equities using only the sources below.
 
 {{if .History}}Already established earlier in this conversation — do not repeat it,
 build on it:
@@ -11,10 +11,11 @@ Question: {{.Query}}
 {{if .Symbols}}Companies mentioned across these sources: {{.Symbols}}{{end}}
 Retrieved: {{.Count}} documents from {{.Scrapers}}
 
-{{if .Universe}}Listed companies in the industries this question names, from the NSE master.
-These are facts about what is listed, not retrieved documents — use them to
-answer "which companies", and cite the sources for anything you say *about*
-them:
+{{if .Universe}}Listed companies in the industries this question names, from the listed
+company master (SEC's exchange-listed universe for US names, NSE's for
+Indian ones). These are facts about what is listed, not retrieved documents —
+use them to answer "which companies", and cite the sources for anything you
+say *about* them:
 {{range .Universe}}
 {{.Industry}}: {{.Symbols}}
 {{end}}
@@ -70,7 +71,7 @@ Write your answer as JSON with this shape:
     {"claim": "…", "sources": [1, 4], "confidence": "high"}
   ],
   "companies": [
-    {"symbol": "RELIANCE", "relevance": "…", "direction": "positive", "sources": [2]}
+    {"symbol": "AAPL", "relevance": "…", "direction": "positive", "sources": [2]}
   ],
   "gaps": ["…"],
   "followups": ["…"]
@@ -115,9 +116,10 @@ reader scans to verify the report.
 ## Rules that matter more than completeness
 
 **Be specific in every finding.** A finding carrying a number, a date or a
-counterparty is worth ten that gesture. "Secured a 250 MW order from Torrent
-Green Energy, its third from that customer this year" is a finding; "has won
-several orders recently" is a summary of findings the reader cannot check.
+counterparty is worth ten that gesture. "Secured a $180 million contract from
+the Department of Defense, its third from that customer this year" is a
+finding; "has won several orders recently" is a summary of findings the
+reader cannot check.
 
 **Cite everything.** Every claim in `findings`, and every section, must carry
 the source numbers it rests on, using the exact numbers above. A claim you
@@ -133,14 +135,15 @@ is being discussed, the finding is that it was reported as under discussion, not
 that it is happening. Where sources disagree, say so and cite both.
 
 **Direction is per company and may be "unclear".** The same event points
-opposite ways for different companies — a crude price rise helps ONGC and hurts
-IndiGo. Decide for each company separately, and answer "unclear" when the
-sources genuinely do not settle it. Do not manufacture a direction to look
-decisive.
+opposite ways for different companies — a crude price rise helps ExxonMobil
+and hurts an airline that burns jet fuel. Decide for each company separately,
+and answer "unclear" when the sources genuinely do not settle it. Do not
+manufacture a direction to look decisive.
 
-**Only name a company you are sure of.** Use NSE symbols. If the sources
-discuss an unlisted or foreign company, describe it in the report rather than
-inventing a symbol for it.
+**Only name a company you are sure of.** Use the instrument's own listed
+ticker — bare for a US company, NSE-suffixed for an Indian one. If the
+sources discuss an unlisted company, or one foreign to both venues, describe
+it in the report rather than inventing a symbol for it.
 
 **`gaps` is required to be honest.** Say what the sources do not cover — an
 unanswered question, a missing counterparty, no primary filing, only headlines

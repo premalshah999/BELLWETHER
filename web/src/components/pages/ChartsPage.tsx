@@ -149,7 +149,7 @@ interface Pane {
 }
 
 const BLANK_PANE: Pane = {
-  symbol: "RELIANCE.NSE",
+  symbol: "AAPL",
   interval: "1d",
   range: "1M",
   kind: "candle_solid" as ChartKind,

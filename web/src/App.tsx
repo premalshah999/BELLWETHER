@@ -48,7 +48,7 @@ export function App() {
   const qc = useQueryClient();
 
   const stream = useMarketStream();
-  const [selected, setSelected] = useState("RELIANCE.NSE");
+  const [selected, setSelected] = useState("AAPL");
   const [palette, setPalette] = useState(false);
 
   // Rail geometry, remembered. Density is a matter of screen and of taste, so
