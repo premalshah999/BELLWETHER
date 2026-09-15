@@ -107,8 +107,24 @@ const (
 )
 
 // Run performs one scan and routes its findings.
-func (r *Runner) Run(ctx context.Context) (Result, error) {
-	universe := r.Universe()
+//
+// scope narrows the universe to a subset -- a venue, typically: main.go
+// schedules an NSE-hours pass and a separately-timed US-hours pass over the
+// same combined universe, each scoped to its own venue so neither runs
+// against a market that is closed. nil scans everyone, which is what a
+// manually triggered scan should do: an operator asking for a scan right
+// now is not asking for half the universe.
+func (r *Runner) Run(ctx context.Context, scope func(marketdata.Symbol) bool) (Result, error) {
+	all := r.Universe()
+	universe := all
+	if scope != nil {
+		universe = make([]marketdata.Symbol, 0, len(all))
+		for _, s := range all {
+			if scope(s) {
+				universe = append(universe, s)
+			}
+		}
+	}
 	max := r.MaxFindings
 	if max <= 0 {
 		max = 40
@@ -175,7 +191,21 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 	if targets <= 0 {
 		targets = 10
 	}
+	// A scoped scan must not erase attention another scope's scan just
+	// raised: an NSE-hours pass replacing the whole list would wipe out
+	// whatever the US-hours pass found a few hours earlier, and the reverse.
+	// Existing entries outside this scan's own scope are kept; only this
+	// scope's slice of the list is replaced.
 	var attention []string
+	if scope != nil {
+		r.mu.RLock()
+		for _, sym := range r.attention {
+			if s, err := marketdata.ParseSymbol(sym); err != nil || !scope(s) {
+				attention = append(attention, sym)
+			}
+		}
+		r.mu.RUnlock()
+	}
 	for _, f := range res.Findings {
 		if len(attention) >= targets {
 			break

@@ -1111,25 +1111,38 @@ func startAISchedules(
 		}
 	})
 
-	// The market scan. Times are IST and chosen against the trading day
-	// rather than spread evenly across the clock.
+	// The market scan, run once per venue's own trading day rather than
+	// once for the whole (now combined NSE+US) universe at IST-only times --
+	// scanning the US half of the universe only at IST-aligned hours would
+	// mean scanning it three times a day, always while its market is closed.
+	// Each job carries its own CRON_TZ= prefix (robfig/cron's per-job
+	// timezone override) instead of depending on the scheduler's shared
+	// DisplayTZ, so this stays correct regardless of what an operator sets
+	// DISPLAY_TZ to.
 	//
-	// The close scan is the important one: it sees the full day's volume,
-	// which is the number the statistics are actually about. A midday scan
-	// compares a partial session against complete historical days and reads
-	// every stock as quiet — the comparison is not like for like. So the
-	// intraday scans exist to catch violent moves early and are understood
-	// to under-report; the 15:45 scan is the one whose output should be
-	// trusted.
+	// The close scan is the important one in either venue: it sees the full
+	// day's volume, which is the number the statistics are actually about. A
+	// midday scan compares a partial session against complete historical
+	// days and reads every stock as quiet — the comparison is not like for
+	// like. So the intraday scans exist to catch violent moves early and are
+	// understood to under-report; the close scan is the one whose output
+	// should be trusted.
 	if marketScanner != nil {
-		scan := func(runCtx context.Context) {
-			if _, err := marketScanner.Run(runCtx); err != nil {
-				log.Warn("market scan failed", "err", err)
+		nseScope := func(s marketdata.Symbol) bool { return s.IsIndian() }
+		usScope := func(s marketdata.Symbol) bool { return !s.IsIndian() && !s.IsIndex() }
+		scan := func(scope func(marketdata.Symbol) bool) func(context.Context) {
+			return func(runCtx context.Context) {
+				if _, err := marketScanner.Run(runCtx, scope); err != nil {
+					log.Warn("market scan failed", "err", err)
+				}
 			}
 		}
-		add("market scan (close)", "45 15 * * 1-5", scan)
-		add("market scan (midday)", "30 12 * * 1-5", scan)
-		add("market scan (open)", "45 9 * * 1-5", scan)
+		add("market scan (nse close)", "CRON_TZ=Asia/Kolkata 45 15 * * 1-5", scan(nseScope))
+		add("market scan (nse midday)", "CRON_TZ=Asia/Kolkata 30 12 * * 1-5", scan(nseScope))
+		add("market scan (nse open)", "CRON_TZ=Asia/Kolkata 45 9 * * 1-5", scan(nseScope))
+		add("market scan (us close)", "CRON_TZ=America/New_York 45 15 * * 1-5", scan(usScope))
+		add("market scan (us midday)", "CRON_TZ=America/New_York 30 12 * * 1-5", scan(usScope))
+		add("market scan (us open)", "CRON_TZ=America/New_York 45 9 * * 1-5", scan(usScope))
 	}
 
 	// Fundamentals overnight, when nothing else is competing for the sidecar
