@@ -33,6 +33,13 @@ const (
 	// reading happens in events.ParseSECFiling, exactly where NSE's
 	// pipe-delimited facts are read from an otherwise-generic feed item.
 	MethodSECFiling Method = "sec_filing"
+	// MethodFederalRegister is the Federal Register's documents.json search
+	// API -- JSON, not a feed, like MethodGDELT. The issuing agency is
+	// structured metadata the API returns directly, encoded into the raw
+	// item's description in NSE's own "|KEY: VALUE" convention so
+	// interpret() can read it back with the same parsePipeFacts every
+	// NSE-sourced filing already uses.
+	MethodFederalRegister Method = "federal_register"
 )
 
 // UsageClass records what we are permitted to do with a source's content.

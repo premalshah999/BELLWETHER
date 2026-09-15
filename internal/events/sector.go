@@ -110,6 +110,92 @@ var sectorKeywords = map[string][]string{
 	"ipo":               {"Financial Services"},
 }
 
+// gicsKeywords is sectorKeywords' US counterpart: the same discipline
+// (conservative, reviewable, no model), mapped onto GICS sectors instead of
+// NSE's industry classification.
+//
+// Every value here is prefixed "US: ". Two GICS sector names -- "Information
+// Technology" and "Utilities" -- are spelled identically to NSE industry
+// names, so an unprefixed value would silently collide the moment both
+// matched the same headline (this is the same class of bug ComparePeers had
+// before it was scoped by taxonomy: two different vocabularies that
+// sometimes spell a category the same way). The prefix also means a sector
+// filter showing both venues side by side reads as two distinct options
+// rather than one that mixes two different companies' worth of exposure.
+var gicsKeywords = map[string][]string{
+	// The Fed, rates, banking.
+	"federal reserve":     {"US: Financials"},
+	"fomc":                {"US: Financials"},
+	"interest rate":       {"US: Financials", "US: Real Estate"},
+	"fed funds rate":      {"US: Financials"},
+	"quantitative easing": {"US: Financials"},
+	"bank capital":        {"US: Financials"},
+	"stress test":         {"US: Financials"},
+	"basel":               {"US: Financials"},
+
+	// Trade and tariffs -- the single largest category of Federal Register
+	// action that reprices whole sectors at once.
+	"tariff":         {"US: Industrials", "US: Materials", "US: Consumer Discretionary"},
+	"section 301":    {"US: Industrials", "US: Materials"},
+	"section 232":    {"US: Materials", "US: Industrials"},
+	"export control": {"US: Information Technology", "US: Industrials"},
+	"entity list":    {"US: Information Technology", "US: Industrials"},
+	"sanctions":      {"US: Energy", "US: Financials"},
+
+	// Energy and commodities.
+	"crude oil":                   {"US: Energy"},
+	"opec":                        {"US: Energy"},
+	"natural gas":                 {"US: Energy", "US: Utilities"},
+	"strategic petroleum reserve": {"US: Energy"},
+	"renewable":                   {"US: Utilities", "US: Industrials"},
+	"solar":                       {"US: Utilities", "US: Industrials"},
+	"electricity":                 {"US: Utilities"},
+	"grid":                        {"US: Utilities"},
+
+	// Healthcare and drug policy.
+	"fda":            {"US: Health Care"},
+	"drug pricing":   {"US: Health Care"},
+	"medicare":       {"US: Health Care"},
+	"clinical trial": {"US: Health Care"},
+
+	// Tech and telecom regulation.
+	"antitrust":               {"US: Information Technology", "US: Communication Services"},
+	"fcc":                     {"US: Communication Services"},
+	"spectrum":                {"US: Communication Services"},
+	"semiconductor":           {"US: Information Technology"},
+	"artificial intelligence": {"US: Information Technology"},
+	"data privacy":            {"US: Information Technology", "US: Communication Services"},
+
+	// Aerospace and defense.
+	"faa":                {"US: Industrials"},
+	"defense department": {"US: Industrials"},
+	"pentagon":           {"US: Industrials"},
+
+	// Housing and real estate.
+	"mortgage rate":  {"US: Real Estate", "US: Financials"},
+	"housing starts": {"US: Real Estate", "US: Industrials"},
+
+	// Broad market plumbing.
+	"sec rule":        {"US: Financials"},
+	"sec enforcement": {"US: Financials"},
+	"ipo":             {"US: Financials"},
+	"buyback":         {"US: Financials"},
+}
+
+var sortedGICSKeywords = func() []string {
+	out := make([]string, 0, len(gicsKeywords))
+	for k := range gicsKeywords {
+		out = append(out, k)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if len(out[i]) != len(out[j]) {
+			return len(out[i]) > len(out[j])
+		}
+		return out[i] < out[j]
+	})
+	return out
+}()
+
 // sortedKeywords is the keyword list ordered longest-first, so that a
 // specific phrase is tested before a general one it contains. Without this,
 // "coal" inside "coal india" would match before a more specific rule could.
@@ -127,32 +213,92 @@ var sortedKeywords = func() []string {
 	return out
 }()
 
-// InferSectors returns the industries a macro or policy headline bears on.
+// InferSectors returns the industries a macro or policy headline bears on,
+// across both venues' taxonomies at once -- a headline about crude oil
+// touches NSE's "Oil Gas & Consumable Fuels" companies and reads exactly as
+// well against "US: Energy" ones, and there is no reason to pick one
+// taxonomy over the other from the headline alone.
 //
-// The result is capped, because an event that appears to touch ten sectors has
-// almost certainly matched on a common word rather than genuinely reached
-// them all, and attaching it to every listed company would drown the feed.
+// The result is capped, because an event that appears to touch many sectors
+// has almost certainly matched on a common word rather than genuinely
+// reached them all, and attaching it to every listed company would drown
+// the feed. The cap applies per taxonomy, not to the combined list, so a
+// broad US policy story is not crowded out of its own sectors by an
+// unrelated NSE keyword match earlier in the (alphabetically sorted, so
+// arbitrary) keyword list.
 func InferSectors(text string) []string {
 	lower := strings.ToLower(text)
-	seen := map[string]bool{}
-	var out []string
-	for _, kw := range sortedKeywords {
-		if !strings.Contains(lower, kw) {
-			continue
-		}
-		for _, sector := range sectorKeywords[kw] {
-			if !seen[sector] {
-				seen[sector] = true
-				out = append(out, sector)
+	const maxSectors = 4
+
+	match := func(sorted []string, table map[string][]string) []string {
+		seen := map[string]bool{}
+		var out []string
+		for _, kw := range sorted {
+			if !strings.Contains(lower, kw) {
+				continue
+			}
+			for _, sector := range table[kw] {
+				if !seen[sector] {
+					seen[sector] = true
+					out = append(out, sector)
+				}
 			}
 		}
+		if len(out) > maxSectors {
+			out = out[:maxSectors]
+		}
+		return out
 	}
-	const maxSectors = 4
-	if len(out) > maxSectors {
-		out = out[:maxSectors]
-	}
+
+	out := append(match(sortedKeywords, sectorKeywords), match(sortedGICSKeywords, gicsKeywords)...)
 	sort.Strings(out)
 	return out
+}
+
+// SectorsForAgency returns the GICS sectors a Federal Register issuing
+// agency's own actions reach, using the agency as structured metadata
+// rather than inferring it from free text -- USTR notices are trade
+// actions regardless of how any one notice happens to be worded, which the
+// keyword map above cannot know without seeing the word "tariff" in the
+// title. Falls back to nil (not found), at which point a caller should try
+// InferSectors on the document's own title instead.
+//
+// Verified against a live Federal Register query (306 matching documents,
+// 2026-09): "Notice of Actions in Section 301 Investigations" (USTR),
+// "Uyghur Forced Labor Prevention Act Entity List" (DHS), "Interference-
+// Tolerant Radio Altimeter Systems" (FAA).
+var agencySectors = map[string][]string{
+	"Office of the United States Trade Representative": {"US: Industrials", "US: Materials", "US: Consumer Discretionary"},
+	"International Trade Administration":               {"US: Industrials", "US: Materials"},
+	"Federal Reserve System":                           {"US: Financials"},
+	"Securities and Exchange Commission":               {"US: Financials"},
+	"Commodity Futures Trading Commission":             {"US: Financials"},
+	"Federal Deposit Insurance Corporation":            {"US: Financials"},
+	"Comptroller of the Currency":                      {"US: Financials"},
+	"Federal Communications Commission":                {"US: Communication Services"},
+	"Federal Aviation Administration":                  {"US: Industrials"},
+	"Federal Energy Regulatory Commission":             {"US: Utilities", "US: Energy"},
+	"Energy Department":                                {"US: Energy", "US: Utilities"},
+	"Environmental Protection Agency":                  {"US: Materials", "US: Industrials", "US: Utilities"},
+	"Food and Drug Administration":                     {"US: Health Care"},
+	"Centers for Medicare & Medicaid Services":         {"US: Health Care"},
+	"Homeland Security Department":                     {"US: Industrials", "US: Information Technology"},
+	"Treasury Department":                              {"US: Financials"},
+	"Federal Trade Commission":                         {"US: Information Technology", "US: Communication Services"},
+	"National Highway Traffic Safety Administration":   {"US: Consumer Discretionary", "US: Industrials"},
+	"Federal Housing Finance Agency":                   {"US: Real Estate", "US: Financials"},
+	"Agriculture Department":                           {"US: Consumer Staples", "US: Materials"},
+	"Interior Department":                              {"US: Energy", "US: Materials"},
+	"Labor Department":                                 {"US: Industrials"},
+}
+
+// SectorsForAgency looks up the sectors a Federal Register agency's actions
+// reach. ok is false when the agency is not in the table, distinguishing
+// "checked and found nothing" from "this agency has no sector reach" --
+// nothing in the table is assumed to be exhaustive.
+func SectorsForAgency(agency string) (sectors []string, ok bool) {
+	s, found := agencySectors[strings.TrimSpace(agency)]
+	return s, found
 }
 
 // SectorScope reports whether a type is one whose reach is sectoral rather

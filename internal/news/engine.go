@@ -539,6 +539,8 @@ func (e *Engine) parse(src Source, body []byte, discoveredAt time.Time) ([]RawIt
 		return e.parseFeedItems(src, body, discoveredAt)
 	case MethodGDELT:
 		return e.parseGDELT(src, body, discoveredAt)
+	case MethodFederalRegister:
+		return e.parseFederalRegister(src, body, discoveredAt)
 	default:
 		return nil, fmt.Errorf("news: source %s has unsupported method %q", src.ID, src.Method)
 	}
@@ -910,6 +912,76 @@ func (e *Engine) parseGDELT(src Source, body []byte, discoveredAt time.Time) ([]
 			CanonicalURL:   canonical,
 			Title:          title,
 			Publisher:      a.Domain,
+			PublishedAt:    published,
+			DiscoveredAt:   discoveredAt,
+			FetchedAt:      discoveredAt,
+			ContentHash:    ContentHash(canonical, title, ""),
+			TimestampTrust: trust,
+			TimestampNote:  note,
+		})
+	}
+	return out, nil
+}
+
+type federalRegisterResponse struct {
+	Results []struct {
+		Title           string `json:"title"`
+		Type            string `json:"type"`
+		Abstract        string `json:"abstract"`
+		DocumentNumber  string `json:"document_number"`
+		HTMLURL         string `json:"html_url"`
+		PublicationDate string `json:"publication_date"`
+		Agencies        []struct {
+			Name string `json:"name"`
+		} `json:"agencies"`
+	} `json:"results"`
+}
+
+// parseFederalRegister reads a documents.json search response.
+//
+// The issuing agency is the strongest classification signal this source
+// carries -- stronger than any word in the title -- so it travels with the
+// item as a fact rather than being left for a keyword pass to rediscover.
+// Encoded in the description using NSE's own "|KEY: VALUE" convention
+// (parsePipeFacts, in internal/events) so interpret() reads it back with the
+// same reader every NSE filing already uses, rather than a second parser for
+// one more shape of embedded fact.
+func (e *Engine) parseFederalRegister(src Source, body []byte, discoveredAt time.Time) ([]RawItem, error) {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil, nil
+	}
+	var doc federalRegisterResponse
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, fmt.Errorf("news: parse Federal Register response for %s: %w (body starts %q)",
+			src.ID, err, snippet(body))
+	}
+	trust := src.TimestampTrust()
+	out := make([]RawItem, 0, len(doc.Results))
+	for _, r := range doc.Results {
+		title := cleanText(r.Title)
+		if title == "" || r.HTMLURL == "" {
+			continue
+		}
+		agency := ""
+		if len(r.Agencies) > 0 {
+			agency = cleanText(r.Agencies[0].Name)
+		}
+		desc := cleanText(r.Abstract)
+		if agency != "" {
+			desc += " |AGENCY: " + agency
+		}
+		if r.Type != "" {
+			desc += " |DOCTYPE: " + r.Type
+		}
+		published, note := ValidatePublished(parseFeedTimeIn(r.PublicationDate, time.UTC), discoveredAt, trust)
+		canonical := CanonicalURL(r.HTMLURL)
+		out = append(out, RawItem{
+			SourceID:       src.ID,
+			URL:            r.HTMLURL,
+			CanonicalURL:   canonical,
+			Title:          title,
+			Description:    strings.TrimSpace(desc),
+			Publisher:      firstNonEmpty(agency, "Federal Register"),
 			PublishedAt:    published,
 			DiscoveredAt:   discoveredAt,
 			FetchedAt:      discoveredAt,

@@ -351,7 +351,7 @@ func (p *Processor) finish(
 	// are expanded; a company's own order win stays attached to that company
 	// however the headline is worded.
 	if typ.SectorScope() {
-		if sectors := InferSectors(headline + " " + summary); len(sectors) > 0 {
+		if sectors := sectorsForEvent(headline, summary, facts); len(sectors) > 0 {
 			if err := p.store.SaveEventSectors(ctx, id, sectors); err != nil {
 				return false, false, false, noEnt, fmt.Errorf("save sectors: %w", err)
 			}
@@ -367,7 +367,7 @@ func (p *Processor) finish(
 	// filing into faster polling of that company's coverage for the next
 	// hour, rather than the fixed cadence a cron job would keep.
 	if p.heat != nil && len(symbols) > 0 {
-		p.heat.Observe(symbols, sectorsFor(typ, headline, summary), importance, src.Official(), string(typ))
+		p.heat.Observe(symbols, sectorsFor(typ, headline, summary, facts), importance, src.Official(), string(typ))
 	}
 
 	// Push the event to anything watching live.
@@ -391,9 +391,24 @@ func (p *Processor) finish(
 }
 
 // sectorsFor returns the industries an event reaches, for attention purposes.
-func sectorsFor(typ Type, headline, summary string) []string {
+func sectorsFor(typ Type, headline, summary string, facts map[string]string) []string {
 	if !typ.SectorScope() {
 		return nil
+	}
+	return sectorsForEvent(headline, summary, facts)
+}
+
+// sectorsForEvent decides which sectors an event reaches. A Federal Register
+// item that resolved to a known issuing agency uses that structured signal
+// directly -- a USTR notice is a trade action regardless of whether the word
+// "tariff" happens to appear in this particular one's title, which keyword
+// inference cannot know. Everything else falls back to InferSectors over the
+// headline and summary.
+func sectorsForEvent(headline, summary string, facts map[string]string) []string {
+	if agency := facts["FR_AGENCY"]; agency != "" {
+		if sectors, ok := SectorsForAgency(agency); ok {
+			return sectors
+		}
 	}
 	return InferSectors(headline + " " + summary)
 }
@@ -436,6 +451,26 @@ func (p *Processor) interpret(src news.Source, item news.RawItem) (typ Type, hea
 			facts["NSE_SUBJECT"] = f.Subject
 		}
 		return f.Type, headline, f.Summary, facts, f.OccurredAt
+	}
+
+	if src.Method == news.MethodFederalRegister {
+		pf := parsePipeFacts(item.Description)
+		facts = map[string]string{}
+		if agency := pf["AGENCY"]; agency != "" {
+			facts["FR_AGENCY"] = agency
+		}
+		if doctype := pf["DOCTYPE"]; doctype != "" {
+			facts["FR_DOCTYPE"] = doctype
+		}
+		// The readable part of the description is everything before the
+		// first "|KEY: VALUE" marker -- parsePipeFacts only extracts the
+		// facts, so the abstract itself is recovered the same way NSE's
+		// announcement parser separates its own summary from its subject.
+		summary := item.Description
+		if i := strings.IndexByte(summary, '|'); i >= 0 {
+			summary = strings.TrimSpace(summary[:i])
+		}
+		return classifyPolicy(src, item.Title), item.Title, summary, facts, time.Time{}
 	}
 
 	// Regulators and ministries are official but are not company filings.
