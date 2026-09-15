@@ -381,7 +381,7 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
               {rows.map((r) => (
                 <tr
                   key={r.symbol}
-                  onClick={() => onSelect(`${r.symbol}.NSE`)}
+                  onClick={() => onSelect(r.symbol)}
                   className="cursor-pointer hover:bg-bg-panel-hover"
                 >
                   <td className="px-2.5 py-2 font-mono text-meta text-text-primary">

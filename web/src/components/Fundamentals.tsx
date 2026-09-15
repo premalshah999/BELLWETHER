@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, type PeerStat } from "../lib/api";
+import { tickerOf } from "../lib/symbol";
 import { Empty } from "./ui/Empty";
 import { Panel } from "./ui/Panel";
 import { RailCloseButton } from "./layout/RailToggle";
@@ -30,10 +31,9 @@ export function ValuationStrip({
   onExpand: () => void;
   expanded: boolean;
 }) {
-  const ticker = symbol.split(".")[0] ?? symbol;
   const { data } = useQuery({
-    queryKey: ["fundamentals", ticker],
-    queryFn: () => api.fundamentals(ticker),
+    queryKey: ["fundamentals", symbol],
+    queryFn: () => api.fundamentals(symbol),
     retry: false,
     staleTime: 6 * 60 * 60 * 1000,
   });
@@ -67,10 +67,10 @@ export function ValuationStrip({
 }
 
 export function Fundamentals({ symbol, onHide }: { symbol: string; onHide?: () => void }) {
-  const ticker = symbol.split(".")[0] ?? symbol;
+  const ticker = tickerOf(symbol);
   const { data, isError } = useQuery({
-    queryKey: ["fundamentals", ticker],
-    queryFn: () => api.fundamentals(ticker),
+    queryKey: ["fundamentals", symbol],
+    queryFn: () => api.fundamentals(symbol),
     retry: false,
     staleTime: 6 * 60 * 60 * 1000,
   });

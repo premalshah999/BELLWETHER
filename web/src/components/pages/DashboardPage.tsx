@@ -3,6 +3,7 @@ import { Newspaper, RefreshCw, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, type Interval } from "../../lib/api";
 import { formatAgo } from "../../lib/format";
+import { tickerOf, venueOf } from "../../lib/symbol";
 import { usePersisted, useResize } from "../../lib/layout";
 import { Divider } from "../ui/Divider";
 import { DEFAULT_STUDIES, KLineChart } from "../KLineChart";
@@ -20,11 +21,18 @@ const RANGES = [
   { days: 252, label: "1Y" },
 ] as const;
 
-/** Bars per trading session, per interval. NSE trades 6h15m. */
+/**
+ * Bars in one trading session, per interval -- sized for a US-hours 6h30m
+ * session (390 one-minute bars) rather than NSE's shorter 6h15m (375),
+ * since this only ever decides how many bars to *request*: asking for
+ * slightly more than an NSE session actually has is harmless, while sizing
+ * to NSE's shorter session would under-fetch and silently truncate a US
+ * intraday range.
+ */
 const PER_SESSION: Record<Interval, number> = {
-  "1m": 375,
-  "5m": 75,
-  "15m": 25,
+  "1m": 390,
+  "5m": 78,
+  "15m": 26,
   "1h": 7,
   "1d": 1,
   "1wk": 0.2,
@@ -125,10 +133,10 @@ export function DashboardPage({ symbol }: { symbol: string }) {
       <div className="flex h-16 min-w-0 shrink-0 items-center gap-5 overflow-hidden border-b border-border-subtle bg-bg-panel px-4">
         <div className="flex shrink-0 items-baseline gap-2">
           <span className="font-mono text-display font-semibold tracking-tight text-text-primary">
-            {symbol.split(".")[0]}
+            {tickerOf(symbol)}
           </span>
           <span className="font-mono text-meta text-text-muted">
-            {symbol.split(".")[1] ?? ""}
+            {venueOf(symbol) === "NSE" ? "NSE" : ""}
           </span>
         </div>
 
@@ -193,7 +201,7 @@ export function DashboardPage({ symbol }: { symbol: string }) {
             bar={lastBar}
             interval={interval}
             fetchedAt={dataUpdatedAt}
-            venue={symbol.endsWith(".NSE") || symbol.endsWith(".BSE") ? "NSE" : "US"}
+            venue={venueOf(symbol)}
           />
           <button
             type="button"
@@ -361,10 +369,9 @@ function NewsPane({ symbol }: { symbol: string }) {
  * anything explained it.
  */
 function ScannerContext({ symbol }: { symbol: string }) {
-  const ticker = symbol.split(".")[0] ?? symbol;
   const { data } = useQuery({
-    queryKey: ["scan-history", ticker],
-    queryFn: () => api.scanHistory(ticker, 10),
+    queryKey: ["scan-history", symbol],
+    queryFn: () => api.scanHistory(symbol, 10),
     retry: false,
     staleTime: 10 * 60 * 1000,
   });
@@ -384,7 +391,7 @@ function ScannerContext({ symbol }: { symbol: string }) {
   return (
     <div className="px-4 py-3">
       <p className="font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
-        scanner history · {ticker}
+        scanner history · {tickerOf(symbol)}
       </p>
       <ul className="mt-2 space-y-1.5">
         {findings.map((f) => (

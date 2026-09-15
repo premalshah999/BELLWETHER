@@ -17,6 +17,7 @@ import { api, type Algorithm, type Candle, type Interval, type Node as RuleNode 
 import { formatAgo } from "../../lib/format";
 import { usePersisted, useResize } from "../../lib/layout";
 import { detectPatterns, detectStructure, type Direction } from "../../lib/patterns";
+import { tickerOf, venueOf } from "../../lib/symbol";
 import { CHART_KINDS, DEFAULT_STUDIES, KLineChart, TOOLS, type ChartKind, type Study } from "../KLineChart";
 import { BarAge } from "../BarAge";
 import { Divider } from "../ui/Divider";
@@ -41,11 +42,18 @@ const RANGES = [
 
 type RangeId = (typeof RANGES)[number]["id"];
 
-/** Bars in one trading session, per interval. NSE trades 6h15m. */
+/**
+ * Bars in one trading session, per interval -- sized for a US-hours 6h30m
+ * session (390 one-minute bars) rather than NSE's shorter 6h15m (375),
+ * since this only ever decides how many bars to *request*: asking for
+ * slightly more than an NSE session actually has is harmless, while sizing
+ * to NSE's shorter session would under-fetch and silently truncate a US
+ * intraday range.
+ */
 const PER_SESSION: Record<Interval, number> = {
-  "1m": 375,
-  "5m": 75,
-  "15m": 25,
+  "1m": 390,
+  "5m": 78,
+  "15m": 26,
   "1h": 7,
   "1d": 1,
   "1wk": 0.2,
@@ -346,8 +354,8 @@ function ChartPane({
           onClick={() => setSheet(sheet === "symbol" ? null : "symbol")}
           className="flex shrink-0 items-baseline gap-1.5 transition-colors hover:text-brand"
         >
-          <span className="font-mono text-ui text-text-primary">{pane.symbol.split(".")[0]}</span>
-          <span className="font-mono text-micro text-text-muted">{pane.symbol.split(".")[1] ?? "US"}</span>
+          <span className="font-mono text-ui text-text-primary">{tickerOf(pane.symbol)}</span>
+          <span className="font-mono text-micro text-text-muted">{venueOf(pane.symbol)}</span>
           <Search size={10} className="text-text-muted" />
         </button>
 
@@ -408,7 +416,7 @@ function ChartPane({
             bar={lastBar}
             interval={pane.interval}
             fetchedAt={dataUpdatedAt}
-            venue={pane.symbol.endsWith(".NSE") || pane.symbol.endsWith(".BSE") ? "NSE" : "US"}
+            venue={venueOf(pane.symbol)}
           />
           <button
             type="button"
