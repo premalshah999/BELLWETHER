@@ -185,7 +185,11 @@ func runReprocess() error {
 	if err != nil {
 		return fmt.Errorf("load company master: %w", err)
 	}
-	registry, err := news.DefaultRegistry()
+	usTickers, _, err := company.LoadEmbeddedUS()
+	if err != nil {
+		return fmt.Errorf("load us company master: %w", err)
+	}
+	registry, err := buildRegistry(cfg.SECUserAgent)
 	if err != nil {
 		return fmt.Errorf("build source registry: %w", err)
 	}
@@ -195,7 +199,8 @@ func runReprocess() error {
 	// discards it — which silently emptied the whole watchlist on reprocess.
 	syncWatchlistSources(ctx, registry, store, master, nil, log)
 
-	processor := events.NewProcessor(store, master, registry, events.WithProcessorLogger(log))
+	processor := events.NewProcessor(store, master, registry,
+		events.WithProcessorLogger(log), events.WithUSCIKIndex(buildUSCIKIndex(usTickers)))
 
 	var total, created, merged, filtered int
 	for {
@@ -306,11 +311,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load company master: %w", err)
 	}
-	_, usListings, err := company.LoadEmbeddedUS()
+	usTickers, usListings, err := company.LoadEmbeddedUS()
 	if err != nil {
 		return fmt.Errorf("load us company master: %w", err)
 	}
 	universe := buildScanUniverse(companyMaster, usListings)
+	usByCIK := buildUSCIKIndex(usTickers)
 	log.Info("scan universe ready", "nse", len(companyMaster.IndexConstituents()), "us", len(usListings))
 
 	// The market scanner: the half of the intelligence layer that does not
@@ -401,7 +407,7 @@ func run() error {
 		}
 	}
 
-	ingestEngine, err := startIngestion(ctx, store, attention, companyMaster, marketScanner, log)
+	ingestEngine, err := startIngestion(ctx, store, attention, companyMaster, marketScanner, cfg.SECUserAgent, log)
 	if err != nil {
 		return err
 	}
@@ -433,6 +439,7 @@ func run() error {
 	eventProcessor := events.NewProcessor(store, companyMaster, ingestEngine.Registry(),
 		events.WithProcessorLogger(log),
 		events.WithAttentionSink(attention),
+		events.WithUSCIKIndex(usByCIK),
 		// Newly created events go straight to any connected client. This is
 		// the difference between a filing appearing on screen when it is
 		// published and appearing when a twenty-second timer next fires.
@@ -998,8 +1005,22 @@ func syncWatchlistSources(
 	}
 }
 
-func startIngestion(ctx context.Context, store *postgres.DB, attention *news.Tracker, master *company.Master, marketScanner *scanner.Runner, log *slog.Logger) (*news.Engine, error) {
-	registry, err := news.DefaultRegistry()
+// buildRegistry assembles the static catalog plus the SEC filings tape, when
+// SEC_USER_AGENT is configured. Left unset, SEC sources are omitted entirely
+// rather than added and left to fail every request with a 403 -- SEC's
+// fair-access policy requires a real contact string, not a generic one.
+func buildRegistry(secUserAgent string) (*news.Registry, error) {
+	sources := news.DefaultSources()
+	if secUserAgent != "" {
+		sources = append(sources, news.SECSources(secUserAgent)...)
+	} else {
+		slog.Warn("SEC_USER_AGENT is not set; the SEC filings tape (8-K/Form 4/13F) is disabled")
+	}
+	return news.NewRegistry(sources...)
+}
+
+func startIngestion(ctx context.Context, store *postgres.DB, attention *news.Tracker, master *company.Master, marketScanner *scanner.Runner, secUserAgent string, log *slog.Logger) (*news.Engine, error) {
+	registry, err := buildRegistry(secUserAgent)
 	if err != nil {
 		return nil, fmt.Errorf("build news source registry: %w", err)
 	}

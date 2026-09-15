@@ -308,3 +308,51 @@ func DefaultSources() []Source {
 
 // DefaultRegistry builds a registry from the curated catalog.
 func DefaultRegistry() (*Registry, error) { return NewRegistry(DefaultSources()...) }
+
+// secFeed builds one SEC EDGAR "current filings" Atom feed URL, filtered to
+// one form type.
+func secFeed(formType string) string {
+	return "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=" +
+		formType + "&company=&dateb=&owner=include&count=40&output=atom"
+}
+
+// SECSources returns the SEC EDGAR filings tape: 8-K (material events), Form
+// 4 (insider transactions) and 13F (institutional holdings), all free,
+// keyless and verified live from this host. userAgent is the contact string
+// SEC's fair-access policy requires (see SECUserAgent in internal/config);
+// callers must not register these sources with an empty one, since every
+// request would 403.
+//
+// Ranked alongside the NSE exchange feeds (TrustOfficial): the filer
+// declares these facts under penalty of the securities laws, the same
+// standing an exchange disclosure has.
+func SECSources(userAgent string) []Source {
+	filings := []struct {
+		id, name, formType string
+		refresh            time.Duration
+	}{
+		// The event itself, and the one worth polling hardest: 8-K covers
+		// material agreements, results, control changes, leadership
+		// departures -- the same class of thing nse-announcements exists to
+		// catch, at the same urgency.
+		{"sec-8k", "SEC 8-K Current Filings", "8-K", 2 * time.Minute},
+		// Insider transactions. A departure or a large sale is worth knowing
+		// about within minutes, not hours; the STOCK Act disclosure delay for
+		// members of Congress (Phase 4) is a separate, much slower channel.
+		{"sec-form4", "SEC Form 4 Insider Transactions", "4", 5 * time.Minute},
+		// Institutional 13F holdings change quarterly by rule, so nothing is
+		// lost by checking this only a few times an hour.
+		{"sec-13f", "SEC 13F Institutional Holdings", "13F", 15 * time.Minute},
+	}
+	out := make([]Source, 0, len(filings))
+	for _, f := range filings {
+		out = append(out, Source{
+			ID: f.id, Name: f.name, URL: secFeed(f.formType),
+			Method: MethodSECFiling, Category: "filings",
+			Country: "US", Language: "en", UserAgent: userAgent,
+			Trust: TrustOfficial, Refresh: f.refresh, Timeout: 20 * time.Second,
+			Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
+		})
+	}
+	return out
+}

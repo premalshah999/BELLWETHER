@@ -62,6 +62,12 @@ type Processor struct {
 	minEntityConfidence float64
 	// onEvent, when set, receives each newly created event for live delivery.
 	onEvent func(EventNotice)
+
+	// usByCIK resolves an SEC filer's CIK to its bare US ticker. The filer
+	// declares its own CIK on every filing, which is a far stronger identity
+	// signal than the NSE document-path regex ever was -- there is no text
+	// matching involved at all, just a lookup.
+	usByCIK map[string]string
 }
 
 // AttentionSink is told when something happens to a set of instruments.
@@ -105,6 +111,14 @@ func WithProcessorLogger(l *slog.Logger) ProcessorOption {
 
 func WithProcessorClock(now func() time.Time) ProcessorOption {
 	return func(p *Processor) { p.now = now }
+}
+
+// WithUSCIKIndex supplies the CIK -> ticker map SEC filing entity resolution
+// needs. Built once from the embedded SEC ticker reference (see
+// company.LoadEmbeddedUS), the same way the NSE master is built once and
+// passed in rather than loaded per-processor.
+func WithUSCIKIndex(byCIK map[string]string) ProcessorOption {
+	return func(p *Processor) { p.usByCIK = byCIK }
 }
 
 // NewProcessor builds a processor.
@@ -204,11 +218,20 @@ func (p *Processor) processOne(ctx context.Context, item news.RawItem) (created,
 	entities := p.resolveEntities(src, item, headline, summary, facts)
 	noEntity = len(entities) == 0
 
-	// A watchlist source is exempt from both relevance gates. The operator
-	// has stated that this instrument matters to them, which settles the
-	// question those gates exist to answer — including for the US names a
-	// content filter would otherwise discard as unactionable.
-	if src.Watchlist() {
+	// A watchlist source is exempt from both relevance gates below. The
+	// operator has stated that this instrument matters to them, which
+	// settles the question those gates exist to answer — including for the
+	// US names a content filter would otherwise discard as unactionable.
+	//
+	// An official source is exempt for a different reason: it is not
+	// commentary to be judged relevant, it is the primary disclosure --
+	// an SEC Form 4's own filer entry (a person, not a company, and
+	// unresolvable by the CIK lookup on that account) is not "unproven
+	// foreign noise" the way a wire story about a company nobody here can
+	// trade would be. Indian official sources (NSE, RBI) never reached this
+	// gate in the first place, since src.Indian() was already true for
+	// them; this exemption is what makes the same true for SEC.
+	if src.Watchlist() || src.Official() {
 		return p.finish(ctx, src, item, typ, headline, summary, facts, occurredAt, entities, noEntity)
 	}
 
@@ -377,6 +400,28 @@ func sectorsFor(typ Type, headline, summary string) []string {
 
 // interpret reads an item according to what kind of source it came from.
 func (p *Processor) interpret(src news.Source, item news.RawItem) (typ Type, headline, summary string, facts map[string]string, occurredAt time.Time) {
+	if src.Method == news.MethodSECFiling {
+		f := ParseSECFiling(item.Title, item.Description)
+		headline = buildSECHeadline(f)
+		facts = map[string]string{}
+		// Only the company-side entry carries a CIK worth resolving against
+		// -- a Form 4's "Reporting" entry names the filing person, and
+		// looking that up in a company index would find nothing at best and
+		// a coincidentally-numbered company at worst.
+		if f.CIK != "" && (f.Role == "Issuer" || f.Role == "Filer") {
+			facts["SEC_CIK"] = f.CIK
+		}
+		if f.AccNo != "" {
+			facts["SEC_ACCESSION"] = f.AccNo
+		}
+		if f.FormType != "" {
+			facts["SEC_FORM_TYPE"] = f.FormType
+		}
+		if len(f.ItemCodes) > 0 {
+			facts["SEC_ITEMS"] = strings.Join(f.ItemCodes, ",")
+		}
+		return f.Type, headline, headline, facts, f.FiledDate
+	}
 	if src.Method == news.MethodNSEAnnounce {
 		f := ParseFiling(src.ID, item.Title, item.Description, item.URL, p.loc)
 		headline = buildFilingHeadline(f)
@@ -570,6 +615,20 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 		// become SAMMAANCAP — so the symbol is not trusted and the company
 		// name is resolved instead.
 		p.log.Debug("filing path names an unlisted symbol", "symbol", sym, "source", src.ID)
+	}
+
+	// Path 1b: an SEC filing names its own CIK. Stronger even than NSE's
+	// document-path symbol, because there is no text pattern involved at
+	// all -- the filer declares an identifier under penalty of the
+	// securities laws, and it either resolves or it does not.
+	if cik, ok := facts["SEC_CIK"]; ok && p.usByCIK != nil {
+		if ticker, listed := p.usByCIK[cik]; listed {
+			return []news.EventEntity{{
+				Symbol: ticker, Relationship: news.RelPrimary,
+				MatchConfidence: 0.99, MatchMethod: "sec_cik",
+			}}
+		}
+		p.log.Debug("sec filing names an unrecognized cik", "cik", cik, "source", src.ID)
 	}
 
 	// Path 2: resolve from the text. For a filing that is the exchange's own

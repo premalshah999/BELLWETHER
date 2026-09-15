@@ -455,7 +455,7 @@ func (e *Engine) get(ctx context.Context, src Source, etag, lastMod string) (bod
 	// conditional requests, bounded per-host concurrency, cadences matched to
 	// how often a feed really changes, and a circuit breaker that backs off
 	// rather than retrying a struggling host.
-	req.Header.Set("User-Agent", "")
+	req.Header.Set("User-Agent", src.UserAgent)
 	req.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/xml, text/xml, application/json;q=0.9, */*;q=0.8")
 	req.Header.Set("Accept-Language", "en-IN,en;q=0.9")
 	if etag != "" {
@@ -535,7 +535,7 @@ func (e *Engine) acquireHost(ctx context.Context, rawURL string) (func(), error)
 // moment the parser reached them.
 func (e *Engine) parse(src Source, body []byte, discoveredAt time.Time) ([]RawItem, error) {
 	switch src.Method {
-	case MethodRSS, MethodGoogleNews, MethodNSEAnnounce:
+	case MethodRSS, MethodGoogleNews, MethodNSEAnnounce, MethodSECFiling:
 		return e.parseFeedItems(src, body, discoveredAt)
 	case MethodGDELT:
 		return e.parseGDELT(src, body, discoveredAt)

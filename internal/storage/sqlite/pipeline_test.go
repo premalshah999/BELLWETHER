@@ -550,3 +550,68 @@ func TestWatchlistBypassesTheRelevanceFilter(t *testing.T) {
 		t.Errorf("created %d, want 1", res.Created)
 	}
 }
+
+// TestSECFilingResolvesEntityByCIK is the CIK path's regression: an SEC
+// filing's issuer resolves to the correct US symbol without any text
+// matching, and the "Reporting" (insider person) side of a Form 4 gets no
+// entity at all rather than being matched against the wrong CIK.
+func TestSECFilingResolvesEntityByCIK(t *testing.T) {
+	db := newTestDB(t)
+	master, err := company.LoadEmbedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+
+	registry, err := news.NewRegistry(news.SECSources("TradeSys/1.0 (test@example.com)")...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := events.NewProcessor(db, master, registry,
+		events.WithProcessorClock(func() time.Time { return now }),
+		events.WithUSCIKIndex(map[string]string{"0001795586": "CHYM", "0001376066": "SOMEPERSON"}))
+
+	ctx := context.Background()
+	if _, err := db.SaveRawItems(ctx, []news.RawItem{
+		item("sec-form4", "issuer1", "4 - Chime Financial, Inc. (0001795586) (Issuer)",
+			"Filed: 2026-09-14 AccNo: 0001376066-26-000007 Size: 25 KB",
+			"https://www.sec.gov/Archives/edgar/data/1795586/x-index.htm", now),
+		item("sec-form4", "reporting1", "4 - CAROLAN SHAWN T (0001376066) (Reporting)",
+			"Filed: 2026-09-14 AccNo: 0001376066-26-000007 Size: 25 KB",
+			"https://www.sec.gov/Archives/edgar/data/1376066/x-index.htm", now),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := p.ProcessBatch(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Created != 2 {
+		t.Fatalf("created %d events, want 2 (one per raw item, filtered=%d noentity=%d)", res.Created, res.Filtered, res.NoEntity)
+	}
+
+	issuerEvents, err := db.ListEvents(ctx, storage.EventFilter{Symbol: "CHYM"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issuerEvents) != 1 {
+		t.Fatalf("events for CHYM = %d, want 1", len(issuerEvents))
+	}
+	if len(issuerEvents[0].Entities) != 1 || issuerEvents[0].Entities[0].Symbol != "CHYM" ||
+		issuerEvents[0].Entities[0].MatchMethod != "sec_cik" {
+		t.Errorf("issuer entities = %+v, want one CHYM entity matched via sec_cik", issuerEvents[0].Entities)
+	}
+
+	// The Reporting-role entry must not resolve to anything -- it names a
+	// person, not the company, and attaching a symbol to it via the same
+	// CIK-lookup path would be attributing a form filed by an individual to
+	// a company they merely work for or sit on the board of.
+	reportingEvents, err := db.ListEvents(ctx, storage.EventFilter{Symbol: "SOMEPERSON"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reportingEvents) != 0 {
+		t.Fatalf("events for SOMEPERSON = %d, want 0: the Reporting role must not resolve via CIK", len(reportingEvents))
+	}
+}
