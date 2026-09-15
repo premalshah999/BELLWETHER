@@ -117,6 +117,24 @@ func DefaultSources() []Source {
 		})
 	}
 
+	// The Federal Register: every final and proposed rule, and every notice,
+	// from every agency at once -- rulemaking is not urgent the way a press
+	// release is, so this polls far less often than the sources above, but
+	// it is the one source here whose issuing agency is structured metadata
+	// (see events.SectorsForAgency) rather than something to be guessed at
+	// from the title. Verified live: 10,000+ matching documents on an
+	// unfiltered "newest" pull, including live examples from FAA and the
+	// Personnel Management Office.
+	out = append(out, Source{
+		ID:   "federal-register",
+		Name: "Federal Register",
+		URL: "https://www.federalregister.gov/api/v1/documents.json?per_page=40&order=newest" +
+			"&conditions%5Btype%5D%5B%5D=RULE&conditions%5Btype%5D%5B%5D=PRORULE&conditions%5Btype%5D%5B%5D=NOTICE",
+		Method: MethodFederalRegister, Category: "regulatory", Country: "US", Language: "en",
+		Trust: TrustOfficial, Refresh: 20 * time.Minute, Timeout: 20 * time.Second,
+		Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
+	})
+
 	// PIB is deliberately absent, having been measured rather than assumed.
 	//
 	// Its ministry announcements — budget measures, FPI policy, tariff and duty

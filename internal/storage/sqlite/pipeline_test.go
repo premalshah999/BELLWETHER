@@ -615,3 +615,71 @@ func TestSECFilingResolvesEntityByCIK(t *testing.T) {
 		t.Fatalf("events for SOMEPERSON = %d, want 0: the Reporting role must not resolve via CIK", len(reportingEvents))
 	}
 }
+
+// TestFederalRegisterUsesAgencySectorTable is the regression for the
+// agency-based sector signal: a Federal Register item from a known agency
+// (USTR) must be tagged with that agency's sectors even when its own title
+// carries none of the keywords InferSectors would otherwise need to find
+// the same answer.
+func TestFederalRegisterUsesAgencySectorTable(t *testing.T) {
+	db := newTestDB(t)
+	master, err := company.LoadEmbedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+
+	registry, err := news.NewRegistry(news.Source{
+		ID: "federal-register", Name: "Federal Register", URL: "https://www.federalregister.gov/api/v1/documents.json",
+		Method: news.MethodFederalRegister, Category: "regulatory", Country: "US", Language: "en",
+		Trust: news.TrustOfficial, Refresh: 20 * time.Minute, Timeout: 20 * time.Second,
+		Usage: news.UsageOfficial, Display: news.DisplayFull, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := events.NewProcessor(db, master, registry, events.WithProcessorClock(func() time.Time { return now }))
+
+	ctx := context.Background()
+	// Deliberately a title with no sector keyword at all -- the agency tag
+	// is the only thing that can produce a sector for this headline.
+	if _, err := db.SaveRawItems(ctx, []news.RawItem{
+		item("federal-register", "fr1",
+			"Notice of Actions in Section 301 Investigations",
+			"A routine procedural notice. |AGENCY: Office of the United States Trade Representative |DOCTYPE: Notice",
+			"https://www.federalregister.gov/documents/2026/09/14/example", now),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := p.ProcessBatch(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Created != 1 {
+		t.Fatalf("created %d, want 1 (filtered=%d)", res.Created, res.Filtered)
+	}
+
+	list, err := db.ListEvents(ctx, storage.EventFilter{
+		Query: "", Limit: 5, Since: now.Add(-time.Hour), IncludeUnattributedWatchlist: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) == 0 {
+		t.Fatal("no events found")
+	}
+	sectors, err := db.EventSectors(ctx, list[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range sectors {
+		if s == "US: Industrials" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("sectors = %v, want US: Industrials from the USTR agency table (headline carries no matching keyword)", sectors)
+	}
+}
