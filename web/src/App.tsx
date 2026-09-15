@@ -9,6 +9,7 @@ import { AlertsPage } from "./components/pages/AlertsPage";
 import { AlgorithmsPage } from "./components/pages/AlgorithmsPage";
 import { CalibrationPage } from "./components/pages/CalibrationPage";
 import { ChartsPage } from "./components/pages/ChartsPage";
+import { CongressPage } from "./components/pages/CongressPage";
 import { DashboardPage } from "./components/pages/DashboardPage";
 import { GeopoliticsPage } from "./components/pages/GeopoliticsPage";
 import { NewsPage } from "./components/pages/NewsPage";
@@ -128,6 +129,7 @@ export function App() {
               <Route path="/scanner/:mode" element={<ScannerPage onSelect={setSelected} />} />
               <Route path="/news" element={<NewsPage onSelect={setSelected} />} />
               <Route path="/geopolitics" element={<GeopoliticsPage onSelect={setSelected} />} />
+              <Route path="/congress" element={<CongressPage onSelect={setSelected} />} />
               <Route path="/research" element={<ResearchPage />} />
               <Route path="/algorithms" element={<Navigate to="/algorithms/build" replace />} />
               <Route path="/algorithms/:mode" element={<AlgorithmsPage />} />

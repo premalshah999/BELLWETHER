@@ -254,6 +254,7 @@ func (s *Server) routes() {
 			// are never parsed as a ticker.
 			r.Get("/symbols/search", s.handleSearchSymbols)
 			r.Get("/symbols/sectors", s.handleSymbolSectors)
+			r.Get("/congress/filings", s.handleCongressFilings)
 
 			r.Route("/symbols/{symbol}", func(r chi.Router) {
 				r.Get("/candles", s.handleCandles)

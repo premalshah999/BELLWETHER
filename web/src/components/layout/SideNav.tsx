@@ -9,6 +9,7 @@ import {
   Filter,
   FlaskConical,
   Globe2,
+  Landmark,
   LayoutDashboard,
   Newspaper,
   Radar,
@@ -68,6 +69,7 @@ const NAV: Entry[] = [
       { to: "/scanner/screens", label: "Screens", icon: Filter },
       { to: "/news", label: "News", icon: Newspaper },
       { to: "/geopolitics", label: "Geopolitics", icon: Globe2 },
+      { to: "/congress", label: "Congress", icon: Landmark },
     ],
   },
   {

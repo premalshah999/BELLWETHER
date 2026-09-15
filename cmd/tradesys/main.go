@@ -1265,6 +1265,34 @@ func startAISchedules(
 			"before_mb", before.SizeBytes/(1<<20), "after_mb", after.SizeBytes/(1<<20))
 	})
 
+	// Congressional PTR filings, once a day: the House Clerk posts new
+	// disclosures on no fixed schedule, so there is no "close" moment to
+	// chase the way there is for a market scan. Given its own two-hour
+	// budget rather than the shared fifteen minutes -- the first run of a
+	// fresh deploy can find several hundred filings outstanding for the
+	// year, each a separate PDF fetch plus a pdftotext shell-out, and that
+	// backfill should be allowed to actually finish rather than being cut
+	// off partway and repeating the same early filings tomorrow.
+	congressUA := cfg.SECUserAgent
+	if congressUA == "" {
+		// The House Clerk is not the SEC and enforces no fair-access
+		// policy, so this job is not gated on SEC_USER_AGENT the way the
+		// SEC filings tape is -- it still identifies itself rather than
+		// riding on Go's default UA, because that costs nothing.
+		congressUA = "TradeSys/1.0 (github.com/tradesys/dashboard)"
+	}
+	congressClient := &http.Client{Timeout: 2 * time.Minute}
+	addWithin("congress filings sync", "30 6 * * *", 2*time.Hour, func(runCtx context.Context) {
+		n, err := syncCongressFilings(runCtx, store, congressClient, congressUA, log)
+		if err != nil {
+			log.Warn("congress filings sync failed", "err", err)
+			return
+		}
+		if n > 0 {
+			log.Info("congress filings synced", "new", n)
+		}
+	})
+
 	// Outlook scoring: no LLM call, so it keeps the calibration record
 	// current even when the token budget is spent.
 	add("outlook scoring", "45 5 * * *", func(runCtx context.Context) {
