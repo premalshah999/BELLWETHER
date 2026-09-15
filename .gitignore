@@ -26,6 +26,9 @@
 # Logs
 *.log
 
+# Python
+__pycache__/
+
 # Ad-hoc debug/probe binaries built at the repo root during development —
 # not part of the source tree, not referenced by any build step.
 /artprobe

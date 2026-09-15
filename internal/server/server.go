@@ -256,6 +256,11 @@ func (s *Server) routes() {
 			r.Get("/symbols/sectors", s.handleSymbolSectors)
 			r.Get("/congress/filings", s.handleCongressFilings)
 
+			r.Route("/eventstudy", func(r chi.Router) {
+				r.Get("/types", s.handleEventStudyTypes)
+				r.Get("/", s.handleEventStudy)
+			})
+
 			r.Route("/symbols/{symbol}", func(r chi.Router) {
 				r.Get("/candles", s.handleCandles)
 				r.Get("/quote", s.handleQuote)

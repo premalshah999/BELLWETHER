@@ -15,6 +15,11 @@ import (
 type Store interface {
 	SaveScan(ctx context.Context, res Result) (int64, error)
 	MarkExplained(ctx context.Context, findingID int64, explained bool) error
+	// SaveCandles persists one symbol's daily bars -- the same method the
+	// market-data router uses for a chart's cache, reused here for the
+	// event study engine's price-history prerequisite rather than adding a
+	// second write path for what is, once decoded, the same data shape.
+	SaveCandles(ctx context.Context, sym marketdata.Symbol, interval marketdata.Interval, source string, bars marketdata.Bars, requestedLimit int) error
 }
 
 // Explainer reports whether the archive already accounts for a move.
@@ -135,6 +140,8 @@ func (r *Runner) Run(ctx context.Context, scope func(marketdata.Symbol) bool) (R
 		return Result{}, err
 	}
 
+	r.persistSeries(ctx, res.Series)
+
 	// Resolved before the scan is stored rather than by a second pass, so a
 	// stored scan is never missing the one field that makes its findings
 	// actionable.
@@ -232,6 +239,27 @@ func (r *Runner) Run(ctx context.Context, scope func(marketdata.Symbol) bool) (R
 		"elapsed", res.Elapsed, "scan_id", scanID)
 
 	return res, nil
+}
+
+// persistSeries writes each symbol's freshly-fetched daily bars to the
+// candle store -- see Result.Series's doc for why this exists. Best-effort:
+// a symbol whose write fails is logged and skipped rather than failing the
+// scan, since the findings this scan exists to produce do not depend on it.
+func (r *Runner) persistSeries(ctx context.Context, series map[marketdata.Symbol][]marketdata.Candle) {
+	if len(series) == 0 || r.Store == nil {
+		return
+	}
+	var saved, failed int
+	for sym, candles := range series {
+		bars := marketdata.Bars{Candles: candles}
+		if err := r.Store.SaveCandles(ctx, sym, marketdata.Interval1d, "yfinance-scan", bars, len(candles)); err != nil {
+			failed++
+			r.log().Warn("could not persist scan series", "symbol", sym.String(), "err", err)
+			continue
+		}
+		saved++
+	}
+	r.log().Info("scan series persisted", "symbols", saved, "failed", failed)
 }
 
 func (r *Runner) reason(f Finding, known bool) string {

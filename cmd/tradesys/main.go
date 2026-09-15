@@ -98,6 +98,13 @@ func main() {
 	migrateFrom := flag.String("migrate-from", "",
 		"copy an existing SQLite database at this path into Postgres, then exit")
 
+	// The daily cron job (see startAISchedules) is the normal path; this
+	// exists for an operator who wants a backfill or a resync run right
+	// now rather than waiting for the schedule, without needing an HTTP
+	// route for what is otherwise an unauthenticated write path.
+	syncCongress := flag.Bool("sync-congress", false,
+		"fetch new House Clerk PTR filings for the current year, then exit")
+
 	// Key management is a command-line operation and has no HTTP equivalent.
 	// Issuing a key grants access to everything, so the right to do it is
 	// tied to shell access on the host rather than to a role inside the
@@ -150,6 +157,13 @@ func main() {
 	if *reprocess {
 		if err := runReprocess(); err != nil {
 			slog.Error("reprocess failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *syncCongress {
+		if err := runSyncCongress(); err != nil {
+			slog.Error("congress sync failed", "err", err)
 			os.Exit(1)
 		}
 		return

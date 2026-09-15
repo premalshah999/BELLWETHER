@@ -1,8 +1,14 @@
 package scanner
 
 import (
+	"encoding/json"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
 func base() Metrics {
@@ -212,5 +218,100 @@ func TestUnexplainedFindingCrossesWarm(t *testing.T) {
 	// An explained one should not escalate on its own: we already know why.
 	if weightExplained > warmThreshold {
 		t.Errorf("an explained finding contributes %.2f, crossing warm on its own", weightExplained)
+	}
+}
+
+// TestScanSeriesCandlesFiltersBadRows is the regression for the reason this
+// filtering exists in Go rather than trusting the sidecar and letting
+// Postgres's own CHECK constraint reject a bad bar: SaveCandles writes one
+// symbol's whole batch in a single transaction, so a lone corrupt row would
+// otherwise cost that symbol's entire day of history for the pass, not just
+// the one row.
+func TestScanSeriesCandlesFiltersBadRows(t *testing.T) {
+	s := scanSeries{
+		T: []int64{20260310, 20260311, 20260312},
+		O: []float64{100, 100, 100},
+		H: []float64{105, 90, 105}, // row 1: high below low -- corrupt
+		L: []float64{95, 95, 95},
+		C: []float64{102, 92, 102},
+		V: []float64{1000, 1000, -5}, // row 2: negative volume -- corrupt
+	}
+	got := s.candles()
+	if len(got) != 1 {
+		t.Fatalf("candles = %d, want 1 (only 2026-03-10 is clean); got %+v", len(got), got)
+	}
+	want := time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
+	if !got[0].Time.Equal(want) {
+		t.Errorf("Time = %v, want %v", got[0].Time, want)
+	}
+	if got[0].Close != 102 {
+		t.Errorf("Close = %v, want 102", got[0].Close)
+	}
+}
+
+// TestScanSeriesCandlesRejectsMismatchedLength covers a chunk fetch that
+// partly failed on the sidecar side, leaving one array shorter than the
+// rest -- indexing into it would panic, so the whole series is discarded
+// instead of guessing which entries still line up.
+func TestScanSeriesCandlesRejectsMismatchedLength(t *testing.T) {
+	s := scanSeries{
+		T: []int64{20260310, 20260311},
+		O: []float64{100, 100},
+		H: []float64{105, 105},
+		L: []float64{95, 95},
+		C: []float64{102},
+		V: []float64{1000, 1000},
+	}
+	if got := s.candles(); got != nil {
+		t.Errorf("candles = %+v, want nil for mismatched array lengths", got)
+	}
+}
+
+// TestClientScanDecodesSeries is the regression for the whole Phase 5
+// price-history prerequisite: the scan response's columnar "series" field
+// must decode and re-tag to the canonical symbol the same way Metrics does,
+// or a scan-persisted candle would go missing (or worse, land under the
+// wrong venue) silently.
+func TestClientScanDecodesSeries(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"metrics": map[string]Metrics{
+				"AAPL": {Symbol: "AAPL", Close: 190, Bars: 250},
+			},
+			"series": map[string]scanSeries{
+				"AAPL": {
+					T: []int64{20260310, 20260311},
+					O: []float64{188, 189},
+					H: []float64{191, 191},
+					L: []float64{187, 188},
+					C: []float64{190, 190.5},
+					V: []float64{1_000_000, 1_100_000},
+				},
+				// Echoed a symbol never requested -- must be dropped, not
+				// guessed onto some venue.
+				"UNKNOWN": {T: []int64{20260310}, O: []float64{1}, H: []float64{1}, L: []float64{1}, C: []float64{1}, V: []float64{0}},
+			},
+			"failed": []string{}, "as_of": time.Now().UTC().Format(time.RFC3339),
+			"elapsed_seconds": 0.1,
+		})
+	}))
+	defer srv.Close()
+
+	aapl, _ := marketdata.ParseSymbol("AAPL")
+	c := &Client{BaseURL: srv.URL, HTTP: srv.Client()}
+	res, err := c.Scan(t.Context(), []marketdata.Symbol{aapl}, 10)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	candles, ok := res.Series[aapl]
+	if !ok {
+		t.Fatalf("Series missing AAPL; got %v", res.Series)
+	}
+	if len(candles) != 2 {
+		t.Fatalf("got %d candles, want 2", len(candles))
+	}
+	if len(res.Series) != 1 {
+		t.Errorf("Series has %d symbols, want 1 (the unrequested echo must be dropped)", len(res.Series))
 	}
 }

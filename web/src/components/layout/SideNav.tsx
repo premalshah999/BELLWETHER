@@ -70,6 +70,7 @@ const NAV: Entry[] = [
       { to: "/news", label: "News", icon: Newspaper },
       { to: "/geopolitics", label: "Geopolitics", icon: Globe2 },
       { to: "/congress", label: "Congress", icon: Landmark },
+      { to: "/eventstudy", label: "Event Study", icon: FlaskConical },
     ],
   },
   {

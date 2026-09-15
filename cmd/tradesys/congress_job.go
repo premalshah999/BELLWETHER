@@ -6,11 +6,45 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
+	"github.com/tradesys/dashboard/internal/config"
 	"github.com/tradesys/dashboard/internal/congress"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
+
+// runSyncCongress is the -sync-congress one-off command: load config, open
+// the store, run one sync pass, exit. Deliberately reuses the same
+// syncCongressFilings the daily cron calls rather than a separate path, so
+// a manual run and a scheduled run can never behave differently.
+func runSyncCongress() error {
+	ctx := context.Background()
+	cfg, err := config.Load(".env")
+	if err != nil {
+		return err
+	}
+	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+
+	store, err := openStore(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	userAgent := cfg.SECUserAgent
+	if userAgent == "" {
+		userAgent = "TradeSys/1.0 (github.com/tradesys/dashboard)"
+	}
+	client := &http.Client{Timeout: 2 * time.Minute}
+
+	n, err := syncCongressFilings(ctx, store, client, userAgent, log)
+	if err != nil {
+		return err
+	}
+	log.Info("congress filings synced", "new", n)
+	return nil
+}
 
 // pdfFetchPause is a small courtesy delay between PDF downloads from the
 // House Clerk's site -- unlike SEC's hosts, it publishes no documented rate
