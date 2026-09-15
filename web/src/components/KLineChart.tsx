@@ -13,6 +13,7 @@ import {
   type Chart,
 } from "klinecharts";
 import type { Candle, Interval } from "../lib/api";
+import { timeZoneOf } from "../lib/symbol";
 
 /**
  * The price chart.
@@ -75,7 +76,7 @@ export function KLineChart({
   candles,
   symbol,
   interval,
-  timeZone = "Asia/Kolkata",
+  timeZone = timeZoneOf(symbol),
   studies = DEFAULT_STUDIES,
   kind = CandleType.CandleSolid,
   tool = null,

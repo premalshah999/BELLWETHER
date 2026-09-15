@@ -361,7 +361,7 @@ function Row({
 }) {
   return (
     <tr
-      onClick={() => onSelect(`${f.symbol}.NSE`)}
+      onClick={() => onSelect(f.symbol)}
       className="cursor-pointer hover:bg-bg-panel-hover"
     >
       <td className="px-2.5 py-2 font-mono text-meta text-text-primary">{f.symbol}</td>

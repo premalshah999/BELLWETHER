@@ -251,7 +251,7 @@ export function NewsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
                   <button
                     key={en.symbol}
                     type="button"
-                    onClick={() => onSelect(`${en.symbol}.NSE`)}
+                    onClick={() => onSelect(en.symbol)}
                     className="font-mono text-meta text-text-secondary hover:text-brand"
                   >
                     {en.symbol}

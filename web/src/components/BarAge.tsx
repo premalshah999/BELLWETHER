@@ -33,7 +33,12 @@ export function BarAge({
   bar,
   interval,
   fetchedAt,
-  venue = "NSE",
+  // Every current caller passes this explicitly; the default is a last
+  // resort for one that does not, and NSE is no longer a safe guess now
+  // that the app is US-first. There is no universally-correct default for
+  // a prop whose entire job is telling two venues apart, so callers should
+  // pass it rather than rely on this.
+  venue = "US",
 }: {
   bar: Candle | null;
   interval: Interval;
