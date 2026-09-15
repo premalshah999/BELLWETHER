@@ -736,3 +736,35 @@ func constantSlice(n int, v float64) []float64 {
 
 // trimFloat renders a float as compact JSON-safe literal text.
 func trimFloat(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+
+// TestSessionVWAPBucketsBySymbolVenue is the regression for the bug fixed in
+// Evaluate: session-based indicators used to bucket by the Evaluator's own
+// shared display timezone, so a US symbol's SessionVWAP reset by IST rather
+// than by ET. These two bars sit on different ET calendar days but the same
+// IST calendar day (04:00Z/06:00Z straddle ET's 05:00Z local-midnight
+// boundary, which falls midday in IST): a US symbol must see its session
+// reset before the second bar, an NSE symbol evaluating the identical
+// candles must not.
+func TestSessionVWAPBucketsBySymbolVenue(t *testing.T) {
+	candles := []marketdata.Candle{
+		{Time: time.Date(2026, 1, 1, 4, 0, 0, 0, time.UTC),
+			Open: 100, High: 100, Low: 100, Close: 100, Volume: 100},
+		{Time: time.Date(2026, 1, 1, 6, 0, 0, 0, time.UTC),
+			Open: 200, High: 200, Low: 200, Close: 200, Volume: 100},
+	}
+	const src = `{"name":"t","symbols":["X"],"interval":"1h",
+		"all":[{"indicator":"session_vwap","op":">","value":180}],"notify":{}}`
+
+	us := NewEvaluator(time.UTC).Evaluate(mustAlgo(t, src), marketdata.MustParseSymbol("AAPL"), candles)
+	if !us.Triggered() {
+		t.Errorf("US symbol: session_vwap should have reset before the second bar (ET midnight falls between them), giving ~200 > 180; got status=%s reason=%q",
+			us.Status, us.Reason)
+	}
+
+	nse := NewEvaluator(time.UTC).Evaluate(mustAlgo(t, src), marketdata.MustParseSymbol("RELIANCE.NSE"), candles)
+	if nse.Triggered() {
+		t.Errorf("NSE symbol: session_vwap should still be accumulating across both bars (same IST calendar day), giving ~150, not > 180; got status=%s reason=%q",
+			nse.Status, nse.Reason)
+	}
+}
+

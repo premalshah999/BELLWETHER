@@ -264,10 +264,22 @@ func screenID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 //
 // Every problem in one response, keyed by field, so the builder can mark the
 // offending rows rather than showing one message at the top.
+//
+// The envelope is the nested {error:{code,message,fields}} shape apiError
+// uses everywhere else -- this used to emit "error" as a bare string, which
+// api.ts's request() cannot parse as an ApiError, so every screen validation
+// failure surfaced to the builder as a generic "Request failed with status
+// 400" instead of the field-by-field detail computed above.
 func writeFieldErrors(w http.ResponseWriter, errs []screens.FieldError) {
-	writeJSON(w, http.StatusBadRequest, map[string]any{
-		"error":   "invalid_screen",
-		"message": "That screen is not valid.",
-		"fields":  errs,
-	})
+	var resp struct {
+		Error struct {
+			Code    string               `json:"code"`
+			Message string               `json:"message"`
+			Fields  []screens.FieldError `json:"fields,omitempty"`
+		} `json:"error"`
+	}
+	resp.Error.Code = "invalid_screen"
+	resp.Error.Message = "That screen is not valid."
+	resp.Error.Fields = errs
+	writeJSON(w, http.StatusBadRequest, resp)
 }

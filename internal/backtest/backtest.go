@@ -100,14 +100,32 @@ type Config struct {
 	CostBps float64 `json:"cost_bps"`
 }
 
-// DefaultCostBps is the round-trip-per-side assumption when none is given.
+// DefaultCostBps is the round-trip-per-side assumption for Indian cash
+// equity when none is given.
 //
-// Ten basis points a side is a deliberately unkind number for Indian cash
-// equity — discount brokerage is near zero, but STT, exchange and SEBI fees,
-// stamp duty and GST land around 5-6bps a side on delivery, and slippage on a
-// market order in anything outside the most liquid names covers the rest. A
-// strategy that only works below this was never going to work.
+// Ten basis points a side is a deliberately unkind number — discount
+// brokerage is near zero, but STT, exchange and SEBI fees, stamp duty and
+// GST land around 5-6bps a side on delivery, and slippage on a market order
+// in anything outside the most liquid names covers the rest. A strategy that
+// only works below this was never going to work.
 const DefaultCostBps = 10
+
+// DefaultCostBpsUS is the same assumption for US cash equity, which has none
+// of the India-specific taxes above: no STT, no stamp duty, no GST. What is
+// left is commission (at most brokers, zero) and slippage, which even a
+// deliberately unkind number puts in the low single digits rather than
+// double.
+const DefaultCostBpsUS = 3
+
+// DefaultCostBpsFor picks the default by the symbol's own venue, so a
+// backtest never charges an Indian tax regime against a US fill or the
+// reverse.
+func DefaultCostBpsFor(sym marketdata.Symbol) float64 {
+	if sym.IsIndian() {
+		return DefaultCostBps
+	}
+	return DefaultCostBpsUS
+}
 
 // Trade is one completed round trip.
 type Trade struct {

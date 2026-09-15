@@ -63,3 +63,21 @@ func TestVenuesDifferOnTheSameInstant(t *testing.T) {
 		t.Error("US markets are trading at 11:30 ET")
 	}
 }
+
+func TestExchangeLocation(t *testing.T) {
+	if got := ExchangeNSE.Location().String(); got != "Asia/Kolkata" {
+		t.Errorf("NSE location = %s, want Asia/Kolkata", got)
+	}
+	if got := ExchangeBSE.Location().String(); got != "Asia/Kolkata" {
+		t.Errorf("BSE location = %s, want Asia/Kolkata", got)
+	}
+	if got := ExchangeUS.Location().String(); got != "America/New_York" {
+		t.Errorf("US location = %s, want America/New_York", got)
+	}
+	// A benchmark index has no venue of its own; it defaults to US hours,
+	// which is where the major indices this app cares about (^GSPC, ^VIX)
+	// actually trade.
+	if got := ExchangeIndex.Location().String(); got != "America/New_York" {
+		t.Errorf("index location = %s, want America/New_York", got)
+	}
+}

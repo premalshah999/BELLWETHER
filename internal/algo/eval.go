@@ -123,11 +123,19 @@ func (r Result) Triggered() bool { return r.Status == StatusTriggered }
 // Evaluator evaluates algorithms. It holds no mutable state and is safe for
 // concurrent use.
 type Evaluator struct {
-	// loc is the exchange timezone used for session-based indicators.
+	// loc was once the timezone every session-based indicator bucketed by,
+	// which was wrong the moment a second venue existed: a US symbol's
+	// SessionVWAP reset by IST resets mid-session, at 02:30 ET. Evaluate now
+	// derives the location per call from the symbol's own venue
+	// (sym.Exchange.Location()) instead, so this field is kept only for
+	// source compatibility with existing callers and is otherwise unused.
 	loc *time.Location
 }
 
-// NewEvaluator builds an evaluator. A nil location means UTC.
+// NewEvaluator builds an evaluator. loc is accepted for compatibility with
+// existing callers but no longer used: session-based indicators bucket by
+// the symbol being evaluated, not a single shared timezone. Pass time.UTC or
+// nil.
 func NewEvaluator(loc *time.Location) *Evaluator {
 	if loc == nil {
 		loc = time.UTC
@@ -248,9 +256,13 @@ func (e *Evaluator) Evaluate(a *Algorithm, sym marketdata.Symbol, candles []mark
 
 	ctx := &evalContext{
 		candles: candles,
-		loc:     e.loc,
-		cache:   map[string]indicators.Series{},
-		index:   len(candles) - 1,
+		// The symbol's own exchange decides the session boundary, not a
+		// single operator-display timezone: e.loc would bucket a US
+		// session's SessionVWAP by IST, resetting it mid-session at 02:30
+		// ET.
+		loc:   sym.Exchange.Location(),
+		cache: map[string]indicators.Series{},
+		index: len(candles) - 1,
 	}
 	last := candles[ctx.index]
 	res.BarTime = last.Time
