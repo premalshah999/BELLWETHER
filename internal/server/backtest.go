@@ -228,10 +228,11 @@ func (s *Server) runBacktest(w http.ResponseWriter, r *http.Request, a *algo.Alg
 	cfg := body.Config
 	// A request that never mentions costs gets real ones. Defaulting to zero
 	// would make the friendliest possible assumption silently, which is
-	// exactly the assumption a backtester must not make on its own.
-	if cfg.CostBps == 0 && !body.mentionsCost() {
-		cfg.CostBps = backtest.DefaultCostBps
-	}
+	// exactly the assumption a backtester must not make on its own. The
+	// actual default is picked per symbol below, once its venue is known --
+	// India and the US do not share a tax regime, and defaulting to India's
+	// here would charge every US backtest for STT it never pays.
+	defaultCost := !body.mentionsCost() && cfg.CostBps == 0
 
 	start := time.Now()
 	var (
@@ -254,6 +255,11 @@ func (s *Server) runBacktest(w http.ResponseWriter, r *http.Request, a *algo.Alg
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			symCfg := cfg
+			if defaultCost {
+				symCfg.CostBps = backtest.DefaultCostBpsFor(sym)
+			}
+
 			series, err := s.deps.Router.Candles(r.Context(), sym, interval, bars)
 			if err != nil {
 				mu.Lock()
@@ -261,7 +267,7 @@ func (s *Server) runBacktest(w http.ResponseWriter, r *http.Request, a *algo.Alg
 				mu.Unlock()
 				return
 			}
-			res, err := backtest.Run(a, sym, series.Candles, cfg, s.deps.Evaluator)
+			res, err := backtest.Run(a, sym, series.Candles, symCfg, s.deps.Evaluator)
 			if err != nil {
 				mu.Lock()
 				skips = append(skips, skipped{Symbol: sym.String(), Reason: err.Error()})

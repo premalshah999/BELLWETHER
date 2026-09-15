@@ -44,6 +44,12 @@ func (e Exchange) window() sessionWindow {
 	}
 }
 
+// Location is the exchange's own timezone -- what a session-based indicator
+// (SessionVWAP, an intraday bar's calendar day) must bucket by. It must never
+// be a single operator-display timezone shared across venues: bucketing a US
+// session by IST resets its VWAP at 02:30 ET, mid-session.
+func (e Exchange) Location() *time.Location { return e.window().loc }
+
 // settlingWindow is how long after the close a venue's last bar is still
 // worth refetching.
 //
