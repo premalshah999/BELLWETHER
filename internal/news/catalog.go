@@ -390,25 +390,31 @@ func DefaultSources() []Source {
 		Trust: TrustAggregator, Refresh: 30 * time.Minute, Timeout: 90 * time.Second,
 		Usage: UsagePublicReviewed, Display: DisplayLinkOnly, Enabled: true,
 	})
-	// Same query, US-scoped. sourcecountry takes a country NAME, not a
-	// two-letter code: "sourcecountry:us" parses without error but matches
-	// nothing (empty result set, HTTP 200) -- confirmed live -- and the
-	// existing India source's own return payloads show the field populated
-	// as "India", not "IN" (see the sourcecountry fixture in
-	// internal/news/engine_test.go). A quoted "united states" is rejected
-	// outright ("You put quotes around a parameter that does not accept
-	// quotes" -- also confirmed live), so the value has to be one token.
-	// GDELT's documented convention for a multi-word country is that token
-	// with the space removed ("unitedkingdom", "southkorea"), which is what
-	// this uses; GDELT's shared-IP rate limit -- exhausted probing the rest
-	// of this catalog -- prevented a final live confirmation of a non-empty
-	// result specifically for "unitedstates" before this was written. If
-	// health checks ever show this source persistently empty where
-	// gdelt-india-business is not, that unconfirmed step is where to look
-	// first.
+	// Same query, US-scoped. Two earlier attempts here were both wrong, and
+	// production health data is what proved it: "sourcecountry:us"
+	// (lowercase code) parses without error but matches nothing (confirmed
+	// live), and the next guess, "sourcecountry:unitedstates" (lowercase
+	// name with the space stripped -- GDELT's own documented convention for
+	// a multi-word country, e.g. "unitedarabemirates"), looked plausible
+	// but source_health told a different story after a day in production:
+	// 13 genuine HTTP 200 successes, every one of them zero items -- not a
+	// rate limit, an empty match, and implausible on its face besides (US
+	// financial-news volume should dwarf India's, not read as zero against
+	// gdelt-india-business's real flow of items).
+	//
+	// GDELT's own FIPS country lookup
+	// (https://data.gdeltproject.org/api/v2/guides/LOOKUP-COUNTRIES.TXT)
+	// lists "US" for United States, and GDELT's own worked example for this
+	// exact operator uses it uppercase: sourcecountry:US. That the
+	// lowercase code failed but the name-token path also failed suggests
+	// the code form is matched case-sensitively against that uppercase
+	// table -- unlike a country name, which GDELT's india source proves is
+	// matched case-insensitively. If health checks ever show this source
+	// persistently empty again, verify against the lookup file above rather
+	// than re-guessing a spelling.
 	out = append(out, Source{
 		ID: "gdelt-us-business", Name: "GDELT US Business",
-		URL:    "https://api.gdeltproject.org/api/v2/doc/doc?query=(stocks%20OR%20shares%20OR%20earnings)%20sourcecountry:unitedstates&mode=ArtList&format=json&maxrecords=75&timespan=60min",
+		URL:    "https://api.gdeltproject.org/api/v2/doc/doc?query=(stocks%20OR%20shares%20OR%20earnings)%20sourcecountry:US&mode=ArtList&format=json&maxrecords=75&timespan=60min",
 		Method: MethodGDELT, Category: "discovery", Country: "US", Language: "en",
 		Trust: TrustAggregator, Refresh: 30 * time.Minute, Timeout: 90 * time.Second,
 		Usage: UsagePublicReviewed, Display: DisplayLinkOnly, Enabled: true,
