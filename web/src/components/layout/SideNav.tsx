@@ -3,6 +3,7 @@ import {
   Activity,
   Bell,
   BrainCircuit,
+  Briefcase,
   CandlestickChart,
   ChevronDown,
   ChevronRight,
@@ -59,6 +60,7 @@ const isGroup = (e: Entry): e is Group => "children" in e;
  */
 const NAV: Entry[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/positions", label: "Positions", icon: Briefcase },
   { to: "/charts", label: "Charts", icon: CandlestickChart },
   {
     id: "markets",
