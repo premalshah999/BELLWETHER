@@ -251,6 +251,15 @@ func (s *Server) routes() {
 				r.Delete("/{symbol}", s.handleWatchlistRemove)
 			})
 
+			r.Route("/positions", func(r chi.Router) {
+				r.Get("/", s.handleListPositions)
+				r.Post("/", s.handleCreatePosition)
+				r.Put("/{id}", s.handleUpdatePosition)
+				r.Delete("/{id}", s.handleDeletePosition)
+				r.Post("/{id}/close", s.handleClosePosition)
+			})
+			r.Get("/trades", s.handleListTrades)
+
 			// Declared before the {symbol} routes so "search" and "sectors"
 			// are never parsed as a ticker.
 			r.Get("/symbols/search", s.handleSearchSymbols)

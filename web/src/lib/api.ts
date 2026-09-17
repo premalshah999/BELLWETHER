@@ -663,6 +663,43 @@ export interface SourceLatency {
   avg_lead_seconds?: number;
 }
 
+/* ── Positions ──────────────────────────────────────────────────────────── */
+
+/**
+ * One open holding, priced live. Average-cost, not FIFO lots -- see
+ * internal/storage/postgres/positions.go for what that trades off.
+ */
+export interface Position {
+  id: number;
+  symbol: string;
+  quantity: number;
+  cost_basis: number;
+  opened_at: string;
+  account?: string;
+  notes?: string;
+  price?: number;
+  market_value?: number;
+  unrealized_pnl?: number;
+  unrealized_pct?: number;
+  price_stale?: boolean;
+  price_error?: string;
+}
+
+/** One closed position (or the closed portion of one) -- immutable once written. */
+export interface Trade {
+  id: number;
+  symbol: string;
+  quantity: number;
+  entry_price: number;
+  exit_price: number;
+  opened_at: string;
+  closed_at: string;
+  realized_pnl: number;
+  account?: string;
+  notes?: string;
+  created_at: string;
+}
+
 export interface HotEntry {
   key: string;
   score: number;
@@ -1468,4 +1505,38 @@ export const api = {
   /** Which sources actually break stories first, over the trailing N days. */
   sourceLatency: (days = 30) =>
     request<{ sources: SourceLatency[]; days: number }>(`/api/ingest/latency?days=${days}`),
+
+  /** Every open position, priced live -- see internal/storage/postgres/positions.go. */
+  positions: () => request<{ positions: Position[] }>("/api/positions"),
+
+  addPosition: (body: {
+    symbol: string;
+    quantity: number;
+    cost_basis: number;
+    opened_at?: string;
+    account?: string;
+    notes?: string;
+  }) => request<{ id: number }>("/api/positions", { method: "POST", body: JSON.stringify(body) }),
+
+  updatePosition: (
+    id: number,
+    body: { quantity: number; cost_basis: number; opened_at?: string; account?: string; notes?: string },
+  ) => request<{ ok: true }>(`/api/positions/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+
+  deletePosition: (id: number) =>
+    request<{ ok: true }>(`/api/positions/${id}`, { method: "DELETE" }),
+
+  /** Reduce or fully close a position; the closed portion becomes a trade. */
+  closePosition: (
+    id: number,
+    body: { quantity: number; exit_price: number; closed_at?: string; notes?: string },
+  ) => request<Trade>(`/api/positions/${id}/close`, { method: "POST", body: JSON.stringify(body) }),
+
+  trades: (opts: { symbol?: string; limit?: number } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.symbol) p.set("symbol", opts.symbol);
+    if (opts.limit) p.set("limit", String(opts.limit));
+    const qs = p.toString();
+    return request<{ trades: Trade[] }>(`/api/trades${qs ? `?${qs}` : ""}`);
+  },
 };

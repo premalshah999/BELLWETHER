@@ -3,6 +3,7 @@ import { Globe2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api, type MarketEvent } from "../../lib/api";
 import { formatAgo } from "../../lib/format";
+import { venueOf } from "../../lib/symbol";
 import { Empty } from "../ui/Empty";
 import { Panel } from "../ui/Panel";
 import { Pill } from "../ui/Pill";
@@ -16,8 +17,13 @@ import { Pill } from "../ui/Pill";
  * entities, and an event with none looks like it is about nothing. It is
  * about a sector, which is a fact this page can act on because every event
  * here already carries the sectors it reaches (internal/events/sector.go --
- * NSE industries and, prefixed "US: ", GICS ones) and every symbol on the
- * watchlist has a known industry to compare them against.
+ * NSE industries and, prefixed "US: ", GICS ones) and every held or watched
+ * symbol has a known industry to compare them against.
+ *
+ * Positions, not just the watchlist, are what "touches my holdings" checks
+ * first -- a hit against real money is a different fact from a hit against
+ * a name someone is merely tracking, and the two are shown differently
+ * rather than folded into one undifferentiated list.
  */
 const TYPES = [
   { label: "all", value: "" },
@@ -32,6 +38,11 @@ const ALL_TYPES = TYPES.slice(1)
   .map((t) => t.value)
   .join(",");
 
+function money(n: number, symbol: string) {
+  const cur = venueOf(symbol) === "NSE" ? "₹" : "$";
+  return `${cur}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
 export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
   const [type, setType] = useState<(typeof TYPES)[number]["value"]>("");
   const [onlyMine, setOnlyMine] = useState(false);
@@ -43,22 +54,50 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
   });
   const events = useMemo(() => data?.events ?? [], [data]);
 
+  const { data: positionsData } = useQuery({
+    queryKey: ["positions-for-geopolitics"],
+    queryFn: api.positions,
+    staleTime: 60_000,
+  });
+  const positions = useMemo(() => positionsData?.positions ?? [], [positionsData]);
+  // A symbol can appear in more than one account; what a hit card needs is
+  // the combined exposure, not one row per account.
+  const valueBySymbol = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const p of positions) {
+      if (p.market_value == null) continue;
+      out.set(p.symbol, (out.get(p.symbol) ?? 0) + p.market_value);
+    }
+    return out;
+  }, [positions]);
+
   const { data: watchlist } = useQuery({
     queryKey: ["watchlist-for-geopolitics"],
     queryFn: api.watchlist,
     staleTime: 60_000,
   });
-  const holdings = useMemo(() => watchlist?.items ?? [], [watchlist]);
+  const watched = useMemo(() => watchlist?.items ?? [], [watchlist]);
+
+  // Real positions and watched-but-not-held symbols both need a sector
+  // lookup, but they answer different questions -- so the union goes to the
+  // API, and which bucket each symbol came from is kept separately.
+  const holdingSymbols = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of positions) s.add(p.symbol);
+    for (const w of watched) s.add(w.symbol);
+    return [...s];
+  }, [positions, watched]);
 
   const { data: sectorData } = useQuery({
-    queryKey: ["holding-sectors", holdings.map((h) => h.symbol).join(",")],
-    queryFn: () => api.symbolSectors(holdings.map((h) => h.symbol)),
-    enabled: holdings.length > 0,
+    queryKey: ["holding-sectors", holdingSymbols.join(",")],
+    queryFn: () => api.symbolSectors(holdingSymbols),
+    enabled: holdingSymbols.length > 0,
     staleTime: 5 * 60_000,
   });
   // symbol -> its industry, already spelled to match an event's own Sectors.
   const bySymbol = sectorData?.sectors ?? {};
-  // industry -> which held symbols sit in it, the reverse index a card needs.
+  // industry -> which held/watched symbols sit in it, the reverse index a
+  // card needs.
   const holdingsBySector = useMemo(() => {
     const out = new Map<string, string[]>();
     for (const [symbol, sector] of Object.entries(bySymbol)) {
@@ -72,7 +111,9 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
     for (const sector of event.sectors ?? []) {
       for (const symbol of holdingsBySector.get(sector) ?? []) hit.add(symbol);
     }
-    return [...hit];
+    // Real money first, so the most consequential hit on a card is never
+    // pushed off-screen by a longer tail of merely-watched names.
+    return [...hit].sort((a, b) => (valueBySymbol.has(b) ? 1 : 0) - (valueBySymbol.has(a) ? 1 : 0));
   };
 
   const shown = onlyMine ? events.filter((e) => touching(e).length > 0) : events;
@@ -103,7 +144,7 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
         <button
           type="button"
           onClick={() => setOnlyMine((v) => !v)}
-          disabled={holdings.length === 0}
+          disabled={holdingSymbols.length === 0}
           className={
             "border px-2 py-1 font-mono text-micro uppercase tracking-wider transition-colors disabled:opacity-40 " +
             (onlyMine
@@ -111,9 +152,9 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
               : "border-border-subtle text-text-muted hover:text-text-primary")
           }
           title={
-            holdings.length === 0
-              ? "Add something to your watchlist to filter by it"
-              : "Show only events that reach a sector you hold"
+            holdingSymbols.length === 0
+              ? "Add a position or a watchlist symbol to filter by it"
+              : "Show only events that reach a sector you hold or watch"
           }
         >
           touches my holdings
@@ -168,16 +209,28 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
                       <span className="font-mono text-micro uppercase tracking-wider text-brand">
                         touches
                       </span>
-                      {hits.map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => onSelect(s)}
-                          className="font-mono text-meta text-text-secondary hover:text-brand"
-                        >
-                          {s}
-                        </button>
-                      ))}
+                      {hits.map((s) => {
+                        const value = valueBySymbol.get(s);
+                        return (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => onSelect(s)}
+                            className={
+                              "font-mono text-meta " +
+                              (value != null
+                                ? "text-text-primary hover:text-brand"
+                                : "text-text-muted hover:text-brand")
+                            }
+                            title={value != null ? "A real position -- not just watched" : "On your watchlist"}
+                          >
+                            {s}
+                            {value != null && (
+                              <span className="ml-1 text-text-muted">{money(value, s)}</span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </li>
