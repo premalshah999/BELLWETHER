@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Rss } from "lucide-react";
+import { Rss, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
-import { api, type IngestSource } from "../../lib/api";
+import { api, type IngestSource, type SourceLatency } from "../../lib/api";
 import { formatAgo } from "../../lib/format";
 import { Empty } from "../ui/Empty";
 
@@ -14,15 +14,24 @@ import { Empty } from "../ui/Empty";
  * as fine at a glance.
  */
 export function SourcesPage() {
-  const [only, setOnly] = useState<"all" | "failing" | "watchlist">("all");
+  const [only, setOnly] = useState<"all" | "failing" | "watchlist" | "latency">("all");
 
   const { data, isLoading } = useQuery({
     queryKey: ["ingest-sources"],
     queryFn: api.ingestSources,
     refetchInterval: 60_000,
+    enabled: only !== "latency",
+  });
+
+  const { data: latencyData, isLoading: latencyLoading } = useQuery({
+    queryKey: ["source-latency"],
+    queryFn: () => api.sourceLatency(30),
+    enabled: only === "latency",
+    staleTime: 5 * 60_000,
   });
 
   const sources = useMemo(() => data?.sources ?? [], [data]);
+  const latency = useMemo(() => latencyData?.sources ?? [], [latencyData]);
 
   const shown = useMemo(() => {
     let out = sources;
@@ -56,14 +65,47 @@ export function SourcesPage() {
           <Seg on={only === "watchlist"} onClick={() => setOnly("watchlist")}>
             per-instrument
           </Seg>
+          <Seg on={only === "latency"} onClick={() => setOnly("latency")}>
+            <Zap size={11} className="inline -mt-px" /> first-to-report
+          </Seg>
         </div>
         <span className="ml-auto font-mono text-meta text-text-muted">
-          {items.toLocaleString()} items collected
+          {only === "latency"
+            ? "trailing 30 days"
+            : `${items.toLocaleString()} items collected`}
         </span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {isLoading ? (
+        {only === "latency" ? (
+          latencyLoading ? (
+            <p className="px-4 py-6 font-mono text-meta text-text-muted">loading…</p>
+          ) : latency.length === 0 ? (
+            <Empty
+              icon={Zap}
+              title="Not enough multi-source stories yet."
+              hint="This ranks sources by how often they broke a story before another source also carried it. It needs a source to have appeared on at least five such stories in the last 30 days before its win rate means anything."
+            />
+          ) : (
+            <table className="w-full max-w-[900px] border-collapse">
+              <thead className="sticky top-0 z-10 bg-bg-panel">
+                <tr className="border-b border-border-subtle">
+                  <Th className="w-[60px]">rank</Th>
+                  <Th className="w-[280px]">source</Th>
+                  <Th right className="w-[110px]">first</Th>
+                  <Th right className="w-[110px]">seen on</Th>
+                  <Th right className="w-[110px]">win rate</Th>
+                  <Th right>avg. lead</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-subtle">
+                {latency.map((s, i) => (
+                  <LatencyRow key={s.source_id} rank={i + 1} s={s} />
+                ))}
+              </tbody>
+            </table>
+          )
+        ) : isLoading ? (
           <p className="px-4 py-6 font-mono text-meta text-text-muted">loading…</p>
         ) : shown.length === 0 ? (
           <Empty
@@ -94,6 +136,39 @@ export function SourcesPage() {
       </div>
     </div>
   );
+}
+
+function LatencyRow({ rank, s }: { rank: number; s: SourceLatency }) {
+  return (
+    <tr className="hover:bg-bg-panel-hover">
+      <td className="px-3 py-2 font-mono text-meta text-text-muted">{rank}</td>
+      <td className="px-3 py-2 text-ui text-text-primary">{s.name}</td>
+      <td className="px-3 py-2 text-right font-mono text-ui text-text-secondary">
+        {s.times_first.toLocaleString()}
+      </td>
+      <td className="px-3 py-2 text-right font-mono text-ui text-text-muted">
+        {s.participated.toLocaleString()}
+      </td>
+      <td
+        className={
+          "px-3 py-2 text-right font-mono text-ui " +
+          (s.win_rate_pct >= 50 ? "text-semantic-up" : "text-text-secondary")
+        }
+      >
+        {s.win_rate_pct.toFixed(1)}%
+      </td>
+      <td className="px-3 py-2 text-right font-mono text-meta text-text-muted">
+        {s.avg_lead_seconds == null ? "—" : humanLead(s.avg_lead_seconds)}
+      </td>
+    </tr>
+  );
+}
+
+function humanLead(seconds: number) {
+  if (seconds < 90) return `${Math.round(seconds)}s`;
+  const m = Math.round(seconds / 60);
+  if (m < 90) return `${m}m`;
+  return `${Math.round(m / 60)}h`;
 }
 
 function Row({ s }: { s: IngestSource }) {

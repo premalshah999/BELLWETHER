@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/tradesys/dashboard/internal/news"
+	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
 // rawItemCounter is the optional part of the store this handler can use.
@@ -239,3 +241,81 @@ func (s *Server) handlePipeline(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, out)
 }
+
+// SourceLatencyReader is the part of storage the source-latency leaderboard
+// reads.
+type SourceLatencyReader interface {
+	SourceLatencyLeaderboard(ctx context.Context, since time.Time, minParticipation int) ([]postgres.SourceLatency, error)
+}
+
+func (s *Server) sourceLatencyReader() (SourceLatencyReader, bool) {
+	r, ok := s.deps.Store.(SourceLatencyReader)
+	return r, ok
+}
+
+// sourceLatencyView is one source's leaderboard row, with the display name
+// the registry knows it by rather than its bare id.
+type sourceLatencyView struct {
+	SourceID       string   `json:"source_id"`
+	Name           string   `json:"name"`
+	Participated   int      `json:"participated"`
+	TimesFirst     int      `json:"times_first"`
+	WinRatePct     float64  `json:"win_rate_pct"`
+	AvgLeadSeconds *float64 `json:"avg_lead_seconds,omitempty"`
+}
+
+// handleSourceLatency ranks sources by how often they were first to carry a
+// story that at least one other source also carried -- "which feeds are
+// actually worth the slot in the catalog", not "which feeds publish the
+// most". See postgres.SourceLatencyLeaderboard's doc for the method.
+func (s *Server) handleSourceLatency(w http.ResponseWriter, r *http.Request) {
+	reader, ok := s.sourceLatencyReader()
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "The source leaderboard is not available.")
+		return
+	}
+
+	days := 30
+	if raw := r.URL.Query().Get("days"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 365 {
+			days = n
+		}
+	}
+	since := time.Now().AddDate(0, 0, -days)
+
+	// Five is a floor, not a target: fewer appearances than that and a win
+	// rate is describing a coin flip, not a pattern.
+	board, err := reader.SourceLatencyLeaderboard(r.Context(), since, 5)
+	if err != nil {
+		s.deps.Log.Error("source latency leaderboard failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "storage", "Could not read the source leaderboard.")
+		return
+	}
+
+	names := map[string]string{}
+	if s.deps.Ingest != nil {
+		for _, src := range s.deps.Ingest.Registry().All() {
+			names[src.ID] = src.Name
+		}
+	}
+
+	out := make([]sourceLatencyView, 0, len(board))
+	for _, l := range board {
+		name := names[l.SourceID]
+		if name == "" {
+			name = l.SourceID
+		}
+		v := sourceLatencyView{
+			SourceID: l.SourceID, Name: name,
+			Participated: l.Participated, TimesFirst: l.TimesFirst,
+			AvgLeadSeconds: l.AvgLeadSeconds,
+		}
+		if l.Participated > 0 {
+			v.WinRatePct = round1(float64(l.TimesFirst) / float64(l.Participated) * 100)
+		}
+		out = append(out, v)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sources": out, "days": days})
+}
+
+func round1(f float64) float64 { return float64(int(f*10+0.5)) / 10 }

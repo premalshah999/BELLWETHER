@@ -649,6 +649,20 @@ export interface IngestSource {
   total_new_items: number;
 }
 
+/**
+ * One source's record on stories at least one other source also carried --
+ * how often it was first, and by how much. See
+ * internal/storage/postgres/source_latency.go for the method.
+ */
+export interface SourceLatency {
+  source_id: string;
+  name: string;
+  participated: number;
+  times_first: number;
+  win_rate_pct: number;
+  avg_lead_seconds?: number;
+}
+
 export interface HotEntry {
   key: string;
   score: number;
@@ -1450,4 +1464,8 @@ export const api = {
   /** Every configured feed and how it is behaving. */
   ingestSources: () =>
     request<{ sources: IngestSource[] }>("/api/ingest/sources"),
+
+  /** Which sources actually break stories first, over the trailing N days. */
+  sourceLatency: (days = 30) =>
+    request<{ sources: SourceLatency[]; days: number }>(`/api/ingest/latency?days=${days}`),
 };
