@@ -193,6 +193,7 @@ func (s *Server) routes() {
 			r.Get("/ingest/sources", s.handleIngestSources)
 			r.Get("/ingest/stats", s.handleStorageStats)
 			r.Get("/ingest/pipeline", s.handlePipeline)
+			r.Get("/ingest/latency", s.handleSourceLatency)
 
 			// The news and filings feed.
 			r.Get("/events", s.handleEvents)
