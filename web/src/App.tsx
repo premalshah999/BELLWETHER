@@ -13,6 +13,7 @@ import { CongressPage } from "./components/pages/CongressPage";
 import { DashboardPage } from "./components/pages/DashboardPage";
 import { EventStudyPage } from "./components/pages/EventStudyPage";
 import { GeopoliticsPage } from "./components/pages/GeopoliticsPage";
+import { JournalPage } from "./components/pages/JournalPage";
 import { PositionsPage } from "./components/pages/PositionsPage";
 import { NewsPage } from "./components/pages/NewsPage";
 import { ResearchPage } from "./components/pages/ResearchPage";
@@ -134,6 +135,7 @@ export function App() {
               <Route path="/congress" element={<CongressPage onSelect={setSelected} />} />
               <Route path="/eventstudy" element={<EventStudyPage />} />
               <Route path="/positions" element={<PositionsPage onSelect={setSelected} />} />
+              <Route path="/journal" element={<JournalPage onSelect={setSelected} />} />
               <Route path="/research" element={<ResearchPage />} />
               <Route path="/algorithms" element={<Navigate to="/algorithms/build" replace />} />
               <Route path="/algorithms/:mode" element={<AlgorithmsPage />} />
