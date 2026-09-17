@@ -700,6 +700,34 @@ export interface Trade {
   created_at: string;
 }
 
+/**
+ * The event, if any, that most plausibly prompted a trade's entry -- the
+ * most recent classified event naming the symbol, discovered on or before
+ * entry, within the lookback window. See internal/storage/postgres/journal.go.
+ */
+export interface JournalCatalyst {
+  event_id: number;
+  event_type: string;
+  headline: string;
+  official: boolean;
+  best_trust: number;
+  days_before_entry: number;
+}
+
+export interface JournalEntry {
+  id: number;
+  symbol: string;
+  quantity: number;
+  entry_price: number;
+  exit_price: number;
+  opened_at: string;
+  closed_at: string;
+  realized_pnl: number;
+  account?: string;
+  notes?: string;
+  catalyst?: JournalCatalyst;
+}
+
 export interface HotEntry {
   key: string;
   score: number;
@@ -1539,4 +1567,8 @@ export const api = {
     const qs = p.toString();
     return request<{ trades: Trade[] }>(`/api/trades${qs ? `?${qs}` : ""}`);
   },
+
+  /** Closed trades with catalyst attribution -- see internal/storage/postgres/journal.go. */
+  journal: (limit = 200) =>
+    request<{ trades: JournalEntry[] }>(`/api/journal?limit=${limit}`),
 };
