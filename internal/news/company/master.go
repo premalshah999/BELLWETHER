@@ -40,12 +40,37 @@ var commonWords = func() map[string]bool {
 }()
 
 // Company is one listed instrument.
+//
+// Symbol is the venue's own bare ticker (RELIANCE, AAPL), not the canonical
+// venue-qualified form -- CanonicalSymbol builds that, and every caller
+// storing a symbol must use it. The two are only identical for US listings,
+// which is exactly the trap this type exists to keep a caller out of: a
+// resolver that returned a bare ticker to something that appended ".NSE"
+// unconditionally would file every US match under an NSE symbol.
 type Company struct {
 	Symbol string `json:"symbol"`
 	Name   string `json:"name"`
 	ISIN   string `json:"isin"`
 	Series string `json:"series"`
+	// Venue is "NSE" or "US". Empty means NSE, since the NSE master predates
+	// this field and loads without setting it.
+	Venue string `json:"venue,omitempty"`
 }
+
+// CanonicalSymbol is the venue-qualified symbol every other package stores
+// and joins on: bare for US, suffixed for NSE.
+func (c Company) CanonicalSymbol() string {
+	if c.Venue == VenueUS {
+		return c.Symbol
+	}
+	return c.Symbol + ".NSE"
+}
+
+// Venues a company can be listed on.
+const (
+	VenueNSE = "NSE"
+	VenueUS  = "US"
+)
 
 // Method records how a match was reached, so a reviewer can tell a legal-name
 // hit from a bare-ticker guess without re-running the resolver.
@@ -66,6 +91,17 @@ type Match struct {
 	Confidence float64 `json:"confidence"`
 	Method     Method  `json:"method"`
 	Matched    string  `json:"matched"` // the span of text that produced the hit
+	// Venue carries the same warning Company.Symbol does: Symbol here is
+	// bare, and only CanonicalSymbol is safe to store.
+	Venue string `json:"venue,omitempty"`
+}
+
+// CanonicalSymbol is the venue-qualified form of this match's symbol.
+func (m Match) CanonicalSymbol() string {
+	if m.Venue == VenueUS {
+		return m.Symbol
+	}
+	return m.Symbol + ".NSE"
 }
 
 // Confidence levels. The spread matters more than the absolute values: it
@@ -76,7 +112,15 @@ const (
 	confLegalName = 0.97 // the full registered name appeared
 	confAlias     = 0.95 // a curated brand or former name appeared
 	confTicker    = 0.90 // a bare uppercase symbol appeared
-	confSingle    = 0.80 // a one-word company name appeared
+	// confSoleName is a company whose entire registered name is the one word
+	// that appeared -- "Apple", "Microsoft", "Nvidia". That is a legal-name
+	// match, not a fragment, and it is the common shape of a US name once
+	// the corporate suffix is normalised away, where an Indian name usually
+	// keeps two words ("Reliance Industries"). Rated below a multi-word
+	// legal name because one word carries less evidence, and above a lead
+	// word because nothing was dropped to get here.
+	confSoleName = 0.92
+	confSingle   = 0.80 // one word of a longer company name appeared
 )
 
 // maxPhraseTokens caps how long an n-gram may be when scanning text. The
@@ -85,9 +129,14 @@ const maxPhraseTokens = 8
 
 // Master is an indexed, read-only view of the listed universe.
 type Master struct {
+	// bySymbol is keyed by CANONICAL symbol (RELIANCE.NSE, AAPL), not by
+	// bare ticker. Two venues genuinely share tickers -- INFY and ABB are a
+	// different instrument on NSE than on the NYSE -- so a bare-ticker key
+	// would silently let one overwrite the other.
 	bySymbol map[string]Company
-	// byPhrase maps a normalized name or alias to every symbol claiming it.
-	// A phrase with more than one claimant is ambiguous and is not resolved.
+	// byPhrase maps a normalized name or alias to every canonical symbol
+	// claiming it. A phrase with more than one claimant is ambiguous and is
+	// resolved only when a venue preference settles it.
 	byPhrase map[string][]string
 	// aliasPhrase marks phrases contributed by the curated alias table rather
 	// than by a registered legal name, so a Match can report which it was.
@@ -95,6 +144,11 @@ type Master struct {
 	// leadPhrase marks a distinctive first word of a company name, registered
 	// so that "Suzlon" finds Suzlon Energy. These are leads, not identifications.
 	leadPhrase map[string]bool
+	// solePhrase marks a phrase that is some company's ENTIRE normalized
+	// registered name. One word that is the whole name is far better
+	// evidence than one word taken out of a longer one, and only this
+	// distinguishes them.
+	solePhrase map[string]bool
 	// industry maps a symbol to its NSE industry classification.
 	industry map[string]string
 	ordered  []Company
@@ -126,6 +180,7 @@ func Load(r io.Reader) (*Master, error) {
 		byPhrase:    make(map[string][]string, 3000),
 		aliasPhrase: make(map[string]bool, len(brandAliases)),
 		leadPhrase:  make(map[string]bool, 512),
+		solePhrase:  make(map[string]bool, 3000),
 	}
 	get := func(rec []string, i int) string {
 		if i >= 0 && i < len(rec) {
@@ -147,11 +202,12 @@ func Load(r io.Reader) (*Master, error) {
 		if sym == "" || name == "" {
 			continue
 		}
-		c := Company{Symbol: sym, Name: name, ISIN: get(rec, isinIdx), Series: get(rec, seriesIdx)}
-		m.bySymbol[sym] = c
+		c := Company{Symbol: sym, Name: name, ISIN: get(rec, isinIdx), Series: get(rec, seriesIdx), Venue: VenueNSE}
+		m.bySymbol[c.CanonicalSymbol()] = c
 		m.ordered = append(m.ordered, c)
 		if p := Normalize(name); p != "" {
-			m.byPhrase[p] = appendUnique(m.byPhrase[p], sym)
+			m.byPhrase[p] = appendUnique(m.byPhrase[p], c.CanonicalSymbol())
+			m.solePhrase[p] = true
 		}
 	}
 	if len(m.ordered) == 0 {
@@ -163,17 +219,19 @@ func Load(r io.Reader) (*Master, error) {
 	// An alias naming an unlisted symbol is skipped rather than trusted: the
 	// listing is the authority on what exists.
 	for alias, sym := range brandAliases {
-		if _, listed := m.bySymbol[sym]; !listed {
+		// The curated alias table predates venues and names NSE tickers.
+		canonical := sym + ".NSE"
+		if _, listed := m.bySymbol[canonical]; !listed {
 			continue
 		}
 		if key := Normalize(alias); key != "" {
 			if _, fromName := m.byPhrase[key]; !fromName {
 				m.aliasPhrase[key] = true
 			}
-			m.byPhrase[key] = appendUnique(m.byPhrase[key], sym)
+			m.byPhrase[key] = appendUnique(m.byPhrase[key], canonical)
 		}
 	}
-	m.indexLeadWords()
+	m.indexLeadWords(m.ordered)
 	m.loadIndustries()
 	sort.Slice(m.ordered, func(i, j int) bool { return m.ordered[i].Symbol < m.ordered[j].Symbol })
 	return m, nil
@@ -200,9 +258,41 @@ func (m *Master) Len() int { return len(m.ordered) }
 func (m *Master) All() []Company { return append([]Company(nil), m.ordered...) }
 
 // Lookup returns one company by exact symbol.
+// Lookup accepts either form -- a canonical symbol (RELIANCE.NSE, AAPL) or
+// a bare NSE ticker (RELIANCE), which every caller predating venues passes.
+// A bare ticker is tried as NSE first and then as US, so the older callers
+// keep their exact previous behaviour and a US-only ticker still resolves.
 func (m *Master) Lookup(symbol string) (Company, bool) {
-	c, ok := m.bySymbol[strings.ToUpper(strings.TrimSpace(symbol))]
+	key := strings.ToUpper(strings.TrimSpace(symbol))
+	if strings.Contains(key, ".") {
+		c, ok := m.bySymbol[key]
+		return c, ok
+	}
+	// Bare: NSE first, deliberately. Every caller predating venues passes an
+	// NSE ticker, and a handful of those tickers (INFY, ABB) are also live
+	// US listings -- trying US first would silently hand those callers the
+	// ADR instead of the NSE line they asked about.
+	if c, ok := m.bySymbol[key+".NSE"]; ok {
+		return c, true
+	}
+	c, ok := m.bySymbol[key]
 	return c, ok
+}
+
+// LookupVenue resolves a bare ticker on one named venue. It exists because
+// Lookup cannot: a bare "INFY" is both the canonical US symbol and the NSE
+// ticker, so Lookup has to pick one (NSE, for back-compat) and a caller that
+// actually knows which venue it means needs a way to say so.
+func (m *Master) LookupVenue(symbol, venue string) (Company, bool) {
+	key := strings.ToUpper(strings.TrimSpace(symbol))
+	if venue == VenueNSE {
+		key += ".NSE"
+	}
+	c, ok := m.bySymbol[key]
+	if !ok || (venue != "" && c.Venue != venue) {
+		return Company{}, false
+	}
+	return c, true
 }
 
 // indexLeadWords registers the distinctive first word of each company name.
@@ -217,14 +307,20 @@ func (m *Master) Lookup(symbol string) (Company, bool) {
 // Words shorter than five characters are skipped as too collision-prone, and
 // the resulting matches carry lead-level confidence, below what an alert is
 // permitted to fire on.
-func (m *Master) indexLeadWords() {
-	owners := make(map[string][]string, len(m.ordered))
-	for _, c := range m.ordered {
+// indexLeadWords registers the distinctive first word of a company name as
+// a lead. Only the companies passed in are eligible: lead words are the
+// loosest evidence the resolver accepts, so they are drawn from the curated
+// listed universes (NSE's master, the US scan universe) rather than from
+// every SEC registrant, where ten thousand names would turn a great many
+// ordinary words into company leads.
+func (m *Master) indexLeadWords(eligible []Company) {
+	owners := make(map[string][]string, len(eligible))
+	for _, c := range eligible {
 		tokens := tokenize(Normalize(c.Name))
 		if len(tokens) < 2 {
 			continue // a one-word name is already indexed in full
 		}
-		owners[tokens[0]] = appendUnique(owners[tokens[0]], c.Symbol)
+		owners[tokens[0]] = appendUnique(owners[tokens[0]], c.CanonicalSymbol())
 	}
 	for word, syms := range owners {
 		if len(syms) != 1 || len(word) < 5 {
