@@ -33,6 +33,13 @@ const nseFeed = "https://nsearchives.nseindia.com/content/RSS/"
 // Discovery through Google News is how a publisher whose own feed we cannot
 // fetch still reaches us: the result carries that publisher's headline and a
 // link to their page. It is discovery, not content — see UsageDiscoveryOnly.
+// catalogUserAgent identifies this app to a publisher that refuses
+// anonymous clients. The engine sends no User-Agent by default, which most
+// feeds accept and a few drop outright; this is the polite minimum for the
+// ones that do not, and is deliberately honest about what is fetching
+// rather than impersonating a browser.
+const catalogUserAgent = "TradeSys/1.0 (+https://github.com/tradesys/dashboard)"
+
 func GoogleNewsSearch(query, hl, gl string) string {
 	if hl == "" {
 		hl, gl = "en-IN", "IN"
@@ -403,14 +410,21 @@ func DefaultSources() []Source {
 	wires := []struct {
 		id, name, url, category string
 		refresh                 time.Duration
+		userAgent               string
 	}{
 		// 20 items, all issuer announcements: "Home BancShares, Inc.
 		// Announces Recognition in Forbes...". This is the public-companies
 		// feed specifically, not GlobeNewswire's full firehose, which
 		// carries a great deal of private-company and non-market material.
+		// Needs a declared User-Agent. The engine sends none by default, and
+		// GlobeNewswire drops a UA-less request at the connection rather
+		// than answering it -- which Go's HTTP/2 client reports as
+		// "stream error: INTERNAL_ERROR; received from peer", a message
+		// that says nothing about the cause. Measured: empty UA fails,
+		// any non-empty UA returns 200.
 		{"globenewswire-public", "GlobeNewswire Public Companies",
 			"https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies",
-			"companies", 5 * time.Minute},
+			"companies", 5 * time.Minute, catalogUserAgent},
 		// 25 items. Business Wire's public feeds are subject-scoped rather
 		// than a single firehose, and this is the technology and networks
 		// one -- narrower than ideal, but technology is a large enough share
@@ -418,7 +432,7 @@ func DefaultSources() []Source {
 		// Business Wire feed answered from this host.
 		{"businesswire-tech", "Business Wire Technology",
 			"https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeGVtRWA==",
-			"companies", 10 * time.Minute},
+			"companies", 10 * time.Minute, ""},
 	}
 	for _, f := range wires {
 		out = append(out, Source{
@@ -426,6 +440,7 @@ func DefaultSources() []Source {
 			Method: MethodRSS, Category: f.category, Country: "US", Language: "en",
 			Trust: TrustCompanyIR, Refresh: f.refresh, Timeout: 20 * time.Second,
 			Usage: UsageLegalReview, Display: DisplayLinkOnly, Enabled: true,
+			UserAgent: f.userAgent,
 		})
 	}
 
