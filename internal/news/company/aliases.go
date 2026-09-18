@@ -135,6 +135,21 @@ var tickerBlocklist = map[string]bool{
 	"RAIN": true, "STAR": true, "TOTAL": true, "VITAL": true,
 	// Two-letter symbols carry almost no information in running text.
 	"BI": true, "TI": true, "NH": true, "LT": true,
+
+	// US tickers that are also ordinary words or standard financial
+	// abbreviations. Every one of these is a real listing, and every one
+	// appears constantly in market copy meaning something else: "Dallas
+	// MSA" is a metropolitan statistical area, not MSA Safety; "ALL",
+	// "ANY", "CAN", "HAS", "NOW", "OUT", "WAY" are English; "AGM", "COO",
+	// "CTO", "IRS", "USA", "CET" are abbreviations. Computed by
+	// intersecting the SEC ticker file with the abbreviations and common
+	// words that turn up in financial prose, so the list is the real
+	// collision set rather than a guess.
+	"AGM": true, "AGO": true, "ALL": true, "ANY": true, "ARE": true,
+	"BOE": true, "CAN": true, "CAR": true, "CET": true, "COO": true,
+	"CTO": true, "HAS": true, "INR": true, "IRS": true, "KEY": true,
+	"LOW": true, "MSA": true, "NOW": true, "OUT": true, "PAY": true,
+	"RUN": true, "TOP": true, "USA": true, "WAY": true,
 }
 
 // nameBlocklist names single-word company names that are also common English

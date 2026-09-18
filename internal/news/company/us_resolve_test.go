@@ -125,3 +125,77 @@ func TestCrossVenueTickerNeedsAPreference(t *testing.T) {
 		t.Errorf("no preference gave %v, want nothing -- a dual listing is ambiguous", got)
 	}
 }
+
+// TestExchangePrefixIsNotACompany is the regression for a false positive
+// that reached the live feed: "NVIDIA (NASDAQ:NVDA) Shares Up 1.3%"
+// resolved to NVDA *and* NDAQ, because Nasdaq Inc. is itself a listed
+// company and "NASDAQ" was being read as a mention of it.
+func TestExchangePrefixIsNotACompany(t *testing.T) {
+	m := usMaster(t)
+	for _, text := range []string{
+		"NVIDIA (NASDAQ:NVDA) Shares Up 1.3% - Still a Buy?",
+		"Amazon.com (NASDAQ:AMZN) Trading 1% Higher - Here's Why",
+		"Coca-Cola (NYSE: KO) declares quarterly dividend",
+	} {
+		var got []string
+		for _, mt := range m.ResolveAboveForVenue(text, 0.85, VenueUS) {
+			got = append(got, mt.CanonicalSymbol())
+		}
+		for _, sym := range got {
+			if sym == "NDAQ" || sym == "ICE" {
+				t.Errorf("Resolve(%q) = %v, must not read the exchange name as a company", text, got)
+			}
+		}
+		if len(got) == 0 {
+			t.Errorf("Resolve(%q) = nothing, want the ticker after the exchange prefix", text)
+		}
+	}
+}
+
+// TestShoutedHeadlineYieldsNoBareTickers is the regression for the other
+// false positive that reached the feed: an all-capitals press release
+// ("PROJECT HEALTHY MINDS SETS THE STAGE FOR ITS FOURTH ANNUAL...")
+// matched FOR, a real ticker, because every word in it looks like one.
+func TestShoutedHeadlineYieldsNoBareTickers(t *testing.T) {
+	m := usMaster(t)
+	const shouted = "PROJECT HEALTHY MINDS SETS THE STAGE FOR ITS FOURTH ANNUAL WORLD MENTAL HEALTH DAY"
+	for _, mt := range m.ResolveAboveForVenue(shouted, 0.85, VenueUS) {
+		if mt.Method == MethodTicker {
+			t.Errorf("shouted headline produced a bare-ticker match %s -- capitalisation carries no signal here", mt.Symbol)
+		}
+	}
+
+	// The same sentence in ordinary case must still resolve a real ticker,
+	// so the guard is about shouting and not about the words.
+	normal := "Analysts raised estimates for RTX after the contract award"
+	found := false
+	for _, mt := range m.ResolveAboveForVenue(normal, 0.85, VenueUS) {
+		if mt.Symbol == "RTX" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("ordinary-case text should still resolve RTX")
+	}
+}
+
+// TestAmbiguousUSAbbreviationsAreNotTickers is the third false positive
+// that reached the live feed: "Bascom Group Acquires 370-Unit Workforce
+// Housing Community in Dallas MSA" resolved to MSA Safety, because MSA is
+// both a real ticker and the standard abbreviation for a metropolitan
+// statistical area.
+func TestAmbiguousUSAbbreviationsAreNotTickers(t *testing.T) {
+	m := usMaster(t)
+	cases := []string{
+		"Bascom Group acquires a 370-unit community in the Dallas MSA",
+		"The company said its COO will present the plan",
+		"Filings with the IRS showed no change in the structure",
+	}
+	for _, text := range cases {
+		for _, mt := range m.ResolveAboveForVenue(text, 0.85, VenueUS) {
+			if mt.Method == MethodTicker {
+				t.Errorf("Resolve(%q) matched %s as a ticker -- it is an ordinary abbreviation here", text, mt.Symbol)
+			}
+		}
+	}
+}
