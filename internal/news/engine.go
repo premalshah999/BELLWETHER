@@ -457,7 +457,11 @@ func (e *Engine) get(ctx context.Context, src Source, etag, lastMod string) (bod
 	// rather than retrying a struggling host.
 	req.Header.Set("User-Agent", src.UserAgent)
 	req.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/xml, text/xml, application/json;q=0.9, */*;q=0.8")
-	req.Header.Set("Accept-Language", "en-IN,en;q=0.9")
+	// Follows the source rather than being fixed at en-IN, which is what it
+	// was when every publisher in the catalog was Indian. A publisher that
+	// varies content or edition by locale should be asked in the locale it
+	// actually serves.
+	req.Header.Set("Accept-Language", acceptLanguageFor(src))
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
 	}
@@ -757,6 +761,19 @@ func parseRetryAfter(v string, now time.Time) time.Duration {
 
 // backoff grows the wait after each consecutive failure, capped so a source
 // that recovers overnight is retried within the hour rather than never.
+// acceptLanguageFor maps a source's country to the locale to ask it in.
+// Unknown or absent country falls back to en-US, the default venue.
+func acceptLanguageFor(src Source) string {
+	switch src.Country {
+	case "IN":
+		return "en-IN,en;q=0.9"
+	case "GB":
+		return "en-GB,en;q=0.9"
+	default:
+		return "en-US,en;q=0.9"
+	}
+}
+
 func (e *Engine) backoff(failures int, base time.Duration) time.Duration {
 	if base <= 0 {
 		base = time.Minute
