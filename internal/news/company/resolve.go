@@ -4,12 +4,28 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // explicitTicker matches notations that name an instrument unambiguously,
 // because a venue or suffix accompanies the symbol: "NSE: RELIANCE",
 // "BSE:500325", "RELIANCE.NS", "TCS.BO".
 var explicitTicker = regexp.MustCompile(`(?i)\b(?:NSE|BSE)\s*[:\-]\s*([A-Z0-9&]{2,20})\b|\b([A-Z0-9&]{2,20})\.(?:NS|BO)\b`)
+
+// usExchangeTicker matches the exchange-qualified notation US market copy
+// uses constantly -- "(NASDAQ:NVDA)", "NYSE: KO". It earns its own pattern
+// for two reasons: the ticker after the colon is an unambiguous
+// identification, and the exchange name before it must NOT be read as a
+// company. Nasdaq Inc. is itself listed as NDAQ, so "NVIDIA (NASDAQ:NVDA)"
+// was resolving to both NVDA and NDAQ until this existed.
+var usExchangeTicker = regexp.MustCompile(`(?i)\b(?:NASDAQ|NYSE|NYSEAMERICAN|NYSEARCA|AMEX|OTC|CBOE)\s*[:\-]\s*([A-Z0-9.\-]{1,6})\b`)
+
+// exchangeWords are never company mentions when they appear as the exchange
+// half of that notation, or as a bare word in market copy.
+var exchangeWords = map[string]bool{
+	"NASDAQ": true, "NYSE": true, "AMEX": true, "CBOE": true, "OTC": true,
+	"NSE": true, "BSE": true,
+}
 
 // Resolve finds the companies named in text.
 //
@@ -66,6 +82,20 @@ func (m *Master) ResolveForVenue(text, prefer string) []Match {
 		// which venue the surrounding source prefers.
 		offer(sym+".NSE", confExplicit, MethodExplicit, sym)
 	}
+	// The exchange-qualified spans are consumed here and then blanked out of
+	// the text the later passes read. Otherwise "NVIDIA (NASDAQ:NVDA)" also
+	// resolves NDAQ, because Nasdaq Inc. is a listed company whose name is
+	// the word sitting in front of the colon. Blanking the span rather than
+	// blocking the word keeps "Nasdaq Inc. reported earnings" -- where the
+	// exchange is genuinely the subject -- resolving as it should.
+	for _, loc := range usExchangeTicker.FindAllStringSubmatchIndex(text, -1) {
+		if loc[2] >= 0 {
+			if sym := strings.ToUpper(text[loc[2]:loc[3]]); sym != "" {
+				offer(sym, confExplicit, MethodExplicit, sym)
+			}
+		}
+	}
+	text = blankSpans(text, usExchangeTicker.FindAllStringIndex(text, -1))
 
 	// --- registered names and curated aliases ------------------------------
 	tokens := tokenize(Normalize(text))
@@ -146,8 +176,17 @@ func (m *Master) ResolveForVenue(text, prefer string) []Match {
 	}
 
 	// --- bare uppercase symbols --------------------------------------------
-	for _, tok := range tickerTokens(text) {
-		if len(tok) < 3 || tickerBlocklist[tok] {
+	// A headline in full capitals makes every word look like a ticker --
+	// press releases shout constantly ("PROJECT HEALTHY MINDS SETS THE
+	// STAGE...", which matched FOR) -- so the bare-ticker path, which
+	// depends entirely on capitalisation carrying information, is skipped
+	// when capitalisation carries none.
+	bareTickers := tickerTokens(text)
+	if isShouting(text) {
+		bareTickers = nil
+	}
+	for _, tok := range bareTickers {
+		if len(tok) < 3 || tickerBlocklist[tok] || exchangeWords[tok] {
 			continue
 		}
 		// A bare ticker can name a listing on either venue -- INFY and ABB
@@ -197,6 +236,41 @@ func (m *Master) ResolveAboveForVenue(text string, min float64, prefer string) [
 		}
 	}
 	return out
+}
+
+// blankSpans replaces each half-open span with spaces, preserving every
+// byte offset so that the capitalisation checks downstream still line up
+// with the original string.
+func blankSpans(text string, spans [][]int) string {
+	if len(spans) == 0 {
+		return text
+	}
+	b := []byte(text)
+	for _, sp := range spans {
+		for i := sp[0]; i < sp[1] && i < len(b); i++ {
+			b[i] = ' '
+		}
+	}
+	return string(b)
+}
+
+// isShouting reports whether text is written predominantly in capitals, in
+// which case a capitalised token is evidence of nothing.
+func isShouting(text string) bool {
+	var upper, letters int
+	for _, r := range text {
+		if !unicode.IsLetter(r) {
+			continue
+		}
+		letters++
+		if unicode.IsUpper(r) {
+			upper++
+		}
+	}
+	// Two thirds, not all of it: real headlines mix in a lowercase word or
+	// two ("SETS THE STAGE FOR ITS FOURTH ANNUAL...") without ceasing to be
+	// shouted.
+	return letters >= 12 && upper*3 >= letters*2
 }
 
 // appearsCapitalized reports whether word occurs in raw text with a leading
