@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -155,4 +156,74 @@ func field(rec []string, i int) string {
 		return strings.TrimSpace(rec[i])
 	}
 	return ""
+}
+
+// MergeUS registers the US listed universe into a master built from NSE's
+// own CSV, so that a story naming "Apple Inc." resolves to AAPL the same way
+// one naming "Reliance Industries Limited" resolves to RELIANCE.NSE.
+//
+// Until this existed the news resolver held NSE names and nothing else,
+// which meant a US publisher's story could never name a company the app
+// recognized -- and the relevance gate then discarded it for having no
+// entity. Measured on one production archive: Indian sources kept 89-99% of
+// what they collected, US sources 1.7-8.3%, and Yahoo Finance alone lost
+// 3,956 of 4,060 items. That gap was this missing index, not a judgement
+// about relevance.
+//
+// The two inputs are registered differently on purpose:
+//
+//   - tickers (SEC's full ~10k registrant list) get an exact symbol entry
+//     and an exact legal-name phrase. Broad recall, and a phrase claimed by
+//     more than one company still resolves to nothing, as it always did.
+//   - listings (the S&P 500 scan universe) additionally get lead-word
+//     indexing, so "Nvidia" finds NVDA. Lead words are the loosest evidence
+//     the resolver accepts, and drawing them from ten thousand registrants
+//     would turn a great many ordinary words into company leads.
+func (m *Master) MergeUS(tickers []USTicker, listings []USListing) {
+	inScanUniverse := make(map[string]bool, len(listings))
+	for _, l := range listings {
+		inScanUniverse[strings.ToUpper(l.Symbol)] = true
+	}
+
+	var leadEligible []Company
+	for _, t := range tickers {
+		sym := strings.ToUpper(strings.TrimSpace(t.Symbol))
+		name := strings.TrimSpace(t.Name)
+		if sym == "" || name == "" {
+			continue
+		}
+		c := Company{Symbol: sym, Name: name, Venue: VenueUS}
+		canonical := c.CanonicalSymbol()
+		if _, exists := m.bySymbol[canonical]; exists {
+			continue
+		}
+		m.bySymbol[canonical] = c
+		m.ordered = append(m.ordered, c)
+		if p := Normalize(name); p != "" {
+			m.byPhrase[p] = appendUnique(m.byPhrase[p], canonical)
+			m.solePhrase[p] = true
+		}
+		if inScanUniverse[sym] {
+			leadEligible = append(leadEligible, c)
+		}
+	}
+
+	m.indexLeadWords(leadEligible)
+	sort.Slice(m.ordered, func(i, j int) bool { return m.ordered[i].Symbol < m.ordered[j].Symbol })
+}
+
+// LoadEmbeddedWithUS builds the NSE master and merges the embedded US
+// universe into it -- what every caller resolving companies from free text
+// should use, since the app covers both venues.
+func LoadEmbeddedWithUS() (*Master, error) {
+	m, err := LoadEmbedded()
+	if err != nil {
+		return nil, err
+	}
+	tickers, listings, err := LoadEmbeddedUS()
+	if err != nil {
+		return nil, fmt.Errorf("company: load embedded US universe: %w", err)
+	}
+	m.MergeUS(tickers, listings)
+	return m, nil
 }

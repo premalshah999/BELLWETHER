@@ -23,21 +23,36 @@ var explicitTicker = regexp.MustCompile(`(?i)\b(?:NSE|BSE)\s*[:\-]\s*([A-Z0-9&]{
 // Ambiguity is not resolved by guessing. A phrase claimed by more than one
 // listing yields nothing unless the claimants are share classes of a single
 // issuer, in which case the ordinary class is chosen.
-func (m *Master) Resolve(text string) []Match {
+func (m *Master) Resolve(text string) []Match { return m.ResolveForVenue(text, "") }
+
+// ResolveForVenue is Resolve with a tie-breaker: when a name or ticker is
+// claimed on both venues, the one matching prefer ("NSE" or "US") wins
+// instead of the match being discarded as ambiguous. Pass "" for no
+// preference, which is exactly Resolve.
+//
+// The caller that has a preference is the news pipeline: a source has a
+// country, and a US wire writing "Infosys" means the ADR while an Indian
+// paper means the NSE line. Nothing else about resolution changes -- a
+// phrase claimed by two companies on the SAME venue is still ambiguous and
+// still yields nothing.
+func (m *Master) ResolveForVenue(text, prefer string) []Match {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
 
 	best := map[string]Match{}
-	offer := func(sym string, conf float64, method Method, matched string) {
-		c, listed := m.bySymbol[sym]
+	offer := func(canonical string, conf float64, method Method, matched string) {
+		c, listed := m.bySymbol[canonical]
 		if !listed {
 			return
 		}
-		if prev, seen := best[sym]; seen && prev.Confidence >= conf {
+		if prev, seen := best[canonical]; seen && prev.Confidence >= conf {
 			return
 		}
-		best[sym] = Match{Symbol: sym, Name: c.Name, Confidence: conf, Method: method, Matched: matched}
+		best[canonical] = Match{
+			Symbol: c.Symbol, Name: c.Name, Confidence: conf,
+			Method: method, Matched: matched, Venue: c.Venue,
+		}
 	}
 
 	// --- explicit venue-qualified notation ---------------------------------
@@ -46,7 +61,10 @@ func (m *Master) Resolve(text string) []Match {
 		if sym == "" {
 			sym = strings.ToUpper(g[2])
 		}
-		offer(sym, confExplicit, MethodExplicit, sym)
+		// The notation this matches ("NSE: RELIANCE", "RELIANCE.NS") is
+		// Indian by construction, so it names the NSE line regardless of
+		// which venue the surrounding source prefers.
+		offer(sym+".NSE", confExplicit, MethodExplicit, sym)
 	}
 
 	// --- registered names and curated aliases ------------------------------
@@ -75,6 +93,19 @@ func (m *Master) Resolve(text string) []Match {
 				if nameBlocklist[phrase] || tickerBlocklist[strings.ToUpper(phrase)] {
 					continue
 				}
+				// The common-word lexicon guards lead words already; an
+				// un-curated one-word registered name needs it just as much,
+				// and needed it more once the US universe arrived, where
+				// single-word names are the norm rather than the exception.
+				//
+				// A curated alias is exempt: the lexicon exists to catch
+				// names nobody vetted, and "sail" is in it precisely because
+				// it is an ordinary word -- but a person put "sail" -> SAIL
+				// in the alias table on purpose, and that judgement outranks
+				// the generic guard.
+				if !m.aliasPhrase[phrase] && commonWords[phrase] {
+					continue
+				}
 				if !appearsCapitalized(text, phrase) {
 					continue
 				}
@@ -88,7 +119,7 @@ func (m *Master) Resolve(text string) []Match {
 					continue
 				}
 			}
-			sym, ok := m.disambiguate(m.byPhrase[phrase])
+			sym, ok := m.disambiguate(m.byPhrase[phrase], prefer)
 			if !ok {
 				continue
 			}
@@ -98,9 +129,14 @@ func (m *Master) Resolve(text string) []Match {
 				conf, method = confAlias, MethodAlias
 			case m.leadPhrase[phrase]:
 				conf, method = confSingle, MethodLeadWord
+			case n == 1 && m.solePhrase[phrase]:
+				// The whole registered name is this one word. Nothing was
+				// dropped to reach the match, so it is a name match, not a
+				// lead -- see confSoleName.
+				conf = confSoleName
 			case n == 1:
-				// One word is weak evidence even when it is a registered
-				// name, so it is reported as a lead rather than a fact.
+				// One word taken out of a longer name is weak evidence, so
+				// it is reported as a lead rather than a fact.
 				conf = confSingle
 			}
 			offer(sym, conf, method, phrase)
@@ -114,8 +150,17 @@ func (m *Master) Resolve(text string) []Match {
 		if len(tok) < 3 || tickerBlocklist[tok] {
 			continue
 		}
-		if _, listed := m.bySymbol[tok]; listed {
-			offer(tok, confTicker, MethodTicker, tok)
+		// A bare ticker can name a listing on either venue -- INFY and ABB
+		// are real on both -- so the same disambiguation the phrase path
+		// uses applies here rather than a first-match guess.
+		var claimants []string
+		for _, canonical := range []string{tok + ".NSE", tok} {
+			if _, listed := m.bySymbol[canonical]; listed {
+				claimants = append(claimants, canonical)
+			}
+		}
+		if sym, ok := m.disambiguate(claimants, prefer); ok {
+			offer(sym, confTicker, MethodTicker, tok)
 		}
 	}
 
@@ -138,7 +183,13 @@ func (m *Master) Resolve(text string) []Match {
 // pushes to a phone should demand near-certainty, while a browsable company
 // timeline can afford a weaker lead.
 func (m *Master) ResolveAbove(text string, min float64) []Match {
-	all := m.Resolve(text)
+	return m.ResolveAboveForVenue(text, min, "")
+}
+
+// ResolveAboveForVenue is ResolveAbove with the venue tie-breaker described
+// on ResolveForVenue.
+func (m *Master) ResolveAboveForVenue(text string, min float64, prefer string) []Match {
+	all := m.ResolveForVenue(text, prefer)
 	out := all[:0]
 	for _, mt := range all {
 		if mt.Confidence >= min {
@@ -231,12 +282,27 @@ func isWordByte(b byte) bool {
 // about Jain Irrigation is about the ordinary class. Genuine collisions
 // between different issuers return nothing, because there is no evidence in
 // the phrase itself for choosing between them.
-func (m *Master) disambiguate(symbols []string) (string, bool) {
+func (m *Master) disambiguate(symbols []string, prefer string) (string, bool) {
 	switch len(symbols) {
 	case 0:
 		return "", false
 	case 1:
 		return symbols[0], true
+	}
+	// A name or ticker claimed on both venues is not ambiguous when the
+	// source asking has a venue of its own: a US wire writing "Infosys"
+	// means the ADR, an Indian one means the NSE line. Without a preference
+	// it stays ambiguous and resolves to nothing, as it always did.
+	if prefer != "" {
+		var preferred []string
+		for _, s := range symbols {
+			if c, ok := m.bySymbol[s]; ok && c.Venue == prefer {
+				preferred = append(preferred, s)
+			}
+		}
+		if len(preferred) == 1 {
+			return preferred[0], true
+		}
 	}
 	var ordinary []string
 	for _, s := range symbols {

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
 	"github.com/tradesys/dashboard/internal/news/company"
 )
@@ -235,15 +234,25 @@ func (p *Processor) processOne(ctx context.Context, item news.RawItem) (created,
 		return p.finish(ctx, src, item, typ, headline, summary, facts, occurredAt, entities, noEntity)
 	}
 
-	// A source that is not about India has to earn its place in the feed.
+	// Every source has to earn its place in the feed, on the same terms.
 	//
-	// Global desks are carried because a tariff decision or an oil move
-	// reaches Indian equities before the Indian market opens. What they also
-	// carry is a great deal of coverage of companies nobody here can trade.
-	// The test is simple and checkable: name an Indian listed company, or be
-	// the kind of event whose reach is sectoral or macro. Anything else is
-	// kept as evidence and left out of the stream.
-	if !src.Indian() && noEntity && !typ.SectorScope() {
+	// This gate used to exempt Indian sources outright and apply only to
+	// everyone else, from a time when the app covered one venue and a
+	// global desk's coverage of companies nobody here could trade was the
+	// only thing worth filtering. Two venues later that exemption had
+	// become the single biggest structural bias in the pipeline: measured
+	// over one production archive, Indian sources kept 89-99% of what they
+	// collected and US sources 1.7-8.3%, because an Indian source's
+	// entity-free item was waved through while a US one was discarded.
+	//
+	// The test is now the same for everybody and does not mention a
+	// country: name a company listed on a venue this app covers, or be the
+	// kind of event whose reach is sectoral or macro. Anything else is kept
+	// as evidence and left out of the stream. What makes this fair rather
+	// than merely symmetrical is the resolver change that landed with it --
+	// the master now holds the US listed universe too, so a US source can
+	// actually satisfy the first half, which it never could before.
+	if noEntity && !typ.SectorScope() {
 		return false, false, true, true, nil
 	}
 
@@ -588,8 +597,18 @@ func classifyPolicy(src news.Source, title string) Type {
 // entity resolution is stored under. p.master is always the NSE master here
 // -- there is no US text resolver wired into this pipeline yet -- so every
 // resolution this function produces is unambiguously NSE.
-func nseSymbol(ticker string) string {
-	return marketdata.Symbol{Ticker: ticker, Exchange: marketdata.ExchangeNSE}.String()
+// sourceVenue is the venue a source's coverage is about, used only to settle
+// a name or ticker claimed on both venues (INFY, ABB) -- see
+// company.ResolveForVenue. A source with no country expresses no preference
+// and those matches stay ambiguous, exactly as before.
+func sourceVenue(src news.Source) string {
+	switch src.Country {
+	case "IN":
+		return company.VenueNSE
+	case "US":
+		return company.VenueUS
+	}
+	return ""
 }
 
 func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline, summary string, facts map[string]string) []news.EventEntity {
@@ -612,7 +631,7 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 		want := strings.ToUpper(src.Symbols[0])
 		if c, listed := p.master.Lookup(want); listed {
 			out := []news.EventEntity{{
-				Symbol: nseSymbol(c.Symbol), Relationship: news.RelPrimary,
+				Symbol: c.CanonicalSymbol(), Relationship: news.RelPrimary,
 				// High, but below a filing naming itself: a scoped search
 				// does return the occasional unrelated result.
 				MatchConfidence: 0.9, MatchMethod: "watchlist_query",
@@ -621,15 +640,15 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 			if summary != "" && summary != headline {
 				text = headline + ". " + summary
 			}
-			for _, m := range p.master.ResolveAbove(text, p.minEntityConfidence) {
-				if m.Symbol == c.Symbol {
+			for _, m := range p.master.ResolveAboveForVenue(text, p.minEntityConfidence, sourceVenue(src)) {
+				if m.CanonicalSymbol() == c.CanonicalSymbol() {
 					// The text confirms it; upgrade to what the text says.
 					out[0].MatchConfidence = m.Confidence
 					out[0].MatchMethod = string(m.Method)
 					continue
 				}
 				out = append(out, news.EventEntity{
-					Symbol: nseSymbol(m.Symbol), Relationship: news.RelMentioned,
+					Symbol: m.CanonicalSymbol(), Relationship: news.RelMentioned,
 					MatchConfidence: m.Confidence, MatchMethod: string(m.Method),
 				})
 			}
@@ -641,7 +660,7 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 	if sym, ok := facts["NSE_SYMBOL_PATH"]; ok {
 		if c, listed := p.master.Lookup(sym); listed {
 			return []news.EventEntity{{
-				Symbol: nseSymbol(c.Symbol), Relationship: news.RelPrimary,
+				Symbol: c.CanonicalSymbol(), Relationship: news.RelPrimary,
 				MatchConfidence: 0.99, MatchMethod: "nse_document_path",
 			}}
 		}
@@ -672,7 +691,7 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 	if summary != "" && summary != headline {
 		text = headline + ". " + summary
 	}
-	matches := p.master.ResolveAbove(text, p.minEntityConfidence)
+	matches := p.master.ResolveAboveForVenue(text, p.minEntityConfidence, sourceVenue(src))
 	if len(matches) == 0 {
 		return nil
 	}
@@ -687,7 +706,7 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 			rel = news.RelPrimary
 		}
 		out = append(out, news.EventEntity{
-			Symbol: nseSymbol(m.Symbol), Relationship: rel,
+			Symbol: m.CanonicalSymbol(), Relationship: rel,
 			MatchConfidence: m.Confidence, MatchMethod: string(m.Method),
 		})
 	}

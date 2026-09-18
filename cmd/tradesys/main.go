@@ -196,7 +196,11 @@ func runReprocess() error {
 	}
 	log.Info("discarded derived events; rebuilding from raw items", "discarded", discarded)
 
-	master, err := company.LoadEmbedded()
+	// The US universe is merged into the master, not kept beside it: the
+	// resolver has to be able to name a US company from free text, or every
+	// US publisher's item arrives entity-free and the relevance gate
+	// discards it (see company.MergeUS for the measured damage that did).
+	master, err := company.LoadEmbeddedWithUS()
 	if err != nil {
 		return fmt.Errorf("load company master: %w", err)
 	}
@@ -322,7 +326,7 @@ func run() error {
 	// and rebuilding it costs one polling cycle.
 	attention := news.NewTracker(time.Now)
 
-	companyMaster, err := company.LoadEmbedded()
+	companyMaster, err := company.LoadEmbeddedWithUS()
 	if err != nil {
 		return fmt.Errorf("load company master: %w", err)
 	}
