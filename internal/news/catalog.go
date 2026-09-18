@@ -225,16 +225,25 @@ func DefaultSources() []Source {
 	// That is worth preferring wherever it works: a direct feed gives a
 	// canonical URL and a real timestamp instead of a redirect and an
 	// aggregator's idea of when the story appeared.
+	// Country matters here for two reasons that both used to be silently
+	// wrong while this block carried none. It sets the market-phase cadence
+	// (lane.go throttles by whether a source follows the Indian session),
+	// and it is the venue preference the entity resolver uses to settle a
+	// name claimed on both venues -- a US desk writing "Infosys" means the
+	// ADR, and without a country it means neither and resolves to nothing.
+	// The FT is deliberately GB rather than US: it is a global paper, and
+	// claiming otherwise to buy a venue hint would be a lie that shows up
+	// as a wrong symbol on a headline.
 	global := []struct {
-		id, name, url, category string
-		trust                   int
-		refresh                 time.Duration
+		id, name, url, category, country string
+		trust                            int
+		refresh                          time.Duration
 	}{
-		{"cnbc-world-markets", "CNBC World Markets", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839069", "markets", TrustMajorFin, 5 * time.Minute},
-		{"cnbc-finance", "CNBC Finance", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664", "finance", TrustMajorFin, 10 * time.Minute},
-		{"cnbc-earnings", "CNBC Earnings", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839135", "results", TrustMajorFin, 10 * time.Minute},
-		{"marketwatch-top", "MarketWatch Top Stories", "https://feeds.content.dowjones.io/public/rss/mw_topstories", "markets", TrustMajorFin, 5 * time.Minute},
-		{"ft-companies", "Financial Times Companies", "https://www.ft.com/companies?format=rss", "companies", TrustMajorFin, 10 * time.Minute},
+		{"cnbc-world-markets", "CNBC World Markets", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839069", "markets", "US", TrustMajorFin, 5 * time.Minute},
+		{"cnbc-finance", "CNBC Finance", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664", "finance", "US", TrustMajorFin, 10 * time.Minute},
+		{"cnbc-earnings", "CNBC Earnings", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839135", "results", "US", TrustMajorFin, 10 * time.Minute},
+		{"marketwatch-top", "MarketWatch Top Stories", "https://feeds.content.dowjones.io/public/rss/mw_topstories", "markets", "US", TrustMajorFin, 5 * time.Minute},
+		{"ft-companies", "Financial Times Companies", "https://www.ft.com/companies?format=rss", "companies", "GB", TrustMajorFin, 10 * time.Minute},
 
 		// Restored, having previously been measured out of the catalog (see
 		// the removed comment this replaced, still readable in git history).
@@ -246,21 +255,21 @@ func DefaultSources() []Source {
 		// material is now exactly on target: this is the primary US retail
 		// and market-news layer, the closest thing this catalog has to what
 		// NSE announcements and BSE notices are for India.
-		{"yahoo-finance", "Yahoo Finance", "https://finance.yahoo.com/news/rssindex", "markets", TrustMajorFin, 5 * time.Minute},
-		{"nasdaq-markets", "Nasdaq Markets", "https://www.nasdaq.com/feed/rssoutbound?category=Markets", "markets", TrustMajorFin, 5 * time.Minute},
-		{"investing-com", "Investing.com News", "https://www.investing.com/rss/news.rss", "markets", TrustMajorFin, 10 * time.Minute},
+		{"yahoo-finance", "Yahoo Finance", "https://finance.yahoo.com/news/rssindex", "markets", "US", TrustMajorFin, 5 * time.Minute},
+		{"nasdaq-markets", "Nasdaq Markets", "https://www.nasdaq.com/feed/rssoutbound?category=Markets", "markets", "US", TrustMajorFin, 5 * time.Minute},
+		{"investing-com", "Investing.com News", "https://www.investing.com/rss/news.rss", "markets", "US", TrustMajorFin, 10 * time.Minute},
 		// Seeking Alpha's "Market Currents" is a breaking-news wire (filings,
 		// dividend declarations, guidance, M&A) rather than the long-form
 		// analysis the site is best known for -- verified live: dividend
 		// declarations, a credit-facility raise, an EPA rule change, all
 		// inside the same 7-item pull.
-		{"seeking-alpha", "Seeking Alpha Market Currents", "https://seekingalpha.com/market_currents.xml", "markets", TrustMajorFin, 5 * time.Minute},
+		{"seeking-alpha", "Seeking Alpha Market Currents", "https://seekingalpha.com/market_currents.xml", "markets", "US", TrustMajorFin, 5 * time.Minute},
 	}
 
 	for _, f := range global {
 		out = append(out, Source{
 			ID: f.id, Name: f.name, URL: f.url,
-			Method: MethodRSS, Category: f.category, Language: "en",
+			Method: MethodRSS, Category: f.category, Country: f.country, Language: "en",
 			Trust: f.trust, Refresh: f.refresh, Timeout: 15 * time.Second,
 			Usage: UsageLegalReview, Display: DisplayLinkOnly, Enabled: true,
 		})
@@ -367,6 +376,104 @@ func DefaultSources() []Source {
 			`US company to acquire OR merger OR "definitive agreement" when:2d`},
 	}
 	for _, f := range usDiscovery {
+		out = append(out, Source{
+			ID: f.id, Name: f.name, URL: GoogleNewsSearch(f.query, "en-US", "US"),
+			Method: MethodGoogleNews, Category: "discovery", Country: "US", Language: "en",
+			Trust: TrustWire, Refresh: 10 * time.Minute, Timeout: 20 * time.Second,
+			Usage: UsageDiscoveryOnly, Display: DisplayLinkOnly, Enabled: true,
+		})
+	}
+
+	// ---- Layer D2: the US press-release wires ------------------------------
+	//
+	// The closest thing the US has to what NSE corporate announcements are
+	// for India: the company speaking for itself, verbatim, before any
+	// journalist has written about it. An 8-K covers the same ground but
+	// only once it is filed, which for most announcements is hours to days
+	// later -- these carry the announcement itself.
+	//
+	// Trust is TrustCompanyIR rather than TrustMajorFin for exactly that
+	// reason: this is the issuer's own words, not a desk's account of them.
+	// It is not TrustOfficial, which stays reserved for an exchange or a
+	// regulator -- a press release is the company's chosen framing, and a
+	// company may choose to frame badly.
+	//
+	// Every URL below was pulled live from this host before being added;
+	// the item counts in each comment are what a single fetch returned.
+	wires := []struct {
+		id, name, url, category string
+		refresh                 time.Duration
+	}{
+		// 20 items, all issuer announcements: "Home BancShares, Inc.
+		// Announces Recognition in Forbes...". This is the public-companies
+		// feed specifically, not GlobeNewswire's full firehose, which
+		// carries a great deal of private-company and non-market material.
+		{"globenewswire-public", "GlobeNewswire Public Companies",
+			"https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies",
+			"companies", 5 * time.Minute},
+		// 25 items. Business Wire's public feeds are subject-scoped rather
+		// than a single firehose, and this is the technology and networks
+		// one -- narrower than ideal, but technology is a large enough share
+		// of US market capitalisation that it earns a slot, and no broader
+		// Business Wire feed answered from this host.
+		{"businesswire-tech", "Business Wire Technology",
+			"https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeGVtRWA==",
+			"companies", 10 * time.Minute},
+	}
+	for _, f := range wires {
+		out = append(out, Source{
+			ID: f.id, Name: f.name, URL: f.url,
+			Method: MethodRSS, Category: f.category, Country: "US", Language: "en",
+			Trust: TrustCompanyIR, Refresh: f.refresh, Timeout: 20 * time.Second,
+			Usage: UsageLegalReview, Display: DisplayLinkOnly, Enabled: true,
+		})
+	}
+
+	// ---- Layer D3: US market desks ----------------------------------------
+	//
+	// The US equivalent of Layer C's Indian papers, and the layer this
+	// catalogue was most obviously missing: before these it carried
+	// seventeen Indian mastheads and four US ones, for an app whose default
+	// venue is the US.
+	usDesks := []struct {
+		id, name, url, category string
+		trust                   int
+		refresh                 time.Duration
+	}{
+		// 61 items, the deepest single pull of anything probed for this
+		// change. Dow Jones serves it directly, so it carries a real
+		// publication time rather than an aggregator's sighting.
+		{"wsj-markets", "Wall Street Journal Markets",
+			"https://feeds.content.dowjones.io/public/rss/RSSMarketsMain", "markets", TrustMajorFin, 5 * time.Minute},
+		// 25 items.
+		{"fox-business", "Fox Business",
+			"https://moxie.foxbusiness.com/google-publisher/latest.xml", "markets", TrustGeneric, 10 * time.Minute},
+		// 20 items. Redirects once (301) before serving; the engine follows.
+		{"business-insider", "Business Insider",
+			"https://www.businessinsider.com/rss", "markets", TrustGeneric, 15 * time.Minute},
+	}
+	for _, f := range usDesks {
+		out = append(out, Source{
+			ID: f.id, Name: f.name, URL: f.url,
+			Method: MethodRSS, Category: f.category, Country: "US", Language: "en",
+			Trust: f.trust, Refresh: f.refresh, Timeout: 20 * time.Second,
+			Usage: UsageLegalReview, Display: DisplayLinkOnly, Enabled: true,
+		})
+	}
+
+	// The two wires whose own feeds refuse a datacentre IP. Reuters and
+	// Bloomberg both block direct RSS from hosts like this one, so they are
+	// reached the way the discovery layer reaches anything else -- a Google
+	// News site: query -- and carry discovery-only terms and an aggregator's
+	// timestamp as a result. Worth having anyway: between them they break a
+	// large share of what later shows up everywhere else. 100 items each on
+	// a live pull.
+	blockedWires := []struct{ id, name, query string }{
+		{"reuters-business", "Reuters Business (via discovery)", `site:reuters.com business markets when:1d`},
+		{"bloomberg-markets", "Bloomberg Markets (via discovery)", `site:bloomberg.com markets when:1d`},
+		{"prnewswire", "PR Newswire (via discovery)", `site:prnewswire.com when:1d`},
+	}
+	for _, f := range blockedWires {
 		out = append(out, Source{
 			ID: f.id, Name: f.name, URL: GoogleNewsSearch(f.query, "en-US", "US"),
 			Method: MethodGoogleNews, Category: "discovery", Country: "US", Language: "en",
