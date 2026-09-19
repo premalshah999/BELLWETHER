@@ -16,6 +16,8 @@ It binds to loopback inside the compose network and is never exposed publicly.
 
 from __future__ import annotations
 
+import ctypes
+import gc
 import json
 import logging
 import math
@@ -606,6 +608,36 @@ def _scan_series(frame) -> dict | None:
     return {"t": t, "o": o, "h": h, "l": l, "c": c, "v": v}
 
 
+# glibc keeps freed memory in per-thread arenas rather than returning it to
+# the kernel, so a process that does bursty threaded work holds its peak RSS
+# afterwards. yf.download runs with threads=True over a 2,254-symbol universe,
+# which is exactly that shape: measured across two consecutive full scans the
+# sidecar sat at 733 MiB and then 780 MiB of its 1 GiB ceiling, never falling
+# back, and roughly five more scans would have reached the limit and had the
+# container killed mid-scan.
+#
+# malloc_trim asks glibc to give the arenas back. It is a no-op on allocators
+# that do not implement it, so the failure mode is the behaviour we already
+# had.
+try:
+    _libc = ctypes.CDLL("libc.so.6")
+    _libc.malloc_trim.argtypes = [ctypes.c_size_t]
+    _libc.malloc_trim.restype = ctypes.c_int
+    _malloc_trim = _libc.malloc_trim
+except (OSError, AttributeError):  # not glibc
+    _malloc_trim = None
+
+
+def _release_memory() -> None:
+    """Return freed memory to the kernel after a large batch."""
+    gc.collect()
+    if _malloc_trim is not None:
+        try:
+            _malloc_trim(0)
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+
 def scan(symbols: list[str]) -> dict:
     """Fetch a universe in batches and reduce each symbol to its metrics."""
     import yfinance as yf
@@ -644,6 +676,12 @@ def scan(symbols: list[str]) -> dict:
             if s is not None:
                 series[sym] = s
 
+        # A year of daily bars for fifty symbols is the largest object this
+        # process holds. Dropping it per chunk keeps the working set to one
+        # chunk rather than the whole universe.
+        del frame
+
+    _release_memory()
     return {"metrics": out, "series": series, "failed": failed,
             "as_of": datetime.now(timezone.utc).isoformat()}
 

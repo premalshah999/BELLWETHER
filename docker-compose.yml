@@ -258,10 +258,10 @@ services:
     container_name: tradesys-yfinance
     restart: unless-stopped
 
-    # The heaviest service by far: pandas frames for a 750-name scan and a
-    # full statement history per company. Measured at ~400MB in normal use,
-    # so a gigabyte leaves headroom while still turning a runaway request
-    # into one restarted container rather than an out-of-memory host.
+    # The heaviest service by far: pandas frames for a 2,254-name scan and a
+    # full statement history per company. A gigabyte leaves headroom while
+    # still turning a runaway request into one restarted container rather
+    # than an out-of-memory host.
     deploy:
       resources:
         limits:
@@ -270,6 +270,15 @@ services:
       - "8787"
     environment:
       YFIN_PORT: "8787"
+      # Cap glibc's per-thread malloc arenas.
+      #
+      # yf.download fans a scan out over threads, and an arena per thread
+      # meant freed memory stayed with the process instead of going back to
+      # the kernel: two consecutive full scans took this container from
+      # 733 MiB to 780 MiB and it never came back down, so roughly five more
+      # would have reached the limit and had it killed mid-scan. Paired with
+      # the explicit malloc_trim on the scan path in service.py.
+      MALLOC_ARENA_MAX: "2"
     logging:
       driver: json-file
       options:
