@@ -53,11 +53,12 @@ Three things make that trustworthy rather than another chatbot wrapper:
 | | |
 | --- | --- |
 | **Dashboard & Charts** | Real OHLCV across US and NSE venues, with indicator overlays and session-aware VWAP. |
-| **Scanner** | Reads price and volume across the whole universe (1,250+ instruments) every trading session, finds what is behaving abnormally *before any article exists about it*, and raises that instrument's search priority. |
+| **Scanner** | Reads price and volume across the whole universe (2,250+ instruments: the S&P 1500 and the NSE scan list) every trading session, finds what is behaving abnormally *before any article exists about it*, and raises that instrument's search priority. |
 | **News** | 80+ sources: SEC EDGAR (8-K, Form 4, 13F), NSE/BSE corporate filings, the Federal Register, Fed and Treasury releases, GDELT, and targeted Google News queries — deduplicated, timestamped, and classified into one of ~54 event types. |
 | **Geopolitics & Policy** | Macro, regulatory, commodity and geopolitical events, fanned out to the GICS/NSE sectors they touch and cross-referenced against your own watchlist — "does this actually reach anything I hold?" |
 | **Congressional trading** | House Clerk STOCK Act disclosures: which members traded which tickers, and how many days they took to disclose it against the 45-day statutory deadline. |
 | **Event study** | For any event type, the measured abnormal return (vs. the S&P 500 or NIFTY 50) over N days after the event, with a real sample size and honest small-sample warnings — not a chart with an arrow next to a date. |
+| **Catalyst calendar** | The only forward-looking record here: next earnings, ex-dividend and dividend dates across the whole universe, with the analyst EPS range — and the event study's historical base rate for that event type attached, so a date on a calendar says "and the last 1,986 times, here is what followed". |
 | **Research** | Multi-source deep research over a question, with per-finding citations, disagreement flagged explicitly, and a `gaps` section naming what the sources don't establish. |
 | **Algorithms & Backtest** | A JSON rule language over indicators (SMA/EMA/RSI/MACD/ATR/VWAP/52-week high-low…) with three-valued (unknown-aware) logic, evaluated on a schedule, and a leakage-free backtester with its own small-sample warning discipline. |
 | **Alerts** | Rule triggers, delivered to Telegram and the in-app feed, with the full evaluation snapshot persisted for audit. |
@@ -223,7 +224,7 @@ A representative slice — the full catalogue is `internal/news/catalog.go`.
 | **Federal Reserve, Treasury, White House** | Official releases | no |
 | **GDELT** | Global event index | no |
 | **Google News** (targeted queries per event class) | Discovery layer | no |
-| **Yahoo Finance / yfinance sidecar** | Price history, both venues, 5+ years | no |
+| **Yahoo Finance / yfinance sidecar** | Price history, both venues, 5+ years; forward earnings and dividend dates | no |
 | **Twelve Data, Alpha Vantage** | Price history, budgeted fallback | yes (free tier) |
 | **Tavily, Brave** | Research search | yes (free tier) |
 
@@ -444,6 +445,21 @@ rails stack beneath the main pane.
   long enough to issue the first one.
 - **`-sync-congress`** runs the daily congressional-filings fetch on demand
   (backfill or resync), reusing the exact path the cron job calls.
+- **`-refresh-calendar`** rebuilds the forward catalyst calendar for the
+  whole universe on demand (about three minutes for 2,254 symbols), reusing
+  the path the weekday-morning cron calls.
 - **`-reprocess`** discards all derived events and rebuilds them from stored
   raw items — for when a classification rule changes and history should get
   the correction too.
+- **The scan universe is generated, not hand-maintained.**
+  `internal/news/company/data/us_listings.csv` is the S&P 1500 joined to
+  SEC's own exchange file for CIK and exchange; rebuild it with
+  `python3 scripts/build_us_listings.py` (`--dry-run` to see the diff
+  first). It decides far more than the scanner: the default market feed
+  admits an event only when one of its companies is a constituent, so
+  narrowing this list quietly narrows the feed.
+- **Backups** run every six hours into the `tradesys-backups` volume:
+  every dump kept for two days, then the first of each day for
+  `BACKUP_KEEP_DAYS` (default 14). The first rather than the last on
+  purpose — if corruption landed on a given day, the earliest copy is the
+  one most likely to predate it.
