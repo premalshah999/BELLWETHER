@@ -571,9 +571,11 @@ func run() error {
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		// Must exceed the longest per-route timeout, or the connection is torn
-		// down before the handler can write its response — and the AI routes
-		// legitimately run for minutes.
-		WriteTimeout: 6 * time.Minute,
+		// down before the handler can write its response — and the AI and scan
+		// routes legitimately run for minutes. Derived from the routing table
+		// rather than restated, so raising a route's deadline cannot silently
+		// outgrow this one.
+		WriteTimeout: server.LongestRouteTimeout + 2*time.Minute,
 		IdleTimeout:  120 * time.Second,
 	}
 

@@ -34,6 +34,36 @@ const standardRequestTimeout = 30 * time.Second
 // watchlist is a genuinely long call.
 const aiRequestTimeout = 5 * time.Minute
 
+// scanRequestTimeout bounds a manual market scan.
+//
+// The scan is one request that fans out inside the price sidecar across the
+// whole universe -- 2,254 instruments across two venues -- and a full run
+// measures at about five minutes. It used to share the AI group's five-minute
+// budget, which left no margin at all: after the US universe widened from the
+// S&P 500 to the S&P 1500 a cold sidecar crossed the line and every manual
+// scan returned 502 having already done all of the work.
+//
+// Set above the scanner client's own 8-minute ceiling so the timeout that
+// fires is the one that can say what actually went wrong, rather than a route
+// deadline that only says the request was cut off.
+const scanRequestTimeout = 10 * time.Minute
+
+// LongestRouteTimeout is the longest deadline any route in this package
+// applies to a handler.
+//
+// The HTTP server's WriteTimeout must exceed it. If it does not, a handler
+// that legitimately runs that long has its connection torn down before it can
+// send the response it has already produced -- and from the caller's side
+// that is indistinguishable from the work having failed. It is not: a manual
+// scan crossed this exact line, scanned all 2,254 instruments, persisted
+// every one of them, logged "scan complete", and then could not write its
+// 200.
+//
+// Exported so main derives WriteTimeout from it instead of restating a number
+// that has to be kept in step by hand, which is how it drifted in the first
+// place.
+const LongestRouteTimeout = scanRequestTimeout
+
 // Disclaimer is rendered in the footer of every page. It is served from the
 // backend so there is exactly one copy of the wording.
 const Disclaimer = "Analysis tool. Not investment advice. Data may be delayed."
@@ -342,18 +372,22 @@ func (s *Server) routes() {
 			r.Post("/ai/briefs/run", s.handleRunBriefs)
 			r.Post("/news/poll", s.handleRunNewsPoll)
 
-			// The scan spends no tokens, but it fans out across seven hundred
-			// instruments against somebody else's service and takes about two
-			// minutes. It belongs in the limited group for courtesy rather
-			// than for cost.
-			r.Post("/scan/run", s.handleRunScan)
-
 			// Ask returns as soon as the turn row exists, so it needs none of
 			// this group's timeout — but it belongs here for the limiter.
 			// The work it starts continues in the background and spends
 			// tokens exactly like the rest, and being fast to return makes it
 			// the easiest of all of them to call in a loop.
 			r.Post("/research/ask", s.handleAsk)
+		})
+
+		// The scan spends no tokens, but it fans out across the whole
+		// universe against somebody else's service, so it keeps the courtesy
+		// limiter and takes its own, longer deadline: the work it does is
+		// bounded by the sidecar, not by a model's thinking time.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Timeout(scanRequestTimeout))
+			r.Use(s.aiLimiter.middleware)
+			r.Post("/scan/run", s.handleRunScan)
 		})
 
 		// The SPA fallback below must never swallow an unmatched API path:
