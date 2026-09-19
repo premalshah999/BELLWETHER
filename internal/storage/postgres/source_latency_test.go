@@ -118,4 +118,3 @@ func TestSourceLatencyLeaderboardRanksByWinsNotVolume(t *testing.T) {
 		}
 	}
 }
-

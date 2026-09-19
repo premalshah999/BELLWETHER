@@ -767,4 +767,3 @@ func TestSessionVWAPBucketsBySymbolVenue(t *testing.T) {
 			nse.Status, nse.Reason)
 	}
 }
-
