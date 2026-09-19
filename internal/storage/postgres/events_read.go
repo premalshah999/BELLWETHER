@@ -45,6 +45,27 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) AS link ON TRUE`
 
+// contentAgeExpr is what the feed treats as an item's age: its publication
+// time, clamped to discovery whenever that is missing or implausibly later.
+//
+// Written once because events_content_age_idx (migration 0022) indexes this
+// exact expression, and because the filter and the sort must agree. They did
+// not: the window was measured on the clamped value while the order was taken
+// from a raw COALESCE, so a publisher claiming a future timestamp was held out
+// of the window by one rule and floated to the top of the feed by the other.
+// The observed skew was small -- 124 events, none off by more than four
+// minutes -- but two rules for one question is the kind of disagreement that
+// only ever grows.
+//
+// Postgres matches an expression index by its parsed tree, so any drift
+// between this constant and the migration does not fail loudly. It silently
+// restores a sequential scan over the whole archive.
+const contentAgeExpr = `CASE
+                WHEN e.published_at IS NULL THEN e.discovered_at
+                WHEN e.published_at > e.discovered_at THEN e.discovered_at
+                ELSE e.published_at
+             END`
+
 // ListEvents returns events matching a filter, most recently discovered first.
 //
 // Ordering is by discovery rather than importance so the default view is a
@@ -128,11 +149,7 @@ func (d *DB) ListEvents(ctx context.Context, f EventFilter) ([]news.Event, error
 		// published_at is used only when it is not after discovery. Aggregators
 		// report their own surfacing time, and one that claims to be from the
 		// future has told us nothing about the article's age.
-		add(`CASE
-                WHEN e.published_at IS NULL THEN e.discovered_at
-                WHEN e.published_at > e.discovered_at THEN e.discovered_at
-                ELSE e.published_at
-             END >= $%d`, f.Since.UTC())
+		add(contentAgeExpr+` >= $%d`, f.Since.UTC())
 	}
 	if f.OfficialOnly {
 		where = append(where, `e.official`)
@@ -161,10 +178,11 @@ func (d *DB) ListEvents(ctx context.Context, f EventFilter) ([]news.Event, error
 	// straight from a search box.
 	orderBy := `ORDER BY e.discovered_at DESC, e.id DESC`
 	if f.OrderByContentAge {
-		// COALESCE rather than NULLS LAST: an undated item is treated as
-		// having been published when we found it, which is the most
-		// charitable assumption available and keeps it in the running.
-		orderBy = `ORDER BY COALESCE(e.published_at, e.discovered_at) DESC, e.id DESC`
+		// The same expression the window is measured with, so an item cannot
+		// be dated one way for inclusion and another way for position. An
+		// undated item still sorts by discovery, which is the most charitable
+		// assumption available and keeps it in the running.
+		orderBy = `ORDER BY ` + contentAgeExpr + ` DESC, e.id DESC`
 	}
 	if q := strings.TrimSpace(f.Query); q != "" {
 		args = append(args, q)
