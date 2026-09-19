@@ -296,6 +296,7 @@ func (s *Server) routes() {
 			r.Get("/symbols/search", s.handleSearchSymbols)
 			r.Get("/symbols/sectors", s.handleSymbolSectors)
 			r.Get("/congress/filings", s.handleCongressFilings)
+			r.Get("/calendar", s.handleCalendar)
 
 			r.Route("/eventstudy", func(r chi.Router) {
 				r.Get("/types", s.handleEventStudyTypes)

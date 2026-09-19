@@ -5,6 +5,7 @@ import {
   BookOpen,
   BrainCircuit,
   Briefcase,
+  CalendarClock,
   CandlestickChart,
   ChevronDown,
   ChevronRight,
@@ -70,6 +71,7 @@ const NAV: Entry[] = [
     icon: Radar,
     children: [
       { to: "/scanner/signals", label: "Signals", icon: Radar },
+      { to: "/calendar", label: "Calendar", icon: CalendarClock },
       { to: "/scanner/screens", label: "Screens", icon: Filter },
       { to: "/news", label: "News", icon: Newspaper },
       { to: "/geopolitics", label: "Geopolitics", icon: Globe2 },

@@ -7,6 +7,7 @@ import { SideNav } from "./components/layout/SideNav";
 import { RightRail } from "./components/layout/RightRail";
 import { AlertsPage } from "./components/pages/AlertsPage";
 import { AlgorithmsPage } from "./components/pages/AlgorithmsPage";
+import { CalendarPage } from "./components/pages/CalendarPage";
 import { CalibrationPage } from "./components/pages/CalibrationPage";
 import { ChartsPage } from "./components/pages/ChartsPage";
 import { CongressPage } from "./components/pages/CongressPage";
@@ -134,6 +135,7 @@ export function App() {
               <Route path="/geopolitics" element={<GeopoliticsPage onSelect={setSelected} />} />
               <Route path="/congress" element={<CongressPage onSelect={setSelected} />} />
               <Route path="/eventstudy" element={<EventStudyPage />} />
+              <Route path="/calendar" element={<CalendarPage onSelect={setSelected} />} />
               <Route path="/positions" element={<PositionsPage onSelect={setSelected} />} />
               <Route path="/journal" element={<JournalPage onSelect={setSelected} />} />
               <Route path="/research" element={<ResearchPage />} />

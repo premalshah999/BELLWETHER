@@ -24,7 +24,7 @@ import math
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -638,6 +638,83 @@ def _release_memory() -> None:
             pass
 
 
+# How far ahead a scheduled corporate event is still worth showing. Beyond a
+# quarter the dates yfinance carries are estimates rather than announcements,
+# and presenting an estimate next to a confirmed date without saying which is
+# which is worse than not showing it.
+CALENDAR_HORIZON_DAYS = 120
+
+
+def _calendar_one(symbol: str) -> dict | None:
+    """Next scheduled corporate events for one symbol.
+
+    Earnings, ex-dividend and dividend payment dates, plus the analyst EPS
+    range where the upstream carries one. Dates already past are dropped:
+    yfinance returns the last known date when no future one is scheduled, and
+    a stale date presented as upcoming is a wrong answer, not a partial one.
+    """
+    import yfinance as yf
+    from datetime import date as _date
+
+    raw = yf.Ticker(symbol).calendar or {}
+    today = _date.today()
+    horizon = today + timedelta(days=CALENDAR_HORIZON_DAYS)
+
+    def future(value) -> str | None:
+        if value is None:
+            return None
+        items = value if isinstance(value, (list, tuple)) else [value]
+        upcoming = sorted(d for d in items if isinstance(d, _date) and today <= d <= horizon)
+        return upcoming[0].isoformat() if upcoming else None
+
+    def number(key) -> float | None:
+        v = raw.get(key)
+        if v is None:
+            return None
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return None if math.isnan(f) or math.isinf(f) else f
+
+    out = {
+        "earnings_date": future(raw.get("Earnings Date")),
+        "ex_dividend_date": future(raw.get("Ex-Dividend Date")),
+        "dividend_date": future(raw.get("Dividend Date")),
+        "eps_low": number("Earnings Low"),
+        "eps_high": number("Earnings High"),
+        "eps_average": number("Earnings Average"),
+    }
+    # A row with no upcoming date at all carries nothing worth storing.
+    if not any((out["earnings_date"], out["ex_dividend_date"], out["dividend_date"])):
+        return None
+    return out
+
+
+def calendar(symbols: list[str]) -> dict:
+    """Upcoming scheduled events for a universe.
+
+    Sequential rather than threaded: this runs once a day against a few
+    thousand symbols with no deadline to meet, and the scan path already
+    showed what fanning out over threads does to this process's memory.
+    """
+    out: dict[str, dict] = {}
+    failed: list[str] = []
+    for sym in symbols:
+        try:
+            entry = _calendar_one(sym)
+        except Exception as exc:
+            log.debug("calendar failed for %s: %s", sym, exc)
+            failed.append(sym)
+            continue
+        if entry is not None:
+            out[sym] = entry
+
+    _release_memory()
+    return {"calendar": out, "failed": failed,
+            "as_of": datetime.now(timezone.utc).isoformat()}
+
+
 def scan(symbols: list[str]) -> dict:
     """Fetch a universe in batches and reduce each symbol to its metrics."""
     import yfinance as yf
@@ -796,7 +873,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/fundamentals":
             self._do_fundamentals()
             return
-        if parsed.path != "/scan":
+        if parsed.path not in ("/scan", "/calendar"):
             self._send(404, {"error": "no such endpoint"})
             return
 
@@ -823,6 +900,21 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         started = time.time()
+
+        if parsed.path == "/calendar":
+            try:
+                result = calendar(symbols)
+            except Exception as exc:
+                log.warning("calendar failed: %s", exc)
+                self._send(502, {"error": f"{type(exc).__name__}: {exc}"[:300]})
+                return
+            result["elapsed_seconds"] = round(time.time() - started, 2)
+            log.info("calendar for %d symbols in %.1fs (%d with dates, %d failed)",
+                     len(symbols), result["elapsed_seconds"],
+                     len(result["calendar"]), len(result["failed"]))
+            self._send(200, result)
+            return
+
         try:
             result = scan(symbols)
         except Exception as exc:
