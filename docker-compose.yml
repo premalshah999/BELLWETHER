@@ -215,7 +215,7 @@ services:
       - -c
       - |
         set -eu
-        echo "backup service started; dumping every 6h, keeping $$KEEP_DAYS days"
+        echo "backup service started; dumping every 6h, keeping every dump for 2 days and one a day for $$KEEP_DAYS"
         while true; do
           stamp=$$(date -u +%Y%m%dT%H%M%SZ)
           target="/backups/tradesys-$$stamp.sql.gz"
@@ -230,6 +230,20 @@ services:
             echo "backup FAILED at $$stamp" >&2
             rm -f "$$target.partial"
           fi
+          # Tiered retention: every dump for the last two days, then one a
+          # day beyond that.
+          #
+          # Flat retention kept 4 dumps a day for 14 days -- 56 full copies
+          # of the same database, 2.9 GB and growing with it, for no recovery
+          # property the tiered version lacks. Recent corruption is caught
+          # inside the six-hourly window; older corruption only needs one
+          # restore point per day. Keeping the *first* dump of each older day
+          # rather than the last is deliberate: if corruption landed on a
+          # given day, the earliest copy is the one most likely to predate it.
+          find /backups -name 'tradesys-*.sql.gz' -mtime +2 | sort |
+            awk -F'tradesys-' '{ day = substr($$2, 1, 8)
+                                 if (day == seen) print; else seen = day }' |
+            xargs -r rm -f
           find /backups -name 'tradesys-*.sql.gz' -mtime +$$KEEP_DAYS -delete 2>/dev/null || true
           sleep 21600
         done
