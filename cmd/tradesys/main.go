@@ -478,7 +478,7 @@ func run() error {
 		CheapModel:   cfg.LLMCheapModel,
 		MonthlyLimit: cfg.LLMMonthlyTokenBudget,
 		ExtraBody:    cfg.LLMExtraBody,
-	}, store, ai.WithLogger(log))
+	}, store, ai.WithLogger(log), ai.WithOutcomeSink(tracker.LLMSink()))
 
 	aiService := ai.NewService(llm, router, store, cfg.DisplayTZ,
 		ai.WithServiceLogger(log),
@@ -684,7 +684,7 @@ func buildProviders(cfg *config.Config, store storage.Store, log *slog.Logger) (
 	// Declare the dependencies later milestones own, so their dots render in a
 	// truthful state from the first run.
 	deps = append(deps,
-		health.Dep{Provider: "llm", Kind: health.KindLLM, Configured: cfg.LLMConfigured()},
+		health.Dep{Provider: health.ProviderLLM, Kind: health.KindLLM, Configured: cfg.LLMConfigured()},
 		health.Dep{Provider: tavily.Name, Kind: health.KindSearch, Configured: cfg.TavilyAPIKey != ""},
 		health.Dep{Provider: brave.Name, Kind: health.KindSearch, Configured: cfg.BraveAPIKey != ""},
 		// News needs no credentials, so it is always "configured" and its dot

@@ -30,7 +30,23 @@ type Client struct {
 	http         *http.Client
 	log          *slog.Logger
 	now          func() time.Time
+	sink         OutcomeSink
 }
+
+// Outcome is the result of one attempt to reach the model, reported to
+// whoever is tracking dependency health.
+type Outcome struct {
+	// OK is true when the provider answered usably.
+	OK bool
+	// Skipped marks an expected non-answer -- no credentials, or a budget
+	// deliberately spent. These are limitations the operator set, not faults,
+	// and must not drive the dependency down.
+	Skipped bool
+	Err     error
+}
+
+// OutcomeSink receives every attempt. It must not block.
+type OutcomeSink func(ctx context.Context, o Outcome)
 
 // Option configures a Client.
 type Option func(*Client)
@@ -43,6 +59,14 @@ func WithLogger(l *slog.Logger) Option { return func(c *Client) { c.log = l } }
 
 // WithClock replaces the time source, used by tests to cross a month boundary.
 func WithClock(now func() time.Time) Option { return func(c *Client) { c.now = now } }
+
+// WithOutcomeSink registers a receiver for per-attempt outcomes.
+//
+// Status() deliberately answers without making a call, so it cannot tell a
+// working key from a rejected one. This is the port through which a real
+// round trip -- including its failure -- becomes visible to the health
+// tracker, exactly as the market data router reports its providers.
+func WithOutcomeSink(s OutcomeSink) Option { return func(c *Client) { c.sink = s } }
 
 // Config holds the LLM connection settings.
 type Config struct {
@@ -198,12 +222,41 @@ type chatResponse struct {
 // Complete performs one chat completion, enforcing the budget around it.
 func (c *Client) Complete(ctx context.Context, req Request) (Response, error) {
 	if !c.Configured() {
+		c.report(ctx, Outcome{Skipped: true, Err: ErrNotConfigured})
 		return Response{}, ErrNotConfigured
 	}
 	if err := c.checkBudget(ctx, req); err != nil {
+		c.report(ctx, Outcome{Skipped: true, Err: err})
 		return Response{}, err
 	}
 
+	out, err := c.complete(ctx, req)
+	switch {
+	case err == nil, errors.Is(err, ErrTruncated):
+		// A truncated answer is still a completed round trip: the provider
+		// answered, and the ceiling that cut it off was ours. Calling that a
+		// fault would take the dependency red over a max_tokens we chose.
+		c.report(ctx, Outcome{OK: true})
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		// The caller gave up waiting. That says nothing about the provider,
+		// so it must not count against it.
+		c.report(ctx, Outcome{Skipped: true, Err: err})
+	default:
+		c.report(ctx, Outcome{Err: err})
+	}
+	return out, err
+}
+
+// report forwards one attempt to the sink, when a sink is registered.
+func (c *Client) report(ctx context.Context, o Outcome) {
+	if c.sink != nil {
+		c.sink(ctx, o)
+	}
+}
+
+// complete is the round trip itself. Every path out of it is an outcome the
+// caller above classifies; it does no reporting of its own.
+func (c *Client) complete(ctx context.Context, req Request) (Response, error) {
 	model := c.model
 	if req.Cheap {
 		model = c.cheapModel
@@ -411,5 +464,29 @@ func redact(err error, key string) error {
 		return err
 	}
 	msg := strings.ReplaceAll(err.Error(), key, "[redacted]")
+
+	// Keep the two context sentinels reachable through errors.Is.
+	//
+	// Flattening to a string error scrubbed the key but also erased the
+	// error's identity, so a caller who gave up mid-request was
+	// indistinguishable from an upstream that had broken -- which is exactly
+	// the distinction the health sink has to draw. Only the bare sentinel is
+	// exposed, and it carries no message of its own, so nothing unredacted
+	// becomes reachable by unwrapping.
+	for _, sentinel := range []error{context.Canceled, context.DeadlineExceeded} {
+		if errors.Is(err, sentinel) {
+			return &redactedError{msg: msg, cause: sentinel}
+		}
+	}
 	return fmt.Errorf("%s", msg)
 }
+
+// redactedError carries a scrubbed message while leaving one known sentinel
+// reachable underneath it.
+type redactedError struct {
+	msg   string
+	cause error
+}
+
+func (e *redactedError) Error() string { return e.msg }
+func (e *redactedError) Unwrap() error { return e.cause }

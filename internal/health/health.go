@@ -12,9 +12,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tradesys/dashboard/internal/ai"
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/storage"
 )
+
+// ProviderLLM is the dependency name the language model is tracked under.
+// Named here rather than spelled as a literal at each end, so the declaration
+// in main and the sink below cannot drift apart.
+const ProviderLLM = "llm"
 
 // Kind groups dependencies in the UI.
 const (
@@ -159,6 +165,19 @@ func (t *Tracker) Observe(ctx context.Context, provider string, ok, skipped bool
 func (t *Tracker) MarketDataSink() marketdata.OutcomeSink {
 	return func(ctx context.Context, o marketdata.Outcome) {
 		t.Observe(ctx, o.Provider, o.OK, o.Skipped, o.Err)
+	}
+}
+
+// LLMSink adapts the Tracker to the AI client's outcome port.
+//
+// The LLM was the one declared dependency nothing ever reported on. Its
+// Status() answers from configuration and budget without making a call, so a
+// configured-but-rejected key read as healthy: /api/health showed a green dot
+// and "not yet contacted" while every AI feature in the app was failing 401.
+// A monitor watching that endpoint would never have found out.
+func (t *Tracker) LLMSink() ai.OutcomeSink {
+	return func(ctx context.Context, o ai.Outcome) {
+		t.Observe(ctx, ProviderLLM, o.OK, o.Skipped, o.Err)
 	}
 }
 
