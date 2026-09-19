@@ -105,6 +105,8 @@ func main() {
 	// route for what is otherwise an unauthenticated write path.
 	syncCongress := flag.Bool("sync-congress", false,
 		"fetch new House Clerk PTR filings for the current year, then exit")
+	refreshCal := flag.Bool("refresh-calendar", false,
+		"refresh the forward corporate calendar for the whole universe, then exit")
 
 	// Key management is a command-line operation and has no HTTP equivalent.
 	// Issuing a key grants access to everything, so the right to do it is
@@ -165,6 +167,13 @@ func main() {
 	if *syncCongress {
 		if err := runSyncCongress(); err != nil {
 			slog.Error("congress sync failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *refreshCal {
+		if err := runRefreshCalendar(); err != nil {
+			slog.Error("calendar refresh failed", "err", err)
 			os.Exit(1)
 		}
 		return
@@ -1229,6 +1238,22 @@ func startAISchedules(
 		add("market scan (us close)", "CRON_TZ=America/New_York 45 15 * * 1-5", scan(usScope))
 		add("market scan (us midday)", "CRON_TZ=America/New_York 30 12 * * 1-5", scan(usScope))
 		add("market scan (us open)", "CRON_TZ=America/New_York 45 9 * * 1-5", scan(usScope))
+
+		// The forward calendar, once a day before the US open.
+		//
+		// Everything else this app stores is a record of what has happened;
+		// this is the only thing it knows about what has not. Earnings dates
+		// move rarely, so daily is ample -- and it runs on a long window
+		// because a 2,254-symbol refresh walks the upstream one name at a
+		// time rather than fanning out, which is deliberate: the scan path
+		// already demonstrated what threading this sidecar does to its
+		// memory.
+		addWithin("forward calendar", "CRON_TZ=America/New_York 20 7 * * 1-5",
+			90*time.Minute, func(runCtx context.Context) {
+				if _, err := refreshCalendar(runCtx, marketScanner.Client, store, marketScanner.Universe(), log); err != nil {
+					log.Warn("calendar refresh failed", "err", err)
+				}
+			})
 	}
 
 	// Fundamentals overnight, when nothing else is competing for the sidecar

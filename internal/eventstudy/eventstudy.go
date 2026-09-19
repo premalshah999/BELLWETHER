@@ -76,8 +76,11 @@ type Result struct {
 	MeanAbnormalReturnPct   float64 `json:"mean_abnormal_return_pct"`
 	MedianAbnormalReturnPct float64 `json:"median_abnormal_return_pct"`
 	StdDevPct               float64 `json:"stddev_pct"`
-	// HitRate is the fraction of samples with a positive abnormal return --
-	// distinct from the mean, which one large outlier can dominate.
+	// HitRate is the percentage of samples with a positive abnormal return,
+	// already scaled to 0-100 rather than left as a fraction -- distinct from
+	// the mean, which one large outlier can dominate. Named here because
+	// "rate" reads as a fraction and a caller that scales it again reports a
+	// 5,685% hit rate, which is what happened.
 	HitRate float64 `json:"hit_rate"`
 
 	Warnings []string `json:"warnings,omitempty"`

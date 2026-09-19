@@ -603,6 +603,7 @@ export interface EventStudyResult {
   mean_abnormal_return_pct: number;
   median_abnormal_return_pct: number;
   stddev_pct: number;
+  /** Percentage, already scaled to 0-100. Do not multiply again. */
   hit_rate: number;
   warnings?: string[];
 }
@@ -726,6 +727,33 @@ export interface JournalEntry {
   account?: string;
   notes?: string;
   catalyst?: JournalCatalyst;
+}
+
+/**
+ * One symbol's next scheduled corporate events.
+ *
+ * The only forward-looking record the app keeps: everything else describes
+ * what the archive observed. See internal/storage/postgres/calendar.go.
+ */
+export interface UpcomingCatalyst {
+  symbol: string;
+  industry?: string;
+  venue?: string;
+  earnings_date?: string;
+  ex_dividend_date?: string;
+  dividend_date?: string;
+  earnings_in_days?: number;
+  eps_low?: number;
+  eps_high?: number;
+  eps_average?: number;
+  /**
+   * Which of this row's dates is soonest, and when. A row can enter a
+   * fourteen-day window on its ex-dividend date while its earnings date is
+   * two months out, so the list has to say which date put it there.
+   */
+  next_kind?: string;
+  next_date?: string;
+  next_in_days?: number;
 }
 
 export interface HotEntry {
@@ -1533,6 +1561,17 @@ export const api = {
   /** Which sources actually break stories first, over the trailing N days. */
   sourceLatency: (days = 30) =>
     request<{ sources: SourceLatency[]; days: number }>(`/api/ingest/latency?days=${days}`),
+
+  /** Scheduled corporate events inside a horizon, soonest first. */
+  calendar: (params: { days?: number; symbols?: string[]; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.days) q.set("days", String(params.days));
+    if (params.symbols?.length) q.set("symbols", params.symbols.join(","));
+    if (params.limit) q.set("limit", String(params.limit));
+    return request<{ catalysts: UpcomingCatalyst[]; days: number; total: number }>(
+      `/api/calendar?${q.toString()}`,
+    );
+  },
 
   /** Every open position, priced live -- see internal/storage/postgres/positions.go. */
   positions: () => request<{ positions: Position[] }>("/api/positions"),
