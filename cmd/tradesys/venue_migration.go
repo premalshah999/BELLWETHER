@@ -255,7 +255,7 @@ func qualifyEventEntitiesAndResearch(ctx context.Context, tx *sql.Tx, classifier
 
 	oldSyms := make([]string, len(distinct))
 	newSyms := make([]string, len(distinct)) // empty string means "drop"
-	var newNSEListings []string               // symbols needing a bare inactive listing row
+	var newNSEListings []string              // symbols needing a bare inactive listing row
 	for i, s := range distinct {
 		canonical, ok := classifier.classify(s)
 		oldSyms[i] = s

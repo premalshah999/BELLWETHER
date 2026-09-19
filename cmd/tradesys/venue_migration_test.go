@@ -89,8 +89,8 @@ func TestVenueQualifyMigrationRewritesRealData(t *testing.T) {
 	symbols := []string{
 		"RELIANCE",            // real NSE master symbol -> RELIANCE.NSE
 		"AMZN",                // real US ticker -> unchanged
-		"NIFTY",                // index -> NIFTY.INDEX
-		"PERNOD",               // dropped: no listing anywhere
+		"NIFTY",               // index -> NIFTY.INDEX
+		"PERNOD",              // dropped: no listing anywhere
 		"INTERGLOBE AVIATION", // literal remap -> INDIGO.NSE
 		"ZZFAKENAME",          // resolves nowhere -> default NSE-inactive bucket
 	}
@@ -172,7 +172,7 @@ INSERT INTO source_health (source_id) VALUES ($1)`, id); err != nil {
 	cases := map[string]string{
 		"RELIANCE":            "RELIANCE.NSE",
 		"AMZN":                "AMZN",
-		"NIFTY":                "NIFTY.INDEX",
+		"NIFTY":               "NIFTY.INDEX",
 		"INTERGLOBE AVIATION": "INDIGO.NSE",
 		"ZZFAKENAME":          "ZZFAKENAME.NSE",
 	}

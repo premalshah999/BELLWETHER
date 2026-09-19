@@ -1321,8 +1321,15 @@ func startAISchedules(
 	})
 
 	if cfg.LLMConfigured() {
-		// The morning brief, at 08:30 in the display timezone.
-		add("morning brief", "30 8 * * 1-5", func(runCtx context.Context) {
+		// The morning brief, an hour before the US open.
+		//
+		// It used to run at 08:30 in the display timezone, which with
+		// DISPLAY_TZ=Asia/Kolkata fired it at 23:00 ET -- half a day before
+		// the session it is meant to precede, and against an overnight tape
+		// that had not happened yet. Anchored to the venue like the market
+		// scans above, for the same reason: a brief is about a trading day,
+		// not about a wall clock.
+		add("morning brief", "CRON_TZ=America/New_York 30 8 * * 1-5", func(runCtx context.Context) {
 			if _, err := svc.GenerateMorningBrief(runCtx); err != nil {
 				log.Warn("scheduled morning brief failed", "err", err)
 			}
