@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -24,13 +25,20 @@ const maxHistoryTurns = 4
 // navigating to another tab abandoned it and the work was lost. The turn now
 // exists as a row from the moment the question is asked, progresses whether or
 // not anyone is watching, and is there when the reader comes back.
-func (s *Service) Ask(
+var ErrResearchBusy = errors.New("research capacity is busy; wait for the current research to finish")
+
+func (s *Service) Ask(ctx context.Context, engine *research.Engine, store research.Store, conversationID int64, question string, perProvider int) (*research.Turn, int64, error) {
+	return s.AskWithMode(ctx, engine, store, conversationID, question, perProvider, false)
+}
+
+func (s *Service) AskWithMode(
 	ctx context.Context,
 	engine *research.Engine,
 	store research.Store,
 	conversationID int64,
 	question string,
 	perProvider int,
+	evidenceOnly bool,
 ) (*research.Turn, int64, error) {
 
 	question = strings.TrimSpace(question)
@@ -41,6 +49,28 @@ func (s *Service) Ask(
 		return nil, 0, fmt.Errorf("ai: no research engine configured")
 	}
 
+	s.researchMu.Lock()
+	if s.researchJobs >= 2 || conversationID != 0 && s.researchActive[conversationID] {
+		s.researchMu.Unlock()
+		return nil, conversationID, ErrResearchBusy
+	}
+	s.researchJobs++
+	if conversationID != 0 {
+		s.researchActive[conversationID] = true
+	}
+	s.researchMu.Unlock()
+	handedOff := false
+	release := func() {
+		s.researchMu.Lock()
+		s.researchJobs--
+		delete(s.researchActive, conversationID)
+		s.researchMu.Unlock()
+	}
+	defer func() {
+		if !handedOff {
+			release()
+		}
+	}()
 	if conversationID == 0 {
 		title := question
 		if len(title) > 120 {
@@ -51,6 +81,9 @@ func (s *Service) Ask(
 			return nil, 0, fmt.Errorf("ai: create conversation: %w", err)
 		}
 		conversationID = id
+		s.researchMu.Lock()
+		s.researchActive[id] = true
+		s.researchMu.Unlock()
 	}
 
 	turn, err := store.StartTurn(ctx, conversationID, question)
@@ -61,7 +94,12 @@ func (s *Service) Ask(
 	// Detached from the request, but not unbounded: a run that has not
 	// finished in this long has failed in a way that will not resolve, and
 	// leaving it would hold a row in 'running' indefinitely.
-	go s.runTurn(context.WithoutCancel(ctx), engine, store, conversationID, turn, perProvider)
+	workerTurn := *turn
+	handedOff = true
+	go func() {
+		defer release()
+		s.runTurn(s.researchContext, engine, store, conversationID, &workerTurn, perProvider, evidenceOnly)
+	}()
 
 	return turn, conversationID, nil
 }
@@ -77,6 +115,7 @@ func (s *Service) runTurn(
 	conversationID int64,
 	turn *research.Turn,
 	perProvider int,
+	evidenceOnly bool,
 ) {
 	ctx, cancel := context.WithTimeout(parent, researchDeadline)
 	defer cancel()
@@ -86,14 +125,13 @@ func (s *Service) runTurn(
 		// down and leave the turn running forever.
 		if r := recover(); r != nil {
 			s.log.Error("research turn panicked", "turn", turn.ID, "panic", r)
-			_ = store.FailTurn(context.WithoutCancel(parent), turn.ID,
-				"the request failed unexpectedly")
+			failResearchTurn(parent, store, turn.ID, "the request failed unexpectedly")
 		}
 	}()
 
 	fail := func(stage string, err error) {
 		s.log.Warn("research turn failed", "turn", turn.ID, "stage", stage, "err", err)
-		_ = store.FailTurn(context.WithoutCancel(parent), turn.ID, err.Error())
+		failResearchTurn(parent, store, turn.ID, err.Error())
 	}
 
 	conv, err := store.GetConversation(ctx, conversationID)
@@ -112,7 +150,7 @@ func (s *Service) runTurn(
 
 	start := s.now()
 	searchQuery := turn.Question
-	if len(prior) > 0 {
+	if len(prior) > 0 && !evidenceOnly {
 		_ = store.RecordProgress(ctx, turn.ID, "rewriting",
 			"resolving the question against the thread")
 		searchQuery = s.rewriteFollowup(ctx, conv, turn.Question)
@@ -125,7 +163,8 @@ func (s *Service) runTurn(
 	_ = store.RecordProgress(ctx, turn.ID, "searching",
 		fmt.Sprintf("querying %d providers", len(engine.Scrapers())))
 
-	result, err := engine.Search(ctx, searchQuery, perProvider)
+	searchCtx := research.WithProgress(ctx, func(stage, detail string) { _ = store.RecordProgress(ctx, turn.ID, stage, detail) })
+	result, err := engine.Search(searchCtx, searchQuery, perProvider)
 	if err != nil {
 		fail("search", err)
 		return
@@ -161,9 +200,17 @@ func (s *Service) runTurn(
 	case len(result.Findings) == 0 && len(result.Measurements) == 0:
 		turn.Degraded = true
 		turn.Note = "No sources were retrieved for this query."
-	case s.client == nil:
+	case evidenceOnly:
+		turn.Answer = evidenceOverview(result)
+		turn.Note = "Evidence-only research. No AI calls were made."
+	case len(research.EvidenceIndexes(result.Findings, maxResearchSources)) == 0:
+		turn.Degraded = true
+		turn.Answer = evidenceOverview(result)
+		turn.Note = "No readable article text was retrieved. Links remain available to inspect; synthesis was skipped."
+	case s.client == nil || !s.client.Configured():
 		turn.Degraded = true
 		turn.Note = "No language model is configured, so these are the retrieved sources without synthesis."
+		turn.Answer = evidenceOverview(result)
 	default:
 		_ = store.RecordProgress(ctx, turn.ID, "synthesising",
 			fmt.Sprintf("reading %d documents", min(len(result.Findings), maxResearchSources)))
@@ -171,11 +218,14 @@ func (s *Service) runTurn(
 			s.log.Warn("research synthesis failed; returning sources only", "err", err)
 			turn.Degraded = true
 			turn.Note = "The sources below were retrieved, but the summary could not be generated: " + err.Error()
+			turn.Answer = evidenceOverview(result)
 		}
 	}
 	turn.ElapsedMS = int(s.now().Sub(start).Milliseconds())
 
-	if err := store.CompleteTurn(context.WithoutCancel(parent), turn); err != nil {
+	saveCtx, saveCancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Second)
+	defer saveCancel()
+	if err := store.CompleteTurn(saveCtx, turn); err != nil {
 		fail("save", err)
 	}
 }
@@ -202,7 +252,7 @@ func (s *Service) rewriteFollowup(ctx context.Context, conv research.Conversatio
 	for _, t := range history {
 		views = append(views, map[string]string{
 			"Question": t.Question,
-			"Answer":   truncateWords(t.Answer, 70),
+			"Answer":   truncateWords(turnSummary(t), 70),
 		})
 	}
 
@@ -264,8 +314,24 @@ func sourceText(f research.Finding) string {
 // synthesise fills in the answer from the retrieved sources.
 func (s *Service) synthesise(ctx context.Context, conv research.Conversation, turn *research.Turn, result research.Result) error {
 	sources := result.Findings
-	if len(sources) > maxResearchSources {
-		sources = sources[:maxResearchSources]
+	indexes := research.EvidenceIndexes(sources, maxResearchSources)
+	if len(indexes) == 0 {
+		return fmt.Errorf("no readable evidence for synthesis")
+	}
+	allowed := map[int]bool{}
+	for _, i := range indexes {
+		allowed[i+1] = true
+	}
+	citations := func(in []int) []int {
+		var out []int
+		seen := map[int]bool{}
+		for _, n := range in {
+			if allowed[n] && !seen[n] {
+				out = append(out, n)
+				seen[n] = true
+			}
+		}
+		return out
 	}
 
 	type sourceView struct {
@@ -279,7 +345,8 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 		Words int
 	}
 	views := make([]sourceView, 0, len(sources))
-	for i, f := range sources {
+	for _, i := range indexes {
+		f := sources[i]
 		views = append(views, sourceView{
 			Index: i + 1, Title: f.Title, Publisher: f.Publisher,
 			// The article's own text where it could be read, falling back to
@@ -288,7 +355,7 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 			// difference between "Suzlon wins order" and the paragraph naming
 			// the counterparty, the megawatts and the delivery schedule is
 			// the whole difference between a summary and research.
-			Snippet: sourceText(f),
+			Snippet: research.EvidenceExcerpt(f.Body, turn.Question, 480),
 			Words:   f.Words,
 			Age:     relativeAgeShort(f.PublishedAt, s.now()),
 			Trust:   f.Trust,
@@ -307,7 +374,7 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 	priorViews := make([]map[string]string, 0, len(history))
 	for _, t := range history {
 		priorViews = append(priorViews, map[string]string{
-			"Question": t.Question, "Answer": truncateWords(t.Answer, 60),
+			"Question": t.Question, "Answer": truncateWords(turnSummary(t), 60),
 		})
 	}
 
@@ -364,7 +431,7 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 	prompt, err := UserPrompt(PromptDeepResearch, map[string]any{
 		"Query":    turn.Question,
 		"Symbols":  strings.Join(result.Symbols, ", "),
-		"Count":    len(sources),
+		"Count":    len(indexes),
 		"Scrapers": strings.Join(providerNames, ", "),
 		"Sources":  views,
 		"History":  priorViews,
@@ -377,8 +444,9 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 	}
 
 	var out struct {
-		Summary  string `json:"summary"`
-		Sections []struct {
+		Summary        string `json:"summary"`
+		SummarySources []int  `json:"summary_sources"`
+		Sections       []struct {
 			Heading string `json:"heading"`
 			Body    string `json:"body"`
 			Sources []int  `json:"sources"`
@@ -399,37 +467,30 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 	}
 
 	resp, err := s.client.CompleteJSON(ctx, Request{
-		Feature:  FeatureDeepResearch,
-		Messages: []Message{SystemMessage(), prompt},
-		// Deliberately generous. A researched answer over two dozen sources
-		// runs to a summary, six to ten cited findings, a company list and a
-		// gaps section; at 3,500 it was being cut off mid-JSON and the whole
-		// turn degraded to "sources only" — which is how this limit was
-		// found. The model here also spends part of its budget reasoning
-		// before it emits anything.
+		Feature:     FeatureDeepResearch,
+		Messages:    []Message{SystemMessage(), prompt},
 		Temperature: 0.2,
-		// Generous on purpose. A report over forty full-text sources cannot be
-		// written in a few thousand tokens, and truncation here is not a
-		// graceful degradation — it produces a JSON object that fails to
-		// parse, costing the entire call.
-		MaxTokens: 32000,
+		MaxTokens:   6000,
 	}, &out)
 	if err != nil {
 		return err
 	}
 
-	turn.Answer = strings.TrimSpace(out.Summary)
+	turn.Answer = ""
 	turn.Model = resp.Model
 	turn.Sections = nil
+	if refs := citations(out.SummarySources); strings.TrimSpace(out.Summary) != "" && len(refs) > 0 {
+		turn.Sections = append(turn.Sections, research.Section{Heading: "Research brief", Body: strings.TrimSpace(out.Summary), Sources: refs})
+	}
 	for _, sec := range out.Sections {
 		heading, body := strings.TrimSpace(sec.Heading), strings.TrimSpace(sec.Body)
-		if body == "" {
+		if body == "" || len(citations(sec.Sources)) == 0 {
 			continue
 		}
 		turn.Sections = append(turn.Sections, research.Section{
 			Heading: heading,
 			Body:    body,
-			Sources: validCitations(sec.Sources, len(sources)),
+			Sources: citations(sec.Sources),
 		})
 	}
 	turn.Gaps = out.Gaps
@@ -442,7 +503,7 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 		if strings.TrimSpace(f.Claim) == "" {
 			continue
 		}
-		valid := validCitations(f.Sources, len(sources))
+		valid := citations(f.Sources)
 		if len(valid) == 0 {
 			continue
 		}
@@ -450,16 +511,26 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 			Claim: f.Claim, Sources: valid, Confidence: f.Confidence,
 		})
 	}
+	knownSymbols := map[string]bool{}
+	for _, symbol := range result.Symbols {
+		knownSymbols[symbol] = true
+	}
+	for _, measured := range result.Measurements {
+		knownSymbols[measured.Symbol] = true
+	}
 	for _, c := range out.Companies {
 		sym := strings.ToUpper(strings.TrimSpace(c.Symbol))
-		if sym == "" {
+		if sym == "" || !knownSymbols[sym] || len(citations(c.Sources)) == 0 {
 			continue
 		}
 		turn.Companies = append(turn.Companies, research.CompanyRef{
 			Symbol: sym, Relevance: c.Relevance,
 			Direction: string(normalizeDirection(c.Direction)),
-			Sources:   validCitations(c.Sources, len(sources)),
+			Sources:   citations(c.Sources),
 		})
+	}
+	if len(turn.Sections) == 0 && len(turn.Findings) == 0 {
+		return fmt.Errorf("the model returned no claims with valid evidence citations")
 	}
 	return nil
 }
@@ -472,4 +543,34 @@ func validCitations(in []int, max int) []int {
 		}
 	}
 	return out
+}
+
+func evidenceOverview(result research.Result) string {
+	read := 0
+	publishers := map[string]bool{}
+	for _, f := range result.Findings {
+		if f.Body != "" {
+			read++
+		}
+		if f.Publisher != "" {
+			publishers[f.Publisher] = true
+		}
+	}
+	return fmt.Sprintf("Retrieved %d documents from %d publishers; readable text was extracted from %d. Review the sources and their publication dates below.", len(result.Findings), len(publishers), read)
+}
+
+func turnSummary(t research.Turn) string {
+	if t.Answer != "" {
+		return t.Answer
+	}
+	if len(t.Sections) > 0 {
+		return t.Sections[0].Body
+	}
+	return ""
+}
+
+func failResearchTurn(parent context.Context, store research.Store, id int64, reason string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Second)
+	defer cancel()
+	_ = store.FailTurn(ctx, id, reason)
 }

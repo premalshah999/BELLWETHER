@@ -66,6 +66,10 @@ Three things make that trustworthy rather than another chatbot wrapper:
 
 ---
 
+See [the research and production readiness notes](docs/production-readiness.md)
+for the evidence-only workflow, source verification, safeguards, test commands,
+and remaining requirements before hosting separate customers.
+
 ## Quick start
 
 ```bash
@@ -79,15 +83,14 @@ This starts three services: **Postgres**, the **yfinance sidecar**
 and **tradesys** itself — a static Go binary with the built React frontend
 embedded.
 
-A fresh deployment has no API keys issued, which leaves the app **open** —
-intentionally, so it can be reached long enough to issue the first one:
+A fresh deployment requires an access key before protected routes can be used:
 
 ```bash
 docker compose exec tradesys tradesys -issue-key -name "you" -role owner
 ```
 
-Open <http://localhost:8080>, sign in with that key, and the door closes:
-every route after the first key exists requires one.
+Open <http://localhost:8080> and sign in with that key. For intentionally open
+local development only, opt in with `ALLOW_UNAUTHENTICATED=true`.
 
 ```bash
 docker compose logs -f tradesys     # follow
@@ -275,8 +278,7 @@ suffix (`.NS`, `.BO`) ever escapes into storage or the API.
 
 ## API
 
-All endpoints are under `/api`, JSON in and out, and — once at least one API
-key exists — require a signed-in session (`POST /api/auth/login` exchanges a
+All endpoints are under `/api`, JSON in and out, and protected routes require a signed-in session (`POST /api/auth/login` exchanges a
 key for an `HttpOnly` cookie). Errors are always
 `{"error": {"code": "...", "message": "..."}}`; validation failures add a
 `fields` array so a form can show each message inline.
@@ -356,9 +358,9 @@ than looping.
 alerts fire whether or not the model is reachable.
 
 **The token budget is enforced before the call and recorded after.** A
-request whose prompt alone would overshoot `LLM_MONTHLY_TOKEN_BUDGET` is
-refused before it reaches the network; when the usage counter cannot be
-read, the client fails closed rather than spending against an unknown
+request whose prompt plus requested output allowance would overshoot `LLM_MONTHLY_TOKEN_BUDGET` is
+refused before it reaches the network; concurrent calls reserve their allowance within the process; when the usage counter cannot be
+read or recorded, the client fails closed rather than spending against an unknown
 balance.
 
 **Model output is never presented as fact.** Every AI response sits inside
@@ -441,8 +443,8 @@ rails stack beneath the main pane.
   docker compose exec tradesys tradesys -revoke-key tsk_xxxxxxxx
   ```
   Roles: `owner` (may manage keys), `operator` (full use), `viewer`
-  (read-only). A deployment with **no keys issued is open** — intended only
-  long enough to issue the first one.
+  (read-only). A deployment with **no keys issued is locked** until an owner issues one.
+  `ALLOW_UNAUTHENTICATED=true` explicitly enables open local development.
 - **`-sync-congress`** runs the daily congressional-filings fetch on demand
   (backfill or resync), reusing the exact path the cron job calls.
 - **`-refresh-calendar`** rebuilds the forward catalyst calendar for the

@@ -38,7 +38,9 @@ type Article struct {
 	Text  string
 	// Words is the extracted length, so a caller can tell a real article from
 	// a consent wall without re-counting.
-	Words int
+	Words     int
+	FetchedAt time.Time
+	Cached    bool
 }
 
 // fetcher limits.
@@ -62,102 +64,121 @@ const (
 
 // ArticleFetcher reads published pages.
 type ArticleFetcher struct {
-	HTTP  *http.Client
-	Limit int
-
-	mu    sync.Mutex
-	hosts map[string]chan struct{}
+	HTTP       *http.Client
+	Limit      int
+	UserAgent  string
+	mu         sync.Mutex
+	publishers map[string]*publisherState
+	cache      map[string]articleCacheEntry
+	slots      chan struct{}
 }
 
-// NewArticleFetcher builds a fetcher with sensible transport settings.
 func NewArticleFetcher() *ArticleFetcher {
-	return &ArticleFetcher{
-		HTTP: &http.Client{
-			Timeout: articleTimeout,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				// Google News links are redirect shims; following them is the
-				// only way to reach the publisher. Ten is Go's default and is
-				// more than any legitimate chain needs.
-				if len(via) >= 10 {
-					return fmt.Errorf("too many redirects")
-				}
-				return nil
-			},
-		},
-		hosts: map[string]chan struct{}{},
-	}
+	return &ArticleFetcher{HTTP: &http.Client{Transport: publicTransport(), Timeout: articleTimeout}, slots: make(chan struct{}, articleConcurrency)}
 }
 
-func (f *ArticleFetcher) hostGate(host string) chan struct{} {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.hosts == nil {
-		f.hosts = map[string]chan struct{}{}
-	}
-	g, ok := f.hosts[host]
-	if !ok {
-		g = make(chan struct{}, perHostConcurrency)
-		f.hosts[host] = g
-	}
-	return g
-}
-
-// Fetch reads one page and extracts its readable text.
+// Fetch checks every redirect and bounds queueing, transfer and extraction by
+// one deadline. Cache hits do not spend a socket or a publisher request.
 func (f *ArticleFetcher) Fetch(ctx context.Context, rawURL string) (Article, error) {
-	u, err := url.Parse(rawURL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		return Article{}, fmt.Errorf("article: unusable url %q", rawURL)
+	ctx, cancel := context.WithTimeout(ctx, articleTimeout)
+	defer cancel()
+	u, err := articleURL(rawURL)
+	if err != nil {
+		return Article{}, err
 	}
-
-	gate := f.hostGate(u.Host)
+	key := u.String()
+	if a, err, ok := f.cached(key); ok {
+		return a, err
+	}
+	f.mu.Lock()
+	if f.slots == nil {
+		f.slots = make(chan struct{}, articleConcurrency)
+	}
+	slots := f.slots
+	f.mu.Unlock()
 	select {
-	case gate <- struct{}{}:
-		defer func() { <-gate }()
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
 	case <-ctx.Done():
 		return Article{}, ctx.Err()
 	}
+	for redirects := 0; redirects < 6; redirects++ {
+		a, next, err := f.fetchPage(ctx, u)
+		if next != nil {
+			u = next
+			continue
+		}
+		if ctx.Err() == nil {
+			f.remember(key, a, err)
+		}
+		return a, err
+	}
+	return Article{}, fmt.Errorf("article: redirect limit exceeded")
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+func (f *ArticleFetcher) fetchPage(ctx context.Context, u *url.URL) (Article, *url.URL, error) {
+	p, err := f.publisher(strings.ToLower(u.Hostname()))
 	if err != nil {
-		return Article{}, err
+		return Article{}, nil, err
 	}
-	// Identified rather than disguised. Publishers who do not want automated
-	// readers can say so and be obeyed; pretending to be Chrome would take
-	// that choice away from them.
-	req.Header.Set("User-Agent", "TradeSysResearch/1.0 (+self-hosted market analysis; contact via site owner)")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml")
-	req.Header.Set("Accept-Language", "en-IN,en;q=0.9")
-
-	client := f.HTTP
-	if client == nil {
-		client = http.DefaultClient
+	defer func() { f.mu.Lock(); p.users--; f.mu.Unlock() }()
+	select {
+	case p.gate <- struct{}{}:
+		defer func() { <-p.gate }()
+	case <-ctx.Done():
+		return Article{}, nil, ctx.Err()
 	}
-	resp, err := client.Do(req)
+	if a, err, ok := f.cached(u.String()); ok {
+		return a, nil, err
+	}
+	if err := f.allowed(ctx, p, u); err != nil {
+		return Article{}, nil, err
+	}
+	resp, err := f.request(ctx, u)
 	if err != nil {
-		return Article{}, err
+		return Article{}, nil, err
 	}
-	defer func() {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
-		_ = resp.Body.Close()
-	}()
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		next, err := resp.Location()
+		if err != nil {
+			return Article{}, nil, err
+		}
+		next, err = articleURL(next.String())
+		return Article{}, next, err
+	}
+	if resp.StatusCode == 429 || resp.StatusCode == 503 {
+		p.next = retryAt(resp)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return Article{}, fmt.Errorf("article: %s returned %s", u.Host, resp.Status)
+		return Article{}, nil, fmt.Errorf("article: %s returned HTTP %d", u.Hostname(), resp.StatusCode)
 	}
-	if ct := resp.Header.Get("Content-Type"); ct != "" && !strings.Contains(ct, "html") {
-		return Article{}, fmt.Errorf("article: %s is %s, not html", u.Host, ct)
+	ct := resp.Header.Get("Content-Type")
+	if ct != "" && !strings.Contains(ct, "html") && !strings.Contains(ct, "text/plain") {
+		return Article{}, nil, fmt.Errorf("article: unsupported content type %s", ct)
 	}
-
-	doc, err := html.Parse(io.LimitReader(resp.Body, maxArticleBytes))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxArticleBytes+1))
 	if err != nil {
-		return Article{}, fmt.Errorf("article: parse %s: %w", u.Host, err)
+		return Article{}, nil, err
 	}
-
-	title, text := extract(doc)
+	if len(body) > maxArticleBytes {
+		return Article{}, nil, fmt.Errorf("article: document exceeds size limit")
+	}
+	title, text := "", string(body)
+	if !strings.Contains(ct, "text/plain") {
+		doc, err := html.Parse(strings.NewReader(text))
+		if err != nil {
+			return Article{}, nil, err
+		}
+		title, text = extract(doc)
+	}
 	words := len(strings.Fields(text))
 	if words < minArticleWords {
-		return Article{}, fmt.Errorf("article: %s yielded %d words, which is a wall rather than an article", u.Host, words)
+		return Article{}, nil, fmt.Errorf("article: only %d words extracted; full text unavailable", words)
 	}
-	return Article{URL: resp.Request.URL.String(), Title: title, Text: text, Words: words}, nil
+	a := Article{URL: u.String(), Title: title, Text: trimWords(text, maxBodyWords), Words: words, FetchedAt: time.Now().UTC()}
+	f.remember(u.String(), a, nil)
+	return a, nil, nil
 }
 
 // extract pulls the title and the readable body out of a parsed document.
@@ -359,28 +380,47 @@ func (e *Engine) readBodies(ctx context.Context, findings []Finding) {
 	var wg sync.WaitGroup
 
 	attempted := 0
+	hostCounts := map[string]int{}
 	for i := range findings {
 		if attempted >= bodyFetchLimit {
 			break
 		}
 		u, err := url.Parse(findings[i].URL)
+		if findings[i].Body != "" {
+			findings[i].ReadStatus = "read"
+			continue
+		}
+		findings[i].ReadStatus = "not_read"
 		if err != nil || u.Host == "" || unreadableHosts[strings.ToLower(u.Host)] {
 			continue
 		}
+		if hostCounts[u.Hostname()] >= 3 {
+			continue
+		}
+		hostCounts[u.Hostname()]++
 		attempted++
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
 			defer func() { <-sem }()
 
 			a, err := e.articles.Fetch(ctx, findings[i].URL)
 			if err != nil {
+				findings[i].ReadStatus = "unavailable"
+				findings[i].ReadError = err.Error()
 				e.log.Debug("could not read article", "url", findings[i].URL, "err", err)
 				return
 			}
 			findings[i].Body = trimWords(a.Text, maxBodyWords)
-			findings[i].Words = a.Words
+			findings[i].Words = len(strings.Fields(findings[i].Body))
+			findings[i].ReadStatus = "read"
+			findings[i].FetchedAt = a.FetchedAt
+			findings[i].Cached = a.Cached
 		}(i)
 	}
 	wg.Wait()

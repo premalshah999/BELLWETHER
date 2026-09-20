@@ -95,7 +95,7 @@ export function DashboardPage({ symbol }: { symbol: string }) {
     queryKey: ["candles", symbol, interval, bars],
     queryFn: () => api.candles(symbol, interval, bars),
     refetchInterval: 60_000,
-    placeholderData: (prev) => prev,
+    placeholderData: (prev) => prev?.symbol === symbol ? prev : undefined,
   });
   const series = candles?.candles ?? [];
   const lastBar = series.length ? series[series.length - 1] ?? null : null;
@@ -179,7 +179,7 @@ export function DashboardPage({ symbol }: { symbol: string }) {
           and overflowed straight over the rails. A strip that has to hold an
           unknown amount of identity is the wrong home for a fixed set of
           controls. */}
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border-subtle bg-bg-panel px-4">
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 py-1.5 border-b border-border-subtle bg-bg-panel px-4">
         <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
           range
         </span>
@@ -295,7 +295,7 @@ function NewsPane({ symbol }: { symbol: string }) {
   const { data, isFetching } = useQuery({
     queryKey: ["symbol-events", symbol],
     queryFn: () => api.symbolEvents(symbol, 40),
-    refetchInterval: 120_000,
+    refetchInterval: 30_000,
   });
 
   const events = data?.events ?? [];

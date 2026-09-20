@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math"
 	"strings"
@@ -41,6 +42,7 @@ type Observer func(symbols, sectors []string, weight float64, reason string)
 // harder at a name *because the market did something*, not because an article
 // happened to arrive.
 type Runner struct {
+	runMu     sync.Mutex
 	mu        sync.RWMutex
 	attention []string
 
@@ -120,6 +122,10 @@ const (
 // manually triggered scan should do: an operator asking for a scan right
 // now is not asking for half the universe.
 func (r *Runner) Run(ctx context.Context, scope func(marketdata.Symbol) bool) (Result, error) {
+	if !r.runMu.TryLock() {
+		return Result{}, fmt.Errorf("scanner: a scan is already running")
+	}
+	defer r.runMu.Unlock()
 	all := r.Universe()
 	universe := all
 	if scope != nil {

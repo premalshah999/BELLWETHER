@@ -156,6 +156,9 @@ func New(d Deps) *Server {
 	if d.Budgets == nil {
 		d.Budgets = map[string]BudgetReporter{}
 	}
+	if d.Research != nil && d.AI == nil {
+		d.AI = ai.NewService(nil, nil, nil, time.UTC)
+	}
 	secret := []byte(d.SessionSecret)
 	if len(secret) == 0 {
 		secret = newSessionSecret()

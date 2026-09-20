@@ -17,7 +17,8 @@ import (
 // Config is the fully resolved application configuration.
 type Config struct {
 	// HTTP
-	Addr string
+	Addr                 string
+	AllowUnauthenticated bool
 
 	// Storage
 	//
@@ -96,6 +97,7 @@ func Load(envFile string) (*Config, error) {
 
 	c := &Config{
 		Addr:                   envStr("HTTP_ADDR", ":8080"),
+		AllowUnauthenticated:   envBool("ALLOW_UNAUTHENTICATED", false),
 		DatabaseURL:            envStr("DATABASE_URL", ""),
 		DBPath:                 envStr("DB_PATH", "./data/tradesys.db"),
 		AlphaVantageKey:        envStr("ALPHAVANTAGE_API_KEY", ""),

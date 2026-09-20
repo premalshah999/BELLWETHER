@@ -57,12 +57,22 @@ export function App() {
   // Rail geometry, remembered. Density is a matter of screen and of taste, so
   // the widths are the operator's to set rather than something to guess at.
   const [rightShut, setRightShut] = usePersisted("rail.right.shut", false);
-  const right = useResize({ key: "rail.right.width", initial: 356, min: 260, max: 560, direction: "w" });
+  const right = useResize({
+    key: "rail.right.width",
+    initial: 356,
+    min: 260,
+    max: 560,
+    direction: "w",
+  });
   const location = useLocation();
 
   // Every timestamp in the interface is rendered in the operator's zone, which
   // the server owns. Set once rather than threaded through every component.
-  const { data: meta } = useQuery({ queryKey: ["meta"], queryFn: api.meta, staleTime: Infinity });
+  const { data: meta } = useQuery({
+    queryKey: ["meta"],
+    queryFn: api.meta,
+    staleTime: Infinity,
+  });
   useEffect(() => {
     if (meta?.display_tz) setDisplayTimeZone(meta.display_tz);
   }, [meta?.display_tz]);
@@ -80,7 +90,9 @@ export function App() {
    * Navigation is not subject to this: it is on every page, on the left,
    * where an application's navigation belongs.
    */
-  const railed = ["/dashboard", "/charts"].some((p) => location.pathname.startsWith(p));
+  const railed = ["/dashboard", "/charts"].some((p) =>
+    location.pathname.startsWith(p),
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -99,8 +111,30 @@ export function App() {
     return <div className="h-screen bg-bg-base" />;
   }
 
+  if (auth.isError) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-bg-base">
+        <div className="p-6 text-ui text-text-secondary">
+          <p>Could not verify your session.</p>
+          <button
+            type="button"
+            onClick={() => auth.refetch()}
+            className="mt-3 text-brand"
+          >
+            Retry connection
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (auth.data?.required && !auth.data.authenticated) {
-    return <Login onSignedIn={() => qc.invalidateQueries()} />;
+    return (
+      <Login
+        setupRequired={auth.data.setup_required}
+        onSignedIn={() => qc.invalidateQueries()}
+      />
+    );
   }
 
   return (
@@ -119,29 +153,64 @@ export function App() {
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<DashboardPage symbol={selected} />} />
+              <Route
+                path="/dashboard"
+                element={<DashboardPage symbol={selected} />}
+              />
               <Route
                 path="/charts"
-                element={<ChartsPage symbol={selected} onSelect={setSelected} />}
+                element={
+                  <ChartsPage symbol={selected} onSelect={setSelected} />
+                }
               />
               {/* The second level of the navigation is a real route rather
                   than a tab inside the page above it, so it can be linked,
                   reloaded and bookmarked. Each page still owns the state its
                   two modes share — a rule being edited survives the move to
                   the backtester because one component renders both. */}
-              <Route path="/scanner" element={<Navigate to="/scanner/signals" replace />} />
-              <Route path="/scanner/:mode" element={<ScannerPage onSelect={setSelected} />} />
-              <Route path="/news" element={<NewsPage onSelect={setSelected} />} />
-              <Route path="/geopolitics" element={<GeopoliticsPage onSelect={setSelected} />} />
-              <Route path="/congress" element={<CongressPage onSelect={setSelected} />} />
+              <Route
+                path="/scanner"
+                element={<Navigate to="/scanner/signals" replace />}
+              />
+              <Route
+                path="/scanner/:mode"
+                element={<ScannerPage onSelect={setSelected} />}
+              />
+              <Route
+                path="/news"
+                element={<NewsPage onSelect={setSelected} />}
+              />
+              <Route
+                path="/geopolitics"
+                element={<GeopoliticsPage onSelect={setSelected} />}
+              />
+              <Route
+                path="/congress"
+                element={<CongressPage onSelect={setSelected} />}
+              />
               <Route path="/eventstudy" element={<EventStudyPage />} />
-              <Route path="/calendar" element={<CalendarPage onSelect={setSelected} />} />
-              <Route path="/positions" element={<PositionsPage onSelect={setSelected} />} />
-              <Route path="/journal" element={<JournalPage onSelect={setSelected} />} />
+              <Route
+                path="/calendar"
+                element={<CalendarPage onSelect={setSelected} />}
+              />
+              <Route
+                path="/positions"
+                element={<PositionsPage onSelect={setSelected} />}
+              />
+              <Route
+                path="/journal"
+                element={<JournalPage onSelect={setSelected} />}
+              />
               <Route path="/research" element={<ResearchPage />} />
-              <Route path="/algorithms" element={<Navigate to="/algorithms/build" replace />} />
+              <Route
+                path="/algorithms"
+                element={<Navigate to="/algorithms/build" replace />}
+              />
               <Route path="/algorithms/:mode" element={<AlgorithmsPage />} />
-              <Route path="/alerts" element={<AlertsPage onSelect={setSelected} />} />
+              <Route
+                path="/alerts"
+                element={<AlertsPage onSelect={setSelected} />}
+              />
               <Route path="/sources" element={<SourcesPage />} />
               <Route path="/ai" element={<CalibrationPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -150,7 +219,11 @@ export function App() {
 
           {railed &&
             (rightShut ? (
-              <CollapsedRail side="right" label="Watchlist" onOpen={() => setRightShut(false)} />
+              <CollapsedRail
+                side="right"
+                label="Watchlist"
+                onOpen={() => setRightShut(false)}
+              />
             ) : (
               <>
                 <Divider resize={right} orientation="vertical" />

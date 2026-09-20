@@ -1,0 +1,48 @@
+name: Verify Bellwether
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: verification-only
+          POSTGRES_DB: bellwether_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:verification-only@localhost:5432/bellwether_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm --prefix web ci
+      # Build before Go checks: the Go binary embeds this output.
+      - run: npm --prefix web run build
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: go build ./cmd/tradesys
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - name: Browser smoke checks
+        run: |
+          npm --prefix web run dev -- --host 127.0.0.1 --port 5174 > /tmp/vite.log 2>&1 &
+          vite_pid=$!
+          trap 'kill "$vite_pid"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5174 > /dev/null; then break; fi
+            sleep 1
+          done
+          node web/tests/research.smoke.mjs

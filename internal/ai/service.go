@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/tradesys/dashboard/internal/marketdata"
@@ -36,6 +37,11 @@ type WatchlistSource interface {
 
 // Service is the AI feature layer: everything built on top of the client.
 type Service struct {
+	researchMu      sync.Mutex
+	researchActive  map[int64]bool
+	researchJobs    int
+	researchContext context.Context
+
 	client    *Client
 	market    MarketSource
 	news      NewsSource
@@ -71,12 +77,17 @@ func WithWatchlist(src WatchlistSource) ServiceOption {
 	return func(s *Service) { s.watchlist = src }
 }
 
+func WithResearchContext(ctx context.Context) ServiceOption {
+	return func(s *Service) { s.researchContext = ctx }
+}
+
 // NewService builds the AI feature layer.
 func NewService(client *Client, market MarketSource, store OutputStore, loc *time.Location, opts ...ServiceOption) *Service {
 	if loc == nil {
 		loc = time.UTC
 	}
 	s := &Service{
+		researchActive: map[int64]bool{}, researchContext: context.Background(),
 		client: client,
 		market: market,
 		store:  store,
