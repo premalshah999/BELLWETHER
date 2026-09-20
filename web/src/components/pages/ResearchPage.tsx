@@ -1,23 +1,44 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, ChevronDown, ChevronRight, MessageSquare, Plus, RotateCw, Trash2 } from "lucide-react";
+import {
+  ArrowUp,
+  Search,
+  FileText,
+  Sparkles,
+  PanelLeft,
+  Plus,
+  RotateCw,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type MarketStats, type ResearchTurn } from "../../lib/api";
 import { formatAgo } from "../../lib/format";
-import { useResize } from "../../lib/layout";
+import { useResize, usePersisted } from "../../lib/layout";
 import { Divider } from "../ui/Divider";
-import { Empty } from "../ui/Empty";
 import { Panel } from "../ui/Panel";
 
 const SUGGESTIONS = [
-  "What is driving Suzlon's order book?",
+  "What changed in NVIDIA’s earnings and export restrictions?",
   "Which Indian cement companies are exposed to the coal price?",
-  "Is Infosys expensive relative to its sector?",
+  "What do recent central bank releases say about inflation?",
   "How is the tariff dispute affecting Indian steel exporters?",
 ];
 
 export function ResearchPage() {
   const qc = useQueryClient();
-  const [active, setActive] = useState<number | null>(null);
+  const [active, setActive] = usePersisted<number | null>(
+    "research.active",
+    null,
+  );
+  const [mode, setMode] = usePersisted<"evidence" | "brief">(
+    "research.mode",
+    "evidence",
+  );
+  const [showThreads, setShowThreads] = useState(false);
+  const { data: coverage } = useQuery({
+    queryKey: ["research-scrapers"],
+    queryFn: api.researchScrapers,
+    staleTime: 60_000,
+  });
   const [question, setQuestion] = useState("");
   /** A question posted but not yet visible in the thread. */
   const [pending, setPending] = useState<string | null>(null);
@@ -36,7 +57,11 @@ export function ResearchPage() {
     refetchInterval: 30_000,
   });
 
-  const { data: thread } = useQuery({
+  const {
+    data: thread,
+    isLoading: threadLoading,
+    error: threadError,
+  } = useQuery({
     queryKey: ["conversation", active],
     queryFn: () => api.conversation(active!),
     enabled: active != null,
@@ -54,7 +79,7 @@ export function ResearchPage() {
   });
 
   const ask = useMutation({
-    mutationFn: (text: string) => api.ask(text, active ?? undefined),
+    mutationFn: (text: string) => api.ask(text, active ?? undefined, 12, mode),
     onMutate: (text) => {
       // The question appears the instant it is sent. A research turn runs for
       // one to two minutes, and without this the screen was identical before
@@ -70,7 +95,10 @@ export function ResearchPage() {
       qc.invalidateQueries({ queryKey: ["conversation", res.conversation_id] });
       qc.invalidateQueries({ queryKey: ["conversations"] });
     },
-    onError: () => setPending(null),
+    onError: (_error, text) => {
+      setPending(null);
+      setQuestion(text);
+    },
   });
 
   const remove = useMutation({
@@ -82,127 +110,263 @@ export function ResearchPage() {
   });
 
   const turns = thread?.turns ?? [];
+  const busy =
+    ask.isPending ||
+    pending != null ||
+    turns.some((t) => t.status === "running");
+  const submit = (text: string) => {
+    if (text.trim() && !busy) ask.mutate(text.trim());
+  };
 
   // The optimistic question is cleared once the thread comes back carrying a
   // turn that asks it, so the two never render at the same time.
   useEffect(() => {
-    if (pending && turns.some((t) => t.question === pending)) setPending(null);
-  }, [turns, pending]);
+    if (pending && !ask.isPending && turns.at(-1)?.question === pending)
+      setPending(null);
+  }, [turns, pending, ask.isPending]);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth" });
+    if (turns.length > 0 || pending)
+      bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns.length, pending]);
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <Panel
-        title="Threads"
-        collapseKey="research.threads"
-        scroll
-        className="shrink-0"
-        style={{ width: threadsPane.size }}
-        action={
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-bg-panel px-5 py-4">
+        <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setActive(null)}
-            className="text-text-muted hover:text-brand"
-            title="New thread"
+            aria-label="Toggle research history"
+            aria-expanded={showThreads}
+            onClick={() => setShowThreads(!showThreads)}
+            className="p-2 text-text-muted hover:text-brand"
           >
-            <Plus size={13} />
+            <PanelLeft size={16} />
           </button>
-        }
-      >
-        <div className="divide-y divide-border-subtle">
-          {(threads?.conversations ?? []).map((c) => (
-            <div
-              key={c.id}
-              className={
-                "group flex items-start gap-1 px-3.5 py-2.5 " +
-                (c.id === active ? "bg-brand-muted" : "hover:bg-bg-panel-hover")
+          <div>
+            <h1 className="text-emphasis font-semibold text-text-primary">
+              Research desk
+            </h1>
+            <p className="mt-1 text-meta text-text-muted">
+              Sources first. A clearer view of what changed.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={ask.isPending}
+          onClick={() => {
+            setActive(null);
+            setPending(null);
+            ask.reset();
+          }}
+          className="flex items-center gap-2 border border-border-focus px-3 py-2 text-meta text-text-secondary hover:border-brand hover:text-brand"
+        >
+          <Plus size={13} /> New research
+        </button>
+      </header>
+      <div className="relative flex min-h-0 flex-1">
+        {showThreads && (
+          <>
+            <Panel
+              title="Threads"
+              collapseKey="research.threads"
+              scroll
+              className="absolute bottom-0 left-0 top-0 z-20 max-w-[85%] shrink-0 border-r border-border-subtle bg-bg-panel md:relative"
+              style={{ width: threadsPane.size }}
+              action={
+                <button
+                  type="button"
+                  onClick={() => setActive(null)}
+                  className="text-text-muted hover:text-brand"
+                  title="New thread"
+                >
+                  <Plus size={13} />
+                </button>
               }
             >
-              <button
-                type="button"
-                onClick={() => setActive(c.id)}
-                className="min-w-0 flex-1 text-left"
-              >
-                <span className="block truncate text-meta leading-snug text-text-primary">
-                  {c.title}
-                </span>
-                <span className="mt-0.5 block font-mono text-micro text-text-muted">
-                  {formatAgo(c.updated_at)} · {c.turn_count}q
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => remove.mutate(c.id)}
-                className="opacity-0 transition-opacity group-hover:opacity-100"
-                title="Delete thread"
-              >
-                <Trash2 size={11} className="text-text-muted hover:text-semantic-down" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </Panel>
-
-      <Divider resize={threadsPane} orientation="vertical" />
-
-      <div className="flex min-w-0 flex-1 flex-col bg-bg-panel">
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {turns.length === 0 ? (
-            <div className="px-4 py-6">
-              <Empty
-                icon={MessageSquare}
-                title="Ask about a company, a sector, or an event."
-                hint="Reads the article text behind every result, computes the price statistics itself, and compares valuation against listed peers before answering."
-              />
-              <ul className="mt-3 space-y-1">
-                {SUGGESTIONS.map((s) => (
-                  <li key={s}>
+              <div className="divide-y divide-border-subtle">
+                {(threads?.conversations ?? []).map((c) => (
+                  <div
+                    key={c.id}
+                    className={
+                      "group flex items-start gap-1 px-3.5 py-2.5 " +
+                      (c.id === active
+                        ? "bg-brand-muted"
+                        : "hover:bg-bg-panel-hover")
+                    }
+                  >
                     <button
                       type="button"
-                      onClick={() => ask.mutate(s)}
-                      className="text-left text-ui text-text-secondary hover:text-brand"
+                      onClick={() => {
+                        setActive(c.id);
+                        setShowThreads(false);
+                      }}
+                      className="min-w-0 flex-1 text-left"
                     >
-                      {s}
+                      <span className="block truncate text-meta leading-snug text-text-primary">
+                        {c.title}
+                      </span>
+                      <span className="mt-0.5 block font-mono text-micro text-text-muted">
+                        {formatAgo(c.updated_at)} · {c.turn_count}q
+                      </span>
                     </button>
-                  </li>
+                    <button
+                      type="button"
+                      onClick={() => remove.mutate(c.id)}
+                      className="opacity-0 transition-opacity group-hover:opacity-100"
+                      title="Delete thread"
+                    >
+                      <Trash2
+                        size={11}
+                        className="text-text-muted hover:text-semantic-down"
+                      />
+                    </button>
+                  </div>
                 ))}
-              </ul>
-            </div>
-          ) : (
-            <div className="divide-y divide-border-subtle">
-              {turns.map((t) => (
-                <Turn key={t.id} turn={t} onRetry={(q) => ask.mutate(q)} />
-              ))}
-              {pending && <PendingTurn question={pending} />}
-            </div>
-          )}
-          <div ref={bottom} />
-        </div>
+              </div>
+            </Panel>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (question.trim()) ask.mutate(question.trim());
-          }}
-          className="flex shrink-0 items-center gap-2 border-t border-border-subtle p-2"
-        >
-          <input
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder={turns.length ? "follow up…" : "ask about a company, sector, or event…"}
-            className="min-w-0 flex-1 border border-border-subtle bg-bg-base px-2 py-1.5 text-ui outline-none focus:border-brand"
-          />
-          <button
-            type="submit"
-            disabled={!question.trim() || ask.isPending}
-            className="border border-brand bg-brand-muted px-2 py-1.5 text-brand transition-colors hover:bg-brand hover:text-bg-base disabled:opacity-40"
+            <Divider resize={threadsPane} orientation="vertical" />
+          </>
+        )}
+
+        <div className="flex min-w-0 flex-1 flex-col bg-bg-panel">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {threadError && (
+              <p role="alert" className="p-4 text-meta text-semantic-down">
+                Could not load this thread. {threadError.message}
+              </p>
+            )}
+            {threadLoading && (
+              <p className="p-4 text-meta text-text-muted">Loading research…</p>
+            )}
+            {turns.length === 0 && !pending && !threadLoading ? (
+              <div className="mx-auto max-w-3xl px-6 py-12 lg:py-20">
+                <span className="mb-5 inline-flex items-center gap-2 border border-brand/30 bg-brand-muted px-3 py-1.5 font-mono text-micro uppercase tracking-wider text-brand">
+                  <Search size={12} /> Evidence workspace
+                </span>
+                <h2 className="max-w-xl text-hero font-semibold leading-tight tracking-tight text-text-primary">
+                  Follow the question.
+                  <br />
+                  Check the evidence.
+                </h2>
+                <p className="mt-4 max-w-xl text-ui leading-relaxed text-text-secondary">
+                  Investigate a company, a catalyst, or a policy change. Search
+                  filings, official releases, the collected archive, and the
+                  web. See which documents were actually readable before drawing
+                  a conclusion.
+                </p>
+                <div className="mt-7 grid gap-3 sm:grid-cols-2">
+                  {SUGGESTIONS.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setQuestion(suggestion)}
+                      className="flex items-start gap-3 border border-border-subtle bg-bg-base p-4 text-left text-ui leading-relaxed text-text-secondary hover:border-border-focus hover:text-text-primary"
+                    >
+                      <FileText
+                        size={15}
+                        className="mt-1 shrink-0 text-brand"
+                      />
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-5 font-mono text-meta text-text-muted">
+                  {coverage
+                    ? `${coverage.scrapers.length} configured search providers`
+                    : "Loading source coverage…"}{" "}
+                  · Availability is checked during each search
+                </p>
+              </div>
+            ) : (
+              <div className="mx-auto max-w-4xl divide-y divide-border-subtle">
+                {turns.map((t) => (
+                  <Turn key={t.id} turn={t} onRetry={submit} />
+                ))}
+                {pending && <PendingTurn question={pending} />}
+              </div>
+            )}
+            <div ref={bottom} />
+          </div>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit(question);
+            }}
+            className="shrink-0 border-t border-border-subtle bg-bg-base px-5 py-4"
           >
-            <ArrowUp size={13} />
-          </button>
-        </form>
+            <div className="mx-auto max-w-4xl">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                {(["evidence", "brief"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={mode === value}
+                    disabled={busy}
+                    onClick={() => setMode(value)}
+                    className={
+                      "flex items-center gap-2 border px-3 py-1.5 text-meta " +
+                      (mode === value
+                        ? "border-brand/40 bg-brand-muted text-brand"
+                        : "border-border-subtle text-text-muted hover:text-text-primary")
+                    }
+                  >
+                    {value === "evidence" ? (
+                      <FileText size={12} />
+                    ) : (
+                      <Sparkles size={12} />
+                    )}
+                    {value === "evidence"
+                      ? "Evidence only · no AI"
+                      : "Evidence + AI brief"}
+                  </button>
+                ))}
+              </div>
+              {ask.isError && (
+                <p role="alert" className="mb-3 text-ui text-semantic-down">
+                  {ask.error.message}
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  aria-label="Research question"
+                  maxLength={500}
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  placeholder={
+                    turns.length
+                      ? "follow up…"
+                      : "ask about a company, sector, or event…"
+                  }
+                  className="min-w-0 flex-1 border border-border-subtle bg-bg-base px-2 py-1.5 text-ui outline-none focus:border-brand"
+                />
+                <button
+                  type="submit"
+                  aria-label="Start research"
+                  disabled={!question.trim() || busy}
+                  className="border border-brand bg-brand-muted px-2 py-1.5 text-brand transition-colors hover:bg-brand hover:text-bg-base disabled:opacity-40"
+                >
+                  {busy ? (
+                    <RotateCw size={16} className="animate-spin" />
+                  ) : (
+                    <ArrowUp size={16} />
+                  )}
+                </button>
+              </div>
+              <p className="mt-2 text-meta text-text-muted">
+                {busy
+                  ? "Research continues if you leave this page. You can return to it from history."
+                  : mode === "evidence"
+                    ? "Retrieves sources and market measurements without spending AI tokens."
+                    : "One brief from selected readable passages. Source links remain available if AI is unavailable."}
+              </p>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
@@ -226,9 +390,10 @@ function Cite({ sources, turnId }: { sources?: number[]; turnId: number }) {
           href={`#src-${turnId}-${n}`}
           onClick={(e) => {
             e.preventDefault();
-            document
-              .getElementById(`src-${turnId}-${n}`)
-              ?.scrollIntoView({ behavior: "smooth", block: "center" });
+            const target = document.getElementById(`src-${turnId}-${n}`);
+            const details = target?.closest("details");
+            if (details) details.open = true;
+            target?.scrollIntoView({ behavior: "smooth", block: "center" });
           }}
           className="font-mono text-micro text-text-muted transition-colors hover:text-brand"
           title={`Source ${n}`}
@@ -250,60 +415,65 @@ function Cite({ sources, turnId }: { sources?: number[]; turnId: number }) {
  * stronger evidence than one that was merely listed.
  */
 function Sources({ turn }: { turn: ResearchTurn }) {
-  const [open, setOpen] = useState(false);
   const sources = turn.sources ?? [];
-  if (sources.length === 0) return null;
-
-  const read = sources.filter((s) => (s.words ?? 0) > 0).length;
-
+  if (!sources.length) return null;
+  const read = sources.filter((source) => (source.words ?? 0) > 0).length;
   return (
-    <div className="mt-4 border-t border-border-subtle pt-3">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 font-mono text-micro uppercase tracking-[0.12em] text-text-muted transition-colors hover:text-brand"
-      >
-        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-        {sources.length} sources · {read} read in full
-      </button>
-
-      {open && (
-        <ol className="mt-2 space-y-1.5">
-          {sources.map((s, i) => (
-            <li
-              key={i}
-              id={`src-${turn.id}-${i + 1}`}
-              className="flex gap-2 scroll-mt-8 text-meta leading-relaxed"
-            >
-              <span className="w-6 shrink-0 text-right font-mono text-meta text-text-muted">
-                {i + 1}
-              </span>
-              <span className="min-w-0 flex-1">
-                <a
-                  href={s.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="text-text-secondary hover:text-brand"
-                >
-                  {s.title}
-                </a>
-                <span className="mt-0.5 flex flex-wrap items-center gap-x-2 font-mono text-micro text-text-muted">
-                  <span>{s.publisher}</span>
-                  {s.published_at && <span>{formatAgo(s.published_at)}</span>}
-                  {/* Read vs listed is the strength of the evidence, so it is
-                      stated rather than left for the reader to infer. */}
-                  {s.words ? (
-                    <span className="text-semantic-up">{s.words} words read</span>
-                  ) : (
-                    <span>headline only</span>
-                  )}
+    <details
+      open={!turn.model || undefined}
+      className="mt-5 border border-border-subtle bg-bg-base"
+    >
+      <summary className="cursor-pointer px-4 py-3 font-mono text-meta text-text-secondary">
+        Evidence library · {sources.length} documents · {read} readable ·{" "}
+        {sources.filter((source) => source.trust === 100).length} official
+      </summary>
+      <ol className="divide-y divide-border-subtle border-t border-border-subtle">
+        {sources.map((source, i) => (
+          <li
+            key={source.url + i}
+            id={`src-${turn.id}-${i + 1}`}
+            className="flex scroll-mt-8 gap-3 px-4 py-3"
+          >
+            <span className="mt-0.5 w-6 shrink-0 font-mono text-meta text-brand">
+              {i + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <a
+                href={/^https?:\/\//i.test(source.url) ? source.url : undefined}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-ui leading-relaxed text-text-primary hover:text-brand"
+              >
+                {source.title}
+              </a>
+              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-micro text-text-muted">
+                <span>{source.publisher}</span>
+                <span>
+                  {source.published_at &&
+                  !source.published_at.startsWith("0001")
+                    ? formatAgo(source.published_at)
+                    : "Publication date unknown"}
                 </span>
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
+                {source.trust === 100 && (
+                  <span className="text-brand">Official source</span>
+                )}
+                <span className={source.words ? "text-semantic-up" : ""}>
+                  {source.words
+                    ? `${source.words} words extracted`
+                    : "Link only · text unavailable"}
+                </span>
+                {source.cached && <span>Cached text</span>}
+              </div>
+              {source.read_error && (
+                <p className="mt-1 text-meta text-text-muted">
+                  {source.read_error}
+                </p>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
 
@@ -328,19 +498,38 @@ function PendingTurn({ question }: { question: string }) {
   );
 }
 
-function Turn({ turn, onRetry }: { turn: ResearchTurn; onRetry: (q: string) => void }) {
+function Turn({
+  turn,
+  onRetry,
+}: {
+  turn: ResearchTurn;
+  onRetry: (q: string) => void;
+}) {
   const read = (turn.sources ?? []).filter((s) => (s.words ?? 0) > 0).length;
   return (
     <article className="px-5 py-4">
-      <h3 className="text-ui font-medium leading-snug text-text-primary">{turn.question}</h3>
+      <h3 className="text-ui font-medium leading-snug text-text-primary">
+        {turn.question}
+      </h3>
       <p className="mt-0.5 font-mono text-micro text-text-muted">
         {formatAgo(turn.created_at)}
         {turn.elapsed_ms > 0 && ` · ${(turn.elapsed_ms / 1000).toFixed(0)}s`}
-        {turn.sources?.length ? ` · ${turn.sources.length} sources, ${read} read in full` : ""}
+        {turn.sources?.length
+          ? ` · ${turn.sources.length} sources, ${read} with extracted text`
+          : ""}
       </p>
 
       {turn.status === "running" && (
-        <p className="mt-2 font-mono text-meta text-brand">{turn.stage ?? "working"}…</p>
+        <div role="status" className="mt-3 border-l-2 border-brand pl-3">
+          <p className="font-mono text-meta text-brand">
+            {turn.stage ?? "working"}…
+          </p>
+          {turn.progress?.slice(-3).map((step, i) => (
+            <p key={i} className="mt-1 text-meta text-text-muted">
+              {step.detail || step.stage}
+            </p>
+          ))}
+        </div>
       )}
 
       {/* A research turn runs for two or three minutes, so it is exposed to
@@ -350,7 +539,8 @@ function Turn({ turn, onRetry }: { turn: ResearchTurn; onRetry: (q: string) => v
       {turn.status === "failed" && (
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <p className="font-mono text-meta text-semantic-down">
-            {turn.error === "the process handling this request stopped before it finished"
+            {turn.error ===
+            "the process handling this request stopped before it finished"
               ? "This search was interrupted — the server restarted while it was running."
               : (turn.error ?? "This search did not finish.")}
           </p>
@@ -370,6 +560,28 @@ function Turn({ turn, onRetry }: { turn: ResearchTurn; onRetry: (q: string) => v
         </p>
       )}
 
+      {turn.model && (
+        <p className="mt-2 font-mono text-micro text-brand">
+          AI-generated brief · {turn.model} · verify the cited evidence
+        </p>
+      )}
+      {!!turn.providers?.length && (
+        <details className="mt-3 text-meta text-text-muted">
+          <summary className="cursor-pointer">
+            Source coverage ·{" "}
+            {turn.providers.filter((provider) => provider.error).length}{" "}
+            unavailable
+          </summary>
+          <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+            {turn.providers.map((provider) => (
+              <li key={provider.name}>
+                {provider.name}:{" "}
+                {provider.error ? provider.error : `${provider.count} results`}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {!!turn.measurements?.length && <Measured stats={turn.measurements} />}
 
       {turn.answer && (
@@ -381,10 +593,15 @@ function Turn({ turn, onRetry }: { turn: ResearchTurn; onRetry: (q: string) => v
       {(turn.sections ?? []).map((sec, i) => (
         <section key={i} className="mt-4">
           {sec.heading && (
-            <h4 className="mb-1 text-ui font-medium text-text-primary">{sec.heading}</h4>
+            <h4 className="mb-1 text-ui font-medium text-text-primary">
+              {sec.heading}
+            </h4>
           )}
           {sec.body.split(/\n\n+/).map((p, j) => (
-            <p key={j} className="mb-2 text-ui leading-relaxed text-text-secondary">
+            <p
+              key={j}
+              className="mb-2 text-ui leading-relaxed text-text-secondary"
+            >
               {p}
               {j === sec.body.split(/\n\n+/).length - 1 && (
                 <Cite sources={sec.sources} turnId={turn.id} />
@@ -397,7 +614,10 @@ function Turn({ turn, onRetry }: { turn: ResearchTurn; onRetry: (q: string) => v
       {!!turn.findings?.length && (
         <ul className="mt-3 space-y-1 border-t border-border-subtle pt-3">
           {turn.findings.map((f, i) => (
-            <li key={i} className="flex gap-2 text-ui leading-relaxed text-text-secondary">
+            <li
+              key={i}
+              className="flex gap-2 text-ui leading-relaxed text-text-secondary"
+            >
               <span className="mt-[7px] h-px w-2 shrink-0 bg-text-muted" />
               <span>
                 {f.claim}
@@ -409,6 +629,20 @@ function Turn({ turn, onRetry }: { turn: ResearchTurn; onRetry: (q: string) => v
       )}
 
       <Sources turn={turn} />
+      {!!turn.followups?.length && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {turn.followups.map((query) => (
+            <button
+              type="button"
+              key={query}
+              onClick={() => onRetry(query)}
+              className="border border-border-subtle px-3 py-2 text-left text-meta text-text-secondary hover:border-brand hover:text-brand"
+            >
+              {query} →
+            </button>
+          ))}
+        </div>
+      )}
 
       {!!turn.gaps?.length && (
         <div className="mt-3 border-t border-border-subtle pt-2">
@@ -456,7 +690,13 @@ function Measured({ stats }: { stats: MarketStats[] }) {
                 {m.returns.map((r) => (
                   <span key={r.horizon}>
                     <span className="text-text-muted">{r.horizon}</span>{" "}
-                    <span className={r.percent >= 0 ? "text-semantic-up" : "text-semantic-down"}>
+                    <span
+                      className={
+                        r.percent >= 0
+                          ? "text-semantic-up"
+                          : "text-semantic-down"
+                      }
+                    >
                       {r.percent >= 0 ? "+" : ""}
                       {r.percent.toFixed(2)}%
                     </span>
@@ -466,7 +706,8 @@ function Measured({ stats }: { stats: MarketStats[] }) {
             )}
             <div className="text-text-muted">
               volatility {m.volatility_percent.toFixed(1)}% · worst drawdown{" "}
-              {m.max_drawdown_percent.toFixed(1)}% · {m.pct_from_52w_high.toFixed(1)}% from 52w high
+              {m.max_drawdown_percent.toFixed(1)}% ·{" "}
+              {m.pct_from_52w_high.toFixed(1)}% from 52w high
             </div>
           </div>
         ))}

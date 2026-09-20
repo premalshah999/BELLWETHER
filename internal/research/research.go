@@ -38,7 +38,12 @@ type Finding struct {
 	Body string `json:"-"`
 	// Words is the length of Body, which the UI does surface so a reader can
 	// see which sources were actually read rather than merely listed.
-	Words int `json:"words,omitempty"`
+	Words      int       `json:"words,omitempty"`
+	ReadStatus string    `json:"read_status,omitempty"`
+	ReadError  string    `json:"read_error,omitempty"`
+	FetchedAt  time.Time `json:"fetched_at,omitempty"`
+	Cached     bool      `json:"cached,omitempty"`
+	Relevance  float64   `json:"relevance,omitempty"`
 }
 
 // Scraper fetches results for a free-text query.
@@ -129,7 +134,8 @@ type Engine struct {
 	// thinner.
 	articles *ArticleFetcher
 	// valuation answers "is this expensive", which price history cannot.
-	valuation ValuationSource
+	valuation   ValuationSource
+	searchSlots chan struct{}
 }
 
 // Option configures an Engine.
@@ -164,7 +170,11 @@ func WithUniverseLookup(f func(query string) []UniverseNote) Option {
 
 // NewEngine builds a research engine over a set of scrapers.
 func NewEngine(scrapers []Scraper, opts ...Option) *Engine {
-	e := &Engine{scrapers: scrapers, log: slog.Default()}
+	wrapped := make([]Scraper, 0, len(scrapers))
+	for _, sc := range scrapers {
+		wrapped = append(wrapped, cacheScraper(sc))
+	}
+	e := &Engine{scrapers: wrapped, log: slog.Default(), searchSlots: make(chan struct{}, 6)}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -192,13 +202,13 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 		return Result{}, fmt.Errorf("research: empty query")
 	}
 	if perScraper <= 0 {
-		// Raised alongside article reading. When a source was a headline,
-		// twelve per scraper was plenty; now that the useful ones are read in
-		// full, the binding constraint is how many readable pages a question
-		// can gather, and most scrapers return far fewer than they are asked
-		// for.
+		perScraper = 12
+	}
+	if perScraper > 30 {
 		perScraper = 30
 	}
+	ctx, cancel := context.WithTimeout(ctx, 100*time.Second)
+	defer cancel()
 	start := time.Now()
 
 	var (
@@ -211,7 +221,17 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 		wg.Add(1)
 		go func(sc Scraper) {
 			defer wg.Done()
-			got, err := sc.Search(ctx, query, perScraper)
+			providerCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
+			defer cancel()
+			var got []Finding
+			var err error
+			select {
+			case e.searchSlots <- struct{}{}:
+				got, err = searchProvider(providerCtx, sc, query, perScraper)
+				<-e.searchSlots
+			case <-providerCtx.Done():
+				err = providerCtx.Err()
+			}
 			mu.Lock()
 			defer mu.Unlock()
 			rep := ScraperReport{Name: sc.Name(), Count: len(got)}
@@ -219,6 +239,7 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 				rep.Error = err.Error()
 				rep.Count = 0
 			}
+			reportProgress(ctx, "searching", fmt.Sprintf("%s: %d results", rep.Name, rep.Count))
 			reports = append(reports, rep)
 			findings = append(findings, got...)
 		}(sc)
@@ -233,22 +254,16 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 			if findings[i].Snippet != "" {
 				text += ". " + findings[i].Snippet
 			}
-			findings[i].Symbols = e.resolve(text)
+			if len(findings[i].Symbols) == 0 {
+				findings[i].Symbols = e.resolve(text)
+			}
 			for _, s := range findings[i].Symbols {
 				symbolSet[s] = true
 			}
 		}
 	}
 
-	// Rank by trust first, then recency. Trust leads because the point of
-	// research is to find out what is true, and a wire report outranks an
-	// aggregator's copy of it however much fresher the copy is.
-	sort.SliceStable(findings, func(i, j int) bool {
-		if findings[i].Trust != findings[j].Trust {
-			return findings[i].Trust > findings[j].Trust
-		}
-		return findings[i].PublishedAt.After(findings[j].PublishedAt)
-	})
+	rankFindings(query, findings)
 	sort.Slice(reports, func(i, j int) bool { return reports[i].Name < reports[j].Name })
 
 	symbols := make([]string, 0, len(symbolSet))
@@ -265,24 +280,10 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 	// Read the pages, not just their headlines. This is what separates a
 	// research answer from a list of links, and it happens before measurement
 	// because it is the slower of the two and the one worth waiting for.
+	reportProgress(ctx, "reading", fmt.Sprintf("Checking publisher access and reading up to %d relevant pages", bodyFetchLimit))
 	e.readBodies(ctx, findings)
 
-	// Re-ranked once the bodies are in: a source that was read outranks one
-	// that was not, and trust orders each group.
-	//
-	// This matters because the synthesis prompt takes a fixed number of
-	// sources from the top. Ranking on trust alone put seventeen Google News
-	// headlines and ten MSN shells — none of them readable — ahead of the
-	// article text that answers the question, and the report was written from
-	// whatever survived the truncation. A headline is a pointer to evidence;
-	// the article is the evidence.
-	sort.SliceStable(findings, func(i, j int) bool {
-		ri, rj := findings[i].Body != "", findings[j].Body != ""
-		if ri != rj {
-			return ri
-		}
-		return findings[i].Trust > findings[j].Trust
-	})
+	rankFindings(query, findings)
 
 	// Measured last, because it needs the resolved symbols — but the question's
 	// own subject leads.
@@ -292,6 +293,7 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 	// four other names alphabetically ahead of it, and answer that it had no
 	// data on the company the reader asked about. What a question names is the
 	// thing to measure; what its sources mention is context.
+	reportProgress(ctx, "measuring", "Computing market context for the companies in this question")
 	ranked := e.rankForMeasurement(query, symbols)
 	measurements := e.measure(ctx, ranked)
 	valuations := e.valuations(ctx, ranked)
@@ -328,7 +330,13 @@ func dedupeFindings(in []Finding) []Finding {
 			continue
 		}
 		if f.Trust > prev.Trust || (f.Trust == prev.Trust && len(f.Snippet) > len(prev.Snippet)) {
+			if f.Body == "" {
+				f.Body, f.Words = prev.Body, prev.Words
+			}
 			best[key] = f
+		} else if prev.Body == "" && f.Body != "" {
+			prev.Body, prev.Words = f.Body, f.Words
+			best[key] = prev
 		}
 	}
 	out := make([]Finding, 0, len(order))

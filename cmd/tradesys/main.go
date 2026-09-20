@@ -491,6 +491,7 @@ func run() error {
 
 	aiService := ai.NewService(llm, router, store, cfg.DisplayTZ,
 		ai.WithServiceLogger(log),
+		ai.WithResearchContext(ctx),
 		ai.WithSearch(searchRouter),
 		ai.WithNews(store),
 		ai.WithScoreStore(store),
@@ -520,10 +521,12 @@ func run() error {
 	// answers anyone who finds the host.
 	if n, err := store.CountActiveKeys(ctx); err != nil {
 		log.Warn("could not count API keys", "err", err)
-	} else if n == 0 {
+	} else if n == 0 && cfg.AllowUnauthenticated {
 		log.Warn("no API keys have been issued, so this deployment is OPEN and " +
 			"every endpoint including writes answers anyone who can reach it — " +
 			"issue one with: tradesys -issue-key -name \"you\" -role owner")
+	} else if n == 0 {
+		log.Warn("API locked until an owner key is issued: tradesys -issue-key -name owner -role owner")
 	} else {
 		log.Info("api keys active", "count", n)
 		if cfg.SessionSecret == "" {
@@ -823,6 +826,8 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 		},
 	}
 
+	client.Transport = &research.DiscoveryTransport{Base: client.Transport}
+
 	scrapers := []research.Scraper{
 		// Our own archive first. It is the only source built for this
 		// domain — filings resolved to NSE symbols, deduplicated, classified
@@ -858,6 +863,10 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 	// unrelated to SEC and so not gated on SEC_USER_AGENT.
 	scrapers = append(scrapers, &research.FederalRegisterScraper{Client: client})
 
+	for _, src := range news.AdditionalOfficialSources() {
+		scrapers = append(scrapers, &research.FeedScraper{Source: src, Client: client})
+	}
+
 	// SEC's own text, searched directly -- not a headline about a filing,
 	// the filing itself. Gated on the same declared contact every other SEC
 	// endpoint in this app requires; omitted rather than registered to fail
@@ -883,11 +892,11 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 			// leans on Google News gets forty headlines and no article text.
 			&research.SearXNGScraper{
 				Client: client, BaseURL: u, Label: "searxng_news",
-				Categories: "news", TimeRange: "month", Language: "en", Pages: 5,
+				Categories: "news", TimeRange: "month", Language: "en", Pages: 2,
 			},
 			&research.SearXNGScraper{
 				Client: client, BaseURL: u, Label: "searxng_web",
-				Language: "en", Pages: 5,
+				Language: "en", Pages: 2,
 			},
 			// The same index without the recency filter. A question about a
 			// company's history, a past regulatory action or a multi-year
@@ -895,7 +904,7 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 			// cannot see at all.
 			&research.SearXNGScraper{
 				Client: client, BaseURL: u, Label: "searxng_archive",
-				Categories: "news", Language: "en", Pages: 4,
+				Categories: "news", Language: "en", Pages: 2,
 			},
 		)
 	}
@@ -950,6 +959,8 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 		return out
 	}
 
+	articleFetcher := research.NewArticleFetcher()
+	articleFetcher.UserAgent = cfg.SECUserAgent
 	engine := research.NewEngine(scrapers,
 		research.WithLogger(log),
 		research.WithSymbolResolver(resolve),
@@ -966,7 +977,7 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 		// headlines. This is the difference between a report and a list of
 		// links: without it the model sees a title and a forty-word snippet,
 		// and for Google News results the snippet is the title again.
-		research.WithArticleFetcher(research.NewArticleFetcher()),
+		research.WithArticleFetcher(articleFetcher),
 		// Fundamentals, already compared against the peer group. A question
 		// about a company is incomplete without whether it is expensive, and
 		// no amount of news coverage answers that.
@@ -1158,7 +1169,7 @@ func startAISchedules(
 	marketScanner *scanner.Runner,
 	fundamentalsRunner *fundamentals.Runner,
 ) *cron.Cron {
-	c := cron.New(cron.WithLocation(cfg.DisplayTZ))
+	c := cron.New(cron.WithLocation(cfg.DisplayTZ), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger), cron.Recover(cron.DefaultLogger)))
 
 	// Fifteen minutes suits every job here except one, so the deadline is a
 	// parameter rather than a constant. A fundamentals pass over 750 companies
@@ -1197,10 +1208,10 @@ func startAISchedules(
 		addWithin(name, spec, 15*time.Minute, job)
 	}
 
-	// News collection: hourly, and it needs no AI at all. The multi-source
+	// Watchlist collection every ten minutes; this needs no AI. The multi-source
 	// ingestion engine polls far more often than this on its own per-source
 	// cadence; this is the watchlist-driven sweep, which is a different job.
-	add("news poll", "7 * * * *", func(runCtx context.Context) {
+	add("news poll", "*/10 * * * *", func(runCtx context.Context) {
 		if _, err := poller.PollAll(runCtx); err != nil {
 			log.Warn("scheduled news poll failed", "err", err)
 		}
@@ -1233,10 +1244,10 @@ func startAISchedules(
 			}
 		}
 		add("market scan (nse close)", "CRON_TZ=Asia/Kolkata 45 15 * * 1-5", scan(nseScope))
-		add("market scan (nse midday)", "CRON_TZ=Asia/Kolkata 30 12 * * 1-5", scan(nseScope))
+		add("market scan (nse intraday)", "CRON_TZ=Asia/Kolkata 15,45 10-14 * * 1-5", scan(nseScope))
 		add("market scan (nse open)", "CRON_TZ=Asia/Kolkata 45 9 * * 1-5", scan(nseScope))
-		add("market scan (us close)", "CRON_TZ=America/New_York 45 15 * * 1-5", scan(usScope))
-		add("market scan (us midday)", "CRON_TZ=America/New_York 30 12 * * 1-5", scan(usScope))
+		add("market scan (us close)", "CRON_TZ=America/New_York 15 16 * * 1-5", scan(usScope))
+		add("market scan (us intraday)", "CRON_TZ=America/New_York 15,45 10-15 * * 1-5", scan(usScope))
 		add("market scan (us open)", "CRON_TZ=America/New_York 45 9 * * 1-5", scan(usScope))
 
 		// The forward calendar, once a day before the US open.

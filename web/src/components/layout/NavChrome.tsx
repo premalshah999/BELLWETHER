@@ -54,7 +54,7 @@ export function NavHeader({
       <div className="flex h-11 items-center gap-2 px-3">
         <span className="h-4 w-4 shrink-0 bg-brand shadow-[0_0_8px_rgba(0,229,255,0.55)]" />
         <span className="min-w-0 flex-1 truncate font-mono text-ui font-semibold tracking-[0.14em] text-text-primary">
-          TRADESYS
+          BELLWETHER
         </span>
         <button
           type="button"

@@ -16,6 +16,7 @@ services:
       # Fixed inside the container regardless of what .env says, because the
       # port mapping and the volume mount below depend on them.
       HTTP_ADDR: ":8080"
+      ALLOW_UNAUTHENTICATED: ${ALLOW_UNAUTHENTICATED:-false}
       DB_PATH: "/data/tradesys.db"
       # Postgres is reached over the compose network. Credentials come from
       # .env so the same file configures both this service and the database.

@@ -119,7 +119,7 @@ func DefaultSources() []Source {
 		out = append(out, Source{
 			ID: f.id, Name: f.name, URL: f.url,
 			Method: MethodRSS, Category: f.category, Country: "US", Language: "en",
-			Trust: TrustOfficial, Refresh: 5 * time.Minute, Timeout: 20 * time.Second,
+			Trust: TrustOfficial, Refresh: 90 * time.Second, Timeout: 20 * time.Second,
 			Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
 		})
 	}
@@ -542,7 +542,7 @@ func DefaultSources() []Source {
 		Usage: UsagePublicReviewed, Display: DisplayLinkOnly, Enabled: true,
 	})
 
-	return out
+	return append(out, AdditionalOfficialSources()...)
 }
 
 // DefaultRegistry builds a registry from the curated catalog.

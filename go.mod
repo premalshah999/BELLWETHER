@@ -7,6 +7,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/temoto/robotstxt v1.1.2
 	golang.org/x/net v0.58.0
 	modernc.org/sqlite v1.57.0
 )

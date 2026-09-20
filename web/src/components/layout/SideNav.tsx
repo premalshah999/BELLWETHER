@@ -61,22 +61,31 @@ const isGroup = (e: Entry): e is Group => "children" in e;
  * one place and visible without opening anything.
  */
 const NAV: Entry[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/positions", label: "Positions", icon: Briefcase },
-  { to: "/journal", label: "Journal", icon: BookOpen },
-  { to: "/charts", label: "Charts", icon: CandlestickChart },
+  { to: "/dashboard", label: "Trading desk", icon: LayoutDashboard },
+  { to: "/news", label: "News", icon: Newspaper },
+  { to: "/scanner/signals", label: "Signals", icon: Radar },
+  { to: "/research", label: "Research", icon: Search },
+  { to: "/calendar", label: "Catalyst calendar", icon: CalendarClock },
+  { to: "/alerts", label: "Alerts", icon: Bell, badge: "alerts" },
   {
-    id: "markets",
-    label: "Markets",
-    icon: Radar,
+    id: "portfolio",
+    label: "Your portfolio",
+    icon: Briefcase,
     children: [
-      { to: "/scanner/signals", label: "Signals", icon: Radar },
-      { to: "/calendar", label: "Calendar", icon: CalendarClock },
+      { to: "/positions", label: "Positions", icon: Briefcase },
+      { to: "/journal", label: "Trade journal", icon: BookOpen },
+      { to: "/charts", label: "Charts", icon: CandlestickChart },
+    ],
+  },
+  {
+    id: "explore",
+    label: "Explore",
+    icon: Globe2,
+    children: [
       { to: "/scanner/screens", label: "Screens", icon: Filter },
-      { to: "/news", label: "News", icon: Newspaper },
       { to: "/geopolitics", label: "Geopolitics", icon: Globe2 },
       { to: "/congress", label: "Congress", icon: Landmark },
-      { to: "/eventstudy", label: "Event Study", icon: FlaskConical },
+      { to: "/eventstudy", label: "Event study", icon: FlaskConical },
     ],
   },
   {
@@ -88,14 +97,12 @@ const NAV: Entry[] = [
       { to: "/algorithms/backtest", label: "Backtest", icon: FlaskConical },
     ],
   },
-  { to: "/research", label: "Research", icon: Search },
-  { to: "/alerts", label: "Alerts", icon: Bell, badge: "alerts" },
   {
     id: "system",
     label: "System",
     icon: Activity,
     children: [
-      { to: "/sources", label: "Sources", icon: Rss },
+      { to: "/sources", label: "Source health", icon: Rss },
       { to: "/ai", label: "AI calibration", icon: BrainCircuit },
     ],
   },
@@ -108,7 +115,7 @@ export function SideNav({
   stream: StreamState;
   onCommand: () => void;
 }) {
-  const [shut, setShut] = usePersisted("nav.shut", false);
+  const [shut, setShut] = usePersisted("nav.shut", window.innerWidth < 1024);
   const location = useLocation();
 
   const { data: alerts } = useQuery({
@@ -123,24 +130,26 @@ export function SideNav({
       <nav className="flex w-12 shrink-0 flex-col items-center border-r border-border-subtle bg-bg-panel">
         <NavHeader shut onExpand={() => setShut(false)} onCommand={onCommand} />
         <div className="flex flex-1 flex-col items-center gap-1 py-2">
-        {/* Collapsed, groups flatten to their children: a group header that
+          {/* Collapsed, groups flatten to their children: a group header that
             cannot show its label is a button that does nothing legible. */}
-        {NAV.flatMap((e) => (isGroup(e) ? e.children : [e])).map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            title={item.label}
-            className={({ isActive }) =>
-              "relative flex h-8 w-8 items-center justify-center transition-colors " +
-              (isActive ? "bg-brand-muted text-brand" : "text-text-muted hover:text-text-primary")
-            }
-          >
-            <item.icon size={15} />
-            {item.badge === "alerts" && unread > 0 && (
-              <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-brand" />
-            )}
-          </NavLink>
-        ))}
+          {NAV.flatMap((e) => (isGroup(e) ? e.children : [e])).map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              title={item.label}
+              className={({ isActive }) =>
+                "relative flex h-8 w-8 items-center justify-center transition-colors " +
+                (isActive
+                  ? "bg-brand-muted text-brand"
+                  : "text-text-muted hover:text-text-primary")
+              }
+            >
+              <item.icon size={15} />
+              {item.badge === "alerts" && unread > 0 && (
+                <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-brand" />
+              )}
+            </NavLink>
+          ))}
         </div>
         <NavFooter shut stream={stream} />
       </nav>
@@ -148,13 +157,18 @@ export function SideNav({
   }
 
   return (
-    <nav className="flex w-56 shrink-0 flex-col border-r border-border-subtle bg-bg-panel">
+    <nav className="flex w-48 shrink-0 flex-col border-r border-border-subtle bg-bg-panel">
       <NavHeader onCollapse={() => setShut(true)} onCommand={onCommand} />
 
       <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
         {NAV.map((entry) =>
           isGroup(entry) ? (
-            <NavGroup key={entry.id} group={entry} path={location.pathname} unread={unread} />
+            <NavGroup
+              key={entry.id}
+              group={entry}
+              path={location.pathname}
+              unread={unread}
+            />
           ) : (
             <NavRow key={entry.to} item={entry} unread={unread} />
           ),
@@ -178,13 +192,14 @@ function NavGroup({
   // A group holding the current page opens itself, so arriving by any route —
   // a link, a redirect, a reload — leaves the nav showing where you are.
   const holdsCurrent = group.children.some((c) => path.startsWith(c.to));
-  const [open, setOpen] = usePersisted(`nav.group.${group.id}`, true);
+  const [open, setOpen] = usePersisted(`nav.group.${group.id}`, false);
   const shown = open || holdsCurrent;
 
   return (
     <div className="mb-0.5">
       <button
         type="button"
+        aria-expanded={shown}
         onClick={() => setOpen(!shown)}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-bg-panel-hover"
       >
@@ -199,7 +214,9 @@ function NavGroup({
         </span>
       </button>
       {shown &&
-        group.children.map((c) => <NavRow key={c.to} item={c} unread={unread} nested />)}
+        group.children.map((c) => (
+          <NavRow key={c.to} item={c} unread={unread} nested />
+        ))}
     </div>
   );
 }
@@ -228,7 +245,12 @@ function NavRow({
           how selection is drawn everywhere else in this interface. */}
       {({ isActive }: { isActive: boolean }) => (
         <>
-          <span className={"-ml-2 h-4 w-px shrink-0 " + (isActive ? "bg-brand" : "bg-transparent")} />
+          <span
+            className={
+              "-ml-2 h-4 w-px shrink-0 " +
+              (isActive ? "bg-brand" : "bg-transparent")
+            }
+          />
           <item.icon size={13} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{item.label}</span>
           {item.badge === "alerts" && unread > 0 && (

@@ -771,6 +771,11 @@ export interface ResearchSource {
    *  could be retrieved, which is worth showing: a source that was read is
    *  stronger evidence than one that was merely listed. */
   words?: number;
+  read_status?: string;
+  read_error?: string;
+  fetched_at?: string;
+  cached?: boolean;
+  relevance?: number;
   title: string;
   url: string;
   publisher: string;
@@ -1224,6 +1229,7 @@ export const api = {
   authStatus: () =>
     request<{
       required: boolean;
+      setup_required?: boolean;
       authenticated: boolean;
       profile?: KeyProfile;
       note?: string;
@@ -1358,15 +1364,18 @@ export const api = {
 
   /** Starts a research turn. Returns as soon as it is queued; poll the
    *  conversation for progress. */
-  ask: (question: string, conversationId?: number, perProvider = 30) =>
+  ask: (question: string, conversationId?: number, perProvider = 12, mode: "evidence" | "brief" = "brief") =>
     request<{ conversation_id: number; turn: ResearchTurn }>("/api/research/ask", {
       method: "POST",
       body: JSON.stringify({
         question,
         conversation_id: conversationId ?? 0,
         per_provider: perProvider,
+        mode,
       }),
     }),
+
+  researchScrapers: () => request<{scrapers: string[]; available: boolean}>("/api/research/scrapers"),
 
   conversations: () =>
     request<{ conversations: Conversation[] }>("/api/research/conversations"),

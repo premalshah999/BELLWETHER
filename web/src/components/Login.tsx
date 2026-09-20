@@ -9,7 +9,13 @@ import { api } from "../lib/api";
  * to brand, explain or upsell — and a login page that looks like a product
  * page invites people to wonder what product it is.
  */
-export function Login({ onSignedIn }: { onSignedIn: () => void }) {
+export function Login({
+  onSignedIn,
+  setupRequired,
+}: {
+  onSignedIn: () => void;
+  setupRequired?: boolean;
+}) {
   const [key, setKey] = useState("");
   const login = useMutation({
     mutationFn: (k: string) => api.login(k),
@@ -28,11 +34,17 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
         <div className="flex items-center gap-2 border-b border-border-subtle px-4 py-3">
           <span className="h-3.5 w-3.5 bg-brand shadow-[0_0_8px_rgba(0,229,255,0.55)]" />
           <span className="font-mono text-ui font-semibold tracking-[0.14em] text-text-primary">
-            TRADESYS
+            BELLWETHER
           </span>
         </div>
 
         <div className="p-4">
+          {setupRequired && (
+            <p role="status" className="mb-4 text-ui text-text-secondary">
+              This workspace is awaiting its first access key. Ask the server
+              owner to issue one before signing in.
+            </p>
+          )}
           <label
             htmlFor="passphrase"
             className="mb-2 block font-mono text-micro uppercase tracking-[0.14em] text-text-muted"

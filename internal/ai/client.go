@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,10 @@ const estimatedTokensPerChar = 0.3
 
 // Client speaks the OpenAI chat-completions protocol.
 type Client struct {
+	budgetMu         sync.Mutex
+	reserved         int
+	accountingFailed bool
+
 	baseURL      string
 	apiKey       string
 	model        string
@@ -225,10 +230,16 @@ func (c *Client) Complete(ctx context.Context, req Request) (Response, error) {
 		c.report(ctx, Outcome{Skipped: true, Err: ErrNotConfigured})
 		return Response{}, ErrNotConfigured
 	}
+	c.budgetMu.Lock()
 	if err := c.checkBudget(ctx, req); err != nil {
+		c.budgetMu.Unlock()
 		c.report(ctx, Outcome{Skipped: true, Err: err})
 		return Response{}, err
 	}
+	reservation := estimateTokens(req.Messages) + max(0, req.MaxTokens)
+	c.reserved += reservation
+	c.budgetMu.Unlock()
+	defer func() { c.budgetMu.Lock(); c.reserved -= reservation; c.budgetMu.Unlock() }()
 
 	out, err := c.complete(ctx, req)
 	switch {
@@ -343,6 +354,9 @@ func (c *Client) complete(ctx context.Context, req Request) (Response, error) {
 
 // checkBudget refuses a call that the remaining allowance cannot cover.
 func (c *Client) checkBudget(ctx context.Context, req Request) error {
+	if c.accountingFailed {
+		return fmt.Errorf("ai: usage accounting failed; refusing further calls until restart")
+	}
 	if c.budget == nil || c.monthlyLimit <= 0 {
 		if c.monthlyLimit == 0 {
 			// An explicit zero budget disables AI entirely, which is a
@@ -361,8 +375,8 @@ func (c *Client) checkBudget(ctx context.Context, req Request) error {
 	if used >= c.monthlyLimit {
 		return ErrBudgetExhausted
 	}
-	// Refuse a request whose prompt alone would overshoot.
-	if estimate := estimateTokens(req.Messages); used+estimate > c.monthlyLimit {
+	// Reserve both input and the requested output ceiling across concurrent calls.
+	if estimate := estimateTokens(req.Messages) + max(0, req.MaxTokens); used+c.reserved+estimate > c.monthlyLimit {
 		return fmt.Errorf("%w: %d used of %d, and this request needs about %d",
 			ErrBudgetExhausted, used, c.monthlyLimit, estimate)
 	}
@@ -387,6 +401,9 @@ func (c *Client) record(ctx context.Context, feature string, out Response) {
 		At:      c.now(),
 	})
 	if err != nil {
+		c.budgetMu.Lock()
+		c.accountingFailed = true
+		c.budgetMu.Unlock()
 		c.log.Error("could not record token usage", "feature", feature, "err", err)
 	}
 }

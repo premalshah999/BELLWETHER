@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/tradesys/dashboard/internal/ai"
 	"github.com/tradesys/dashboard/internal/research"
 	"github.com/tradesys/dashboard/internal/storage"
 )
@@ -30,7 +31,8 @@ type askRequest struct {
 	ConversationID int64  `json:"conversation_id,omitempty"`
 	Question       string `json:"question"`
 	// PerProvider bounds how many results each provider contributes.
-	PerProvider int `json:"per_provider,omitempty"`
+	PerProvider int    `json:"per_provider,omitempty"`
+	Mode        string `json:"mode,omitempty"`
 }
 
 // handleAsk answers a question, in a new or existing conversation.
@@ -65,8 +67,22 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	turn, conversationID, err := s.deps.AI.Ask(
-		r.Context(), s.deps.Research, store, req.ConversationID, question, req.PerProvider)
+	if req.Mode != "" && req.Mode != "evidence" && req.Mode != "brief" {
+		writeError(w, http.StatusBadRequest, "bad_request", "Research mode must be evidence or brief.")
+		return
+	}
+	if req.PerProvider < 0 || req.PerProvider > 30 {
+		writeError(w, http.StatusBadRequest, "bad_request", "Per-provider result limit must be between 0 and 30.")
+		return
+	}
+
+	turn, conversationID, err := s.deps.AI.AskWithMode(
+		r.Context(), s.deps.Research, store, req.ConversationID, question, req.PerProvider, req.Mode == "evidence")
+	if errors.Is(err, ai.ErrResearchBusy) {
+		w.Header().Set("Retry-After", "15")
+		writeError(w, http.StatusTooManyRequests, "research_busy", err.Error())
+		return
+	}
 	if err != nil {
 		s.deps.Log.Error("research ask failed", "question", question, "err", err)
 		writeError(w, http.StatusBadGateway, "research", "The research request failed: "+err.Error())

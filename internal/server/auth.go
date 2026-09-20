@@ -200,22 +200,14 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// Two states leave the API open, and both are reported identically by
-		// the status endpoint so the interface and the gate can never
-		// disagree about whether a sign-in is needed.
-		//
-		// A store that cannot hold keys at all — the in-memory one the tests
-		// use — cannot authenticate anybody, so demanding credentials would
-		// lock the door and throw away every key. And a store with no keys
-		// issued yet must stay reachable long enough to issue the first one,
-		// or a fresh install is a brick. Startup warns about the second, and
-		// it ends the moment a key exists.
+		// Development stores without key support are used by local tests.
+		// A persistent deployment requires a key unless explicitly opened.
 		store, ok := s.keyStore()
 		if !ok {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if n, err := store.CountActiveKeys(r.Context()); err == nil && n == 0 {
+		if n, err := store.CountActiveKeys(r.Context()); err == nil && n == 0 && s.deps.Config != nil && s.deps.Config.AllowUnauthenticated {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -322,9 +314,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 // difference between "not signed in" and "server down" shows the wrong screen
 // for both.
 //
-// When no key has been issued yet the deployment is open, because a fresh
-// install with no way in is not a secure install, it is a brick. Startup logs
-// that state loudly and it ends the moment the first key exists.
+// A deployment without keys remains locked until its owner uses the CLI.
+// Open local development requires an explicit configuration flag.
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"required": true, "authenticated": false}
 
@@ -334,6 +325,10 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if n, err := store.CountActiveKeys(r.Context()); err == nil && n == 0 {
+		if s.deps.Config == nil || !s.deps.Config.AllowUnauthenticated {
+			writeJSON(w, http.StatusOK, map[string]any{"required": true, "authenticated": false, "setup_required": true})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"required":      false,
 			"authenticated": true,

@@ -5,19 +5,8 @@ import (
 	"time"
 )
 
-// maxResearchSources caps how many documents reach the synthesis prompt.
-//
-// Raised from 24 once the engine started reading article bodies rather than
-// headlines. The old ceiling was set when a "source" was a title and a
-// forty-five word snippet, where the twenty-fifth document genuinely did
-// repeat the first twenty-four. With full text, sources stop being
-// interchangeable: two articles on the same order win carry different figures,
-// different counterparties and different dates, and the report is only as
-// specific as the material under it.
-//
-// Findings are ranked by trust before truncation, so what gets dropped is the
-// least authoritative material rather than an arbitrary tail.
-const maxResearchSources = 48
+// A bounded evidence packet keeps one synthesis within a predictable budget.
+const maxResearchSources = 12
 
 // relativeAgeShort renders a source's age compactly for the prompt.
 //

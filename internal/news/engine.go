@@ -73,6 +73,7 @@ type Engine struct {
 	now      func() time.Time
 	rand     *rand.Rand
 
+	workSlots   chan struct{}
 	workers     int
 	perHost     int
 	istLocation *time.Location
@@ -217,6 +218,7 @@ func NewEngine(registry *Registry, store RawStore, opts ...EngineOption) *Engine
 	for _, opt := range opts {
 		opt(e)
 	}
+	e.workSlots = make(chan struct{}, e.workers)
 	return e
 }
 
@@ -299,9 +301,14 @@ func (e *Engine) RunOnce(ctx context.Context) RunResult {
 			}
 		}()
 	}
-	for _, src := range due {
+	for i, src := range due {
 		select {
 		case <-ctx.Done():
+			e.mu.Lock()
+			for _, pending := range due[i:] {
+				delete(e.inWork, pending.ID)
+			}
+			e.mu.Unlock()
 		case jobs <- src:
 			continue
 		}
@@ -315,24 +322,33 @@ func (e *Engine) RunOnce(ctx context.Context) RunResult {
 }
 
 // Run fetches on a ticker until the context is cancelled.
+// Run keeps scheduling while slow sources finish. The shared worker gate
+// bounds all batches together; per-source inWork prevents duplicate requests.
 func (e *Engine) Run(ctx context.Context, tick time.Duration) {
 	if tick <= 0 {
-		tick = 30 * time.Second
+		tick = 15 * time.Second
 	}
-	t := time.NewTicker(tick)
-	defer t.Stop()
+	timer := time.NewTicker(tick)
+	defer timer.Stop()
+	var batches sync.WaitGroup
+	launch := func() {
+		batches.Add(1)
+		go func() {
+			defer batches.Done()
+			res := e.RunOnce(ctx)
+			if res.Attempted > 0 {
+				e.log.Info("news ingest pass", "attempted", res.Attempted, "ok", res.Succeeded, "failed", res.Failed, "new", res.NewItems, "took", res.Duration.Round(time.Millisecond))
+			}
+		}()
+	}
+	launch()
 	for {
-		res := e.RunOnce(ctx)
-		if res.Attempted > 0 {
-			e.log.Info("news ingest pass",
-				"attempted", res.Attempted, "ok", res.Succeeded, "failed", res.Failed,
-				"items", res.Items, "new", res.NewItems, "skipped", res.Skipped,
-				"took", res.Duration.Round(time.Millisecond))
-		}
 		select {
 		case <-ctx.Done():
+			batches.Wait()
 			return
-		case <-t.C:
+		case <-timer.C:
+			launch()
 		}
 	}
 }
@@ -384,6 +400,12 @@ func (e *Engine) fetchSource(ctx context.Context, src Source) (items, added int,
 		e.mu.Unlock()
 	}()
 
+	select {
+	case e.workSlots <- struct{}{}:
+		defer func() { <-e.workSlots }()
+	case <-ctx.Done():
+		return 0, 0, ctx.Err()
+	}
 	e.mu.Lock()
 	st := e.state[src.ID]
 	etag, lastMod := st.health.ETag, st.health.LastModified
