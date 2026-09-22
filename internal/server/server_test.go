@@ -246,8 +246,17 @@ func TestCandlesIndianSymbol(t *testing.T) {
 	if got.Currency != "INR" {
 		t.Errorf("currency = %q, want INR", got.Currency)
 	}
-	if len(got.Candles) != 5 {
-		t.Fatalf("got %d candles, want 5", len(got.Candles))
+	// The recorded provider payload has five rows, but one reports a close
+	// below its low. That malformed live row must be dropped before it reaches
+	// storage or a chart.
+	if len(got.Candles) != 4 {
+		t.Fatalf("got %d candles, want 4 valid rows", len(got.Candles))
+	}
+	for _, candle := range got.Candles {
+		if candle.High < candle.Open || candle.High < candle.Close ||
+			candle.Low > candle.Open || candle.Low > candle.Close {
+			t.Fatalf("malformed candle reached the API: %+v", candle)
+		}
 	}
 }
 

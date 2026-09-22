@@ -1,31 +1,32 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { CommandPalette } from "./components/CommandPalette";
 import { Login } from "./components/Login";
 import { SideNav } from "./components/layout/SideNav";
 import { RightRail } from "./components/layout/RightRail";
-import { AlertsPage } from "./components/pages/AlertsPage";
-import { AlgorithmsPage } from "./components/pages/AlgorithmsPage";
-import { CalendarPage } from "./components/pages/CalendarPage";
-import { CalibrationPage } from "./components/pages/CalibrationPage";
-import { ChartsPage } from "./components/pages/ChartsPage";
-import { CongressPage } from "./components/pages/CongressPage";
-import { DashboardPage } from "./components/pages/DashboardPage";
-import { EventStudyPage } from "./components/pages/EventStudyPage";
-import { GeopoliticsPage } from "./components/pages/GeopoliticsPage";
-import { JournalPage } from "./components/pages/JournalPage";
-import { PositionsPage } from "./components/pages/PositionsPage";
-import { NewsPage } from "./components/pages/NewsPage";
-import { ResearchPage } from "./components/pages/ResearchPage";
-import { ScannerPage } from "./components/pages/ScannerPage";
-import { SourcesPage } from "./components/pages/SourcesPage";
+import { OverviewPage } from "./components/pages/OverviewPage";
 import { api } from "./lib/api";
 import { setDisplayTimeZone } from "./lib/format";
 import { useResize, usePersisted } from "./lib/layout";
 import { StreamContext, useMarketStream } from "./lib/useStream";
 import { CollapsedRail } from "./components/layout/RailToggle";
 import { Divider } from "./components/ui/Divider";
+
+const AlertsPage = lazy(() => import("./components/pages/AlertsPage").then((m) => ({ default: m.AlertsPage })));
+const AlgorithmsPage = lazy(() => import("./components/pages/AlgorithmsPage").then((m) => ({ default: m.AlgorithmsPage })));
+const CalendarPage = lazy(() => import("./components/pages/CalendarPage").then((m) => ({ default: m.CalendarPage })));
+const CalibrationPage = lazy(() => import("./components/pages/CalibrationPage").then((m) => ({ default: m.CalibrationPage })));
+const ChartsPage = lazy(() => import("./components/pages/ChartsPage").then((m) => ({ default: m.ChartsPage })));
+const CongressPage = lazy(() => import("./components/pages/CongressPage").then((m) => ({ default: m.CongressPage })));
+const EventStudyPage = lazy(() => import("./components/pages/EventStudyPage").then((m) => ({ default: m.EventStudyPage })));
+const GeopoliticsPage = lazy(() => import("./components/pages/GeopoliticsPage").then((m) => ({ default: m.GeopoliticsPage })));
+const JournalPage = lazy(() => import("./components/pages/JournalPage").then((m) => ({ default: m.JournalPage })));
+const PositionsPage = lazy(() => import("./components/pages/PositionsPage").then((m) => ({ default: m.PositionsPage })));
+const NewsPage = lazy(() => import("./components/pages/NewsPage").then((m) => ({ default: m.NewsPage })));
+const ResearchPage = lazy(() => import("./components/pages/ResearchPage").then((m) => ({ default: m.ResearchPage })));
+const ScannerPage = lazy(() => import("./components/pages/ScannerPage").then((m) => ({ default: m.ScannerPage })));
+const SourcesPage = lazy(() => import("./components/pages/SourcesPage").then((m) => ({ default: m.SourcesPage })));
 
 /**
  * The shell.
@@ -90,7 +91,7 @@ export function App() {
    * Navigation is not subject to this: it is on every page, on the left,
    * where an application's navigation belongs.
    */
-  const railed = ["/dashboard", "/charts"].some((p) =>
+  const railed = ["/charts"].some((p) =>
     location.pathname.startsWith(p),
   );
 
@@ -151,11 +152,12 @@ export function App() {
               content, never overflows, and nothing on the page scrolls at
               all — the content is simply unreachable. */}
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <Suspense fallback={<PageLoading />}>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route
                 path="/dashboard"
-                element={<DashboardPage symbol={selected} />}
+                element={<OverviewPage onSelect={setSelected} />}
               />
               <Route
                 path="/charts"
@@ -215,6 +217,7 @@ export function App() {
               <Route path="/ai" element={<CalibrationPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
+            </Suspense>
           </main>
 
           {railed &&
@@ -246,5 +249,13 @@ export function App() {
         />
       </div>
     </StreamContext.Provider>
+  );
+}
+
+function PageLoading() {
+  return (
+    <div className="flex min-h-0 flex-1 items-start bg-bg-panel px-5 py-6">
+      <span className="font-mono text-meta text-text-muted">loading workspace…</span>
+    </div>
   );
 }

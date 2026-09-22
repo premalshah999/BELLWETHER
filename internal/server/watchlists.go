@@ -230,7 +230,15 @@ func (s *Server) handleWatchlistItems(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read that watchlist.")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"items": s.enrichWatchlist(r.Context(), entries),
-	})
+	items := []watchlistItem(nil)
+	if r.URL.Query().Get("cached") == "1" {
+		// The rail must paint immediately. A 25-name list can take several
+		// seconds to refresh from the sidecar even with bounded concurrency;
+		// returning the persisted snapshot first gives the browser useful rows
+		// while it refreshes those prices in a second request.
+		items = s.enrichWatchlistCached(r.Context(), entries)
+	} else {
+		items = s.enrichWatchlist(r.Context(), entries)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }

@@ -356,6 +356,34 @@ func TestRouterWriteThrough(t *testing.T) {
 	}
 }
 
+func TestRouterDropsMalformedCandlesBeforeCaching(t *testing.T) {
+	cache := newMemCache()
+	rows := makeCandles(100, 101, 102)
+	// Reproduces a real live vendor row: the opening trade was reported above
+	// the forming bar's high, which violates the database and chart invariant.
+	rows[1].Open = rows[1].High + 1
+	p := &stubProvider{name: "yahoo", candles: rows}
+	r := NewRouter(cache, []Provider{p}, WithLogger(quietLogger()))
+
+	got, err := r.Candles(context.Background(), testSym, Interval1d, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Candles) != 2 {
+		t.Fatalf("returned %d candles, want the two valid rows", len(got.Candles))
+	}
+	stored, _ := cache.LoadCandles(context.Background(), testSym, Interval1d, 10)
+	if len(stored.Candles) != 2 {
+		t.Fatalf("cached %d candles, want the two valid rows", len(stored.Candles))
+	}
+	for _, candle := range stored.Candles {
+		if candle.High < candle.Open || candle.High < candle.Close ||
+			candle.Low > candle.Open || candle.Low > candle.Close {
+			t.Fatalf("malformed candle reached the cache: %+v", candle)
+		}
+	}
+}
+
 func TestRouterSurvivesBrokenCache(t *testing.T) {
 	t.Run("read failure still fetches", func(t *testing.T) {
 		cache := newMemCache()

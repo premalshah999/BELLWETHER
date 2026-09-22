@@ -175,6 +175,41 @@ func (s *Server) enrichWatchlist(ctx context.Context, entries []storage.Watchlis
 	return items
 }
 
+// enrichWatchlistCached is the fast first paint for the watchlist rail. It
+// reads only persisted bars and never waits on an upstream provider. The
+// browser follows it with the regular enriched request and swaps in fresh
+// prices when that completes.
+func (s *Server) enrichWatchlistCached(ctx context.Context, entries []storage.WatchlistEntry) []watchlistItem {
+	items := make([]watchlistItem, len(entries))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, e := range entries {
+		items[i] = watchlistItem{
+			Symbol:   e.Symbol.String(),
+			Ticker:   e.Symbol.Ticker,
+			Exchange: string(e.Symbol.Exchange),
+			Currency: e.Symbol.Currency(),
+			Note:     e.Note,
+			AddedAt:  e.AddedAt,
+			Stale:    true,
+		}
+		wg.Add(1)
+		go func(i int, sym marketdata.Symbol) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			series, err := s.deps.Store.LoadCandles(ctx, sym, marketdata.Interval1d, sparklineBars)
+			if err != nil || len(series.Candles) == 0 {
+				items[i].Error = "Refreshing price…"
+				return
+			}
+			s.fillWatchlistItemFromSeries(&items[i], series)
+		}(i, e.Symbol)
+	}
+	wg.Wait()
+	return items
+}
+
 // fillWatchlistItem attaches quote and sparkline data, recording a per-row
 // error instead of propagating a failure.
 func (s *Server) fillWatchlistItem(ctx context.Context, item *watchlistItem, sym marketdata.Symbol) {
@@ -184,9 +219,16 @@ func (s *Server) fillWatchlistItem(ctx context.Context, item *watchlistItem, sym
 		s.deps.Log.Debug("watchlist sparkline unavailable", "symbol", sym, "err", err)
 		return
 	}
+	s.fillWatchlistItemFromSeries(item, marketdata.CachedSeries{
+		Candles: series.Candles, Source: series.Source,
+		ResolvedSymbol: series.ResolvedSymbol, FetchedAt: series.FetchedAt,
+	})
+	item.Stale = series.Stale
+}
+
+func (s *Server) fillWatchlistItemFromSeries(item *watchlistItem, series marketdata.CachedSeries) {
 	item.Source = series.Source
 	item.ResolvedSymbol = series.ResolvedSymbol
-	item.Stale = series.Stale
 	item.Spark = make([]float64, 0, len(series.Candles))
 	for _, c := range series.Candles {
 		item.Spark = append(item.Spark, c.Close)
