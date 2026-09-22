@@ -1428,12 +1428,13 @@ export const api = {
   // AI
   aiStatus: () => request<AIStatusResponse>("/api/ai/status"),
 
+  morningBrief: () =>
+    request<{ brief: MorningBrief | null; stale: boolean; note?: string }>("/api/ai/brief"),
 
-
-
-
-
-
+  generateMorningBrief: () =>
+    request<{ brief: MorningBrief; stale: false }>("/api/ai/brief/generate", {
+      method: "POST",
+    }),
   explainMove: (symbol: string) =>
     request<Explanation>(`/api/symbols/${encodeURIComponent(symbol)}/explain`, { method: "POST" }),
 
@@ -1481,8 +1482,10 @@ export const api = {
   deleteWatchlist: (id: number) =>
     request<void>(`/api/watchlists/${id}`, { method: "DELETE" }),
 
-  watchlistItems: (id: number) =>
-    request<{ items: WatchlistItem[] }>(`/api/watchlists/${id}/symbols`),
+  watchlistItems: (id: number, fresh = false) =>
+    request<{ items: WatchlistItem[] }>(
+      `/api/watchlists/${id}/symbols${fresh ? "" : "?cached=1"}`,
+    ),
 
   /**
    * Adds many at once.

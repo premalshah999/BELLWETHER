@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 )
@@ -263,6 +264,12 @@ func (r *Router) candles(ctx context.Context, sym Symbol, iv Interval, limit int
 			errs = append(errs, fmt.Errorf("%s: %w", p.Name(), perr))
 			continue
 		}
+		var dropped int
+		bars.Candles, dropped = validCandles(bars.Candles)
+		if dropped > 0 {
+			r.log.Warn("provider returned malformed candles", "provider", p.Name(),
+				"symbol", sym, "interval", iv, "dropped", dropped)
+		}
 		if len(bars.Candles) == 0 {
 			r.report(ctx, Outcome{Provider: p.Name(), Skipped: true, Err: ErrNoData})
 			errs = append(errs, fmt.Errorf("%s: %w", p.Name(), ErrNoData))
@@ -300,6 +307,27 @@ func (r *Router) candles(ctx context.Context, sym Symbol, iv Interval, limit int
 		return Series{}, fmt.Errorf("%w: no market data providers are configured", ErrNoData)
 	}
 	return Series{}, fmt.Errorf("no data for %s at %s: %w", sym, iv, errors.Join(errs...))
+}
+
+// validCandles enforces the same invariants as persistent storage before a
+// provider result can reach either the database or a chart. Live feeds can
+// briefly emit a forming bar whose open sits above its high (or a NaN); one
+// bad row must not roll back hundreds of otherwise valid bars.
+func validCandles(in []Candle) ([]Candle, int) {
+	valid := func(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+	out := make([]Candle, 0, len(in))
+	for _, candle := range in {
+		if candle.Time.IsZero() ||
+			!valid(candle.Open) || !valid(candle.High) || !valid(candle.Low) ||
+			!valid(candle.Close) || !valid(candle.Volume) ||
+			candle.Volume < 0 || candle.High < candle.Low ||
+			candle.High < candle.Open || candle.High < candle.Close ||
+			candle.Low > candle.Open || candle.Low > candle.Close {
+			continue
+		}
+		out = append(out, candle)
+	}
+	return out, len(in) - len(out)
 }
 
 // QuoteResult is a quote plus its provenance.

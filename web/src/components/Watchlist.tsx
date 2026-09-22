@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, Copy, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Copy, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type BulkAddResult, type Watchlist as List } from "../lib/api";
 import { usePersisted } from "../lib/layout";
@@ -42,12 +42,28 @@ export function Watchlist({
     queryKey: ["watchlist-items", active?.id],
     queryFn: () => api.watchlistItems(active!.id),
     enabled: active != null,
-    refetchInterval: 60_000,
+    staleTime: 30_000,
   });
+
+  // Paint the persisted snapshot first, then refresh upstream prices without
+  // making the entire rail look empty for several seconds.
+  const freshItems = useQuery({
+    queryKey: ["watchlist-items-fresh", active?.id],
+    queryFn: () => api.watchlistItems(active!.id, true),
+    enabled: active != null && items.isSuccess,
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (active && freshItems.data) {
+      qc.setQueryData(["watchlist-items", active.id], freshItems.data);
+    }
+  }, [active, freshItems.data, qc]);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["watchlists"] });
     qc.invalidateQueries({ queryKey: ["watchlist-items"] });
+    qc.invalidateQueries({ queryKey: ["watchlist-items-fresh"] });
   };
 
   const remove = useMutation({
@@ -72,6 +88,14 @@ export function Watchlist({
           <ChevronDown size={11} className="shrink-0" />
         </button>
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            title={freshItems.isError ? "Price refresh failed — try again" : "Refresh prices"}
+            onClick={() => freshItems.refetch()}
+            className={freshItems.isError ? "text-semantic-down" : "text-text-muted transition-colors hover:text-brand"}
+          >
+            <RefreshCw size={12} className={freshItems.isFetching ? "animate-spin" : ""} />
+          </button>
           <button
             type="button"
             title="Add instruments"

@@ -21,6 +21,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { usePersisted } from "../../lib/layout";
 import type { StreamState } from "../../lib/stream";
@@ -61,20 +62,36 @@ const isGroup = (e: Entry): e is Group => "children" in e;
  * one place and visible without opening anything.
  */
 const NAV: Entry[] = [
-  { to: "/dashboard", label: "Trading desk", icon: LayoutDashboard },
-  { to: "/news", label: "News", icon: Newspaper },
-  { to: "/scanner/signals", label: "Signals", icon: Radar },
+  { to: "/dashboard", label: "Today", icon: LayoutDashboard },
   { to: "/research", label: "Research", icon: Search },
-  { to: "/calendar", label: "Catalyst calendar", icon: CalendarClock },
-  { to: "/alerts", label: "Alerts", icon: Bell, badge: "alerts" },
+  {
+    id: "markets",
+    label: "Markets",
+    icon: CandlestickChart,
+    children: [
+      { to: "/charts", label: "Charts", icon: CandlestickChart },
+      { to: "/scanner/signals", label: "Signals", icon: Radar },
+      { to: "/news", label: "News", icon: Newspaper },
+      { to: "/calendar", label: "Catalysts", icon: CalendarClock },
+    ],
+  },
   {
     id: "portfolio",
-    label: "Your portfolio",
+    label: "Portfolio",
     icon: Briefcase,
     children: [
       { to: "/positions", label: "Positions", icon: Briefcase },
       { to: "/journal", label: "Trade journal", icon: BookOpen },
-      { to: "/charts", label: "Charts", icon: CandlestickChart },
+    ],
+  },
+  {
+    id: "automate",
+    label: "Automate",
+    icon: SlidersHorizontal,
+    children: [
+      { to: "/alerts", label: "Alerts", icon: Bell, badge: "alerts" },
+      { to: "/algorithms/build", label: "Algorithms", icon: SlidersHorizontal },
+      { to: "/algorithms/backtest", label: "Backtest", icon: FlaskConical },
     ],
   },
   {
@@ -89,20 +106,11 @@ const NAV: Entry[] = [
     ],
   },
   {
-    id: "strategy",
-    label: "Strategy",
-    icon: SlidersHorizontal,
-    children: [
-      { to: "/algorithms/build", label: "Algorithms", icon: SlidersHorizontal },
-      { to: "/algorithms/backtest", label: "Backtest", icon: FlaskConical },
-    ],
-  },
-  {
     id: "system",
     label: "System",
     icon: Activity,
     children: [
-      { to: "/sources", label: "Source health", icon: Rss },
+      { to: "/sources", label: "Data sources", icon: Rss },
       { to: "/ai", label: "AI calibration", icon: BrainCircuit },
     ],
   },
@@ -116,7 +124,14 @@ export function SideNav({
   onCommand: () => void;
 }) {
   const [shut, setShut] = usePersisted("nav.shut", window.innerWidth < 1024);
+  const [narrow, setNarrow] = useState(window.innerWidth < 720);
   const location = useLocation();
+
+  useEffect(() => {
+    const resize = () => setNarrow(window.innerWidth < 720);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
 
   const { data: alerts } = useQuery({
     queryKey: ["alerts"],
@@ -125,10 +140,10 @@ export function SideNav({
   });
   const unread = alerts?.unread ?? 0;
 
-  if (shut) {
+  if (shut || narrow) {
     return (
       <nav className="flex w-12 shrink-0 flex-col items-center border-r border-border-subtle bg-bg-panel">
-        <NavHeader shut onExpand={() => setShut(false)} onCommand={onCommand} />
+        <NavHeader shut onExpand={narrow ? undefined : () => setShut(false)} onCommand={onCommand} />
         <div className="flex flex-1 flex-col items-center gap-1 py-2">
           {/* Collapsed, groups flatten to their children: a group header that
             cannot show its label is a button that does nothing legible. */}

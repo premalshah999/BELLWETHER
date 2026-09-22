@@ -29,14 +29,16 @@ export function NavHeader({
       <div className="flex w-full shrink-0 flex-col items-center gap-1 border-b border-border-subtle py-2">
         {/* The one glow in the entire interface, and it is two pixels wide. */}
         <span className="h-4 w-4 bg-brand shadow-[0_0_8px_rgba(0,229,255,0.55)]" />
-        <button
-          type="button"
-          onClick={onExpand}
-          title="Expand the navigation"
-          className="mt-1 flex h-7 w-7 items-center justify-center text-text-muted transition-colors hover:text-brand"
-        >
-          <PanelLeftOpen size={14} />
-        </button>
+        {onExpand && (
+          <button
+            type="button"
+            onClick={onExpand}
+            title="Expand the navigation"
+            className="mt-1 flex h-7 w-7 items-center justify-center text-text-muted transition-colors hover:text-brand"
+          >
+            <PanelLeftOpen size={14} />
+          </button>
+        )}
         <button
           type="button"
           onClick={onCommand}
