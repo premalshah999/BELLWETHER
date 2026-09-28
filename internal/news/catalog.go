@@ -339,6 +339,8 @@ func DefaultSources() []Source {
 		Usage: UsagePublicReviewed, Display: DisplayLinkOnly, Enabled: true,
 	})
 
+	// The keyless official feeds. The ones needing a declared contact are
+	// added by the caller that has it -- see buildRegistry in cmd/tradesys.
 	return append(out, AdditionalOfficialSources()...)
 }
 

@@ -34,7 +34,6 @@ func AdditionalOfficialSources() []Source {
 		{"ustr-press", "USTR trade actions", "https://ustr.gov/rss.xml", "US", "regulatory"},
 		{"bea-news", "BEA economic releases", "https://apps.bea.gov/rss/rss.xml", "US", "economy"},
 		{"cftc-press", "CFTC press releases", "https://www.cftc.gov/RSS/RSSGP/rssgp.xml", "US", "regulatory"},
-		{"bls-releases", "BLS news releases", "https://www.bls.gov/feed/bls_latest.rss", "US", "economy"},
 	}
 	out := make([]Source, 0, len(feeds))
 	for _, f := range feeds {
@@ -42,5 +41,40 @@ func AdditionalOfficialSources() []Source {
 			Method: MethodRSS, Language: "en", Trust: TrustOfficial, Refresh: 5 * time.Minute, Timeout: 15 * time.Second,
 			Usage: UsageOfficial, Display: DisplayFull, Enabled: true, UserAgent: catalogUserAgent})
 	}
+
 	return out
+}
+
+// ContactGatedOfficialSources are official feeds that require a declared
+// contact address in the User-Agent, in the SEC_USER_AGENT format
+// ("AppName/1.0 (you@example.com)"). Empty contact returns nothing: a source
+// registered without one would 403 on every poll forever, which reads as a
+// broken feed rather than an unconfigured one.
+//
+// Kept separate from AdditionalOfficialSources rather than gated inside it, so
+// the caller that has the contact can append these without re-adding the
+// keyless feeds the default catalogue already holds.
+func ContactGatedOfficialSources(contact string) []Source {
+	if contact == "" {
+		return nil
+	}
+	return []Source{
+		// BLS is specific about this. Measured from this host, it serves 200
+		// to "TradeSys/1.0 (an-address@example.com)" and 403 to both the
+		// catalogue's own URL-style agent and a browser string. A browser
+		// string is not the workaround: the point of that agent is to be
+		// honest about what is fetching.
+		//
+		// Worth the wiring for one feed, because this is the CPI and payroll
+		// release feed and those two numbers move every index in the universe.
+		{
+			ID: "bls-releases", Name: "BLS news releases",
+			URL:     "https://www.bls.gov/feed/bls_latest.rss",
+			Country: "US", Category: "economy",
+			Method: MethodRSS, Language: "en", Trust: TrustOfficial,
+			Refresh: 15 * time.Minute, Timeout: 15 * time.Second,
+			Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
+			UserAgent: contact,
+		},
+	}
 }
