@@ -5,11 +5,12 @@ import (
 
 	"database/sql"
 	"errors"
-	"github.com/go-chi/chi/v5"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/tradesys/dashboard/internal/ai"
 	"github.com/tradesys/dashboard/internal/events"
