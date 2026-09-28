@@ -1,4 +1,4 @@
-Answer a research question about US and Indian equities using only the sources below.
+Answer a research question about US equities using only the sources below.
 
 {{if .History}}Already established earlier in this conversation — do not repeat it,
 build on it:
@@ -12,8 +12,8 @@ Question: {{.Query}}
 Retrieved: {{.Count}} documents from {{.Scrapers}}
 
 {{if .Universe}}Listed companies in the industries this question names, from the listed
-company master (SEC's exchange-listed universe for US names, NSE's for
-Indian ones). These are facts about what is listed, not retrieved documents —
+company master (SEC's exchange-listed universe). These are facts about what
+is listed, not retrieved documents —
 use them to answer "which companies", and cite the sources for anything you
 say *about* them:
 {{range .Universe}}
@@ -142,7 +142,7 @@ and answer "unclear" when the sources genuinely do not settle it. Do not
 manufacture a direction to look decisive.
 
 **Only name a company you are sure of.** Use the instrument's own listed
-ticker — bare for a US company, NSE-suffixed for an Indian one. If the
+ticker, bare (AAPL, BRK-B). If the
 sources discuss an unlisted company, or one foreign to both venues, describe
 it in the report rather than inventing a symbol for it.
 

@@ -830,32 +830,46 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 
 	scrapers := []research.Scraper{
 		// Our own archive first. It is the only source built for this
-		// domain — filings resolved to NSE symbols, deduplicated, classified
-		// — and the only one that costs nothing and answers in milliseconds.
+		// domain -- filings resolved to venue-qualified symbols, deduplicated
+		// and classified -- and the only one that costs nothing and answers in
+		// milliseconds.
 		&research.LocalScraper{Store: store, Window: 45 * 24 * time.Hour},
-		&research.GoogleNewsScraper{Client: client, HL: "en-IN", GL: "IN"},
+
+		// Discovery, US-scoped. The en-IN pass and GDELT's india pass were
+		// removed with the rest of the Indian layer: a question typed into a
+		// US equities product was being answered partly out of the Indian
+		// news index, which is where a research answer picks up a company
+		// this app cannot price.
 		&research.GoogleNewsScraper{Client: client, HL: "en-US", GL: "US"},
-		&research.GDELTScraper{Client: client, Country: "india", Timespan: "7d"},
 		// GDELT's sourcecountry takes a country name, not a two-letter
 		// code, as one token with no internal space -- see the comment on
 		// gdelt-us-business in internal/news/catalog.go for what was and
 		// was not confirmed live.
 		&research.GDELTScraper{Client: client, Country: "unitedstates", Timespan: "7d"},
-		// The publishers worth reading on Indian markets that will not serve
-		// a search endpoint directly, reached by scoping discovery to their
-		// domain. What comes back is a headline and a link to them.
+
+		// Publishers that will not serve a search endpoint directly, reached
+		// by scoping discovery to their domain. What comes back is a headline
+		// and a link to them.
+		//
+		// The wires first, then the US financial press. Several of these also
+		// have direct feeds in the ingestion catalogue, and that is not a
+		// duplication: the catalogue has what they published this week, while
+		// a research question needs their archive, which is what scoping
+		// discovery to the domain reaches.
 		&research.PublisherScraper{Client: client, Domain: "reuters.com", Label: "reuters", TrustLevel: news.TrustWire},
 		&research.PublisherScraper{Client: client, Domain: "bloomberg.com", Label: "bloomberg", TrustLevel: news.TrustWire},
-		&research.PublisherScraper{Client: client, Domain: "business-standard.com", Label: "business_standard", TrustLevel: news.TrustMajorFin},
-		&research.PublisherScraper{Client: client, Domain: "moneycontrol.com", Label: "moneycontrol", TrustLevel: news.TrustMajorFin},
-		&research.PublisherScraper{Client: client, Domain: "livemint.com", Label: "mint", TrustLevel: news.TrustMajorFin},
-		// The US publishers worth reading the same way: CNBC and MarketWatch
-		// already have direct feeds in the ingestion catalog, but a research
-		// question needs their archive, not just what they published this
-		// week, which is what scoping discovery to their domain reaches.
+		&research.PublisherScraper{Client: client, Domain: "apnews.com", Label: "ap", TrustLevel: news.TrustWire},
+		&research.PublisherScraper{Client: client, Domain: "wsj.com", Label: "wsj", TrustLevel: news.TrustMajorFin},
+		&research.PublisherScraper{Client: client, Domain: "ft.com", Label: "ft", TrustLevel: news.TrustMajorFin},
 		&research.PublisherScraper{Client: client, Domain: "cnbc.com", Label: "cnbc", TrustLevel: news.TrustMajorFin},
 		&research.PublisherScraper{Client: client, Domain: "marketwatch.com", Label: "marketwatch", TrustLevel: news.TrustMajorFin},
 		&research.PublisherScraper{Client: client, Domain: "barrons.com", Label: "barrons", TrustLevel: news.TrustMajorFin},
+		&research.PublisherScraper{Client: client, Domain: "fortune.com", Label: "fortune", TrustLevel: news.TrustMajorFin},
+		// Specialist rather than major: a useful archive on individual US
+		// names, and openly a mix of staff reporting and contributor pieces,
+		// which is what the lower trust records.
+		&research.PublisherScraper{Client: client, Domain: "seekingalpha.com", Label: "seeking_alpha", TrustLevel: news.TrustSpecialist},
+		&research.PublisherScraper{Client: client, Domain: "investors.com", Label: "ibd", TrustLevel: news.TrustSpecialist},
 	}
 
 	// The Federal Register: every proposed and final rule, executive order
