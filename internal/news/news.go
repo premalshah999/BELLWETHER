@@ -93,16 +93,20 @@ func GoogleNewsFeed(symbol, company string, indian bool) string {
 		query = "\"" + company + "\""
 	}
 
+	// US by default, because that is what this product covers. The Indian
+	// branch stays for a symbol that really is on NSE: those still exist in
+	// the archive, and searching for one in the US index finds the wrong
+	// company or nothing at all.
 	params := url.Values{
 		"q":    {query},
 		"hl":   {"en-US"},
 		"gl":   {"US"},
-		"ceid": {"IN:en"},
+		"ceid": {"US:en"},
 	}
-	if !indian {
-		params.Set("hl", "en-US")
-		params.Set("gl", "US")
-		params.Set("ceid", "US:en")
+	if indian {
+		params.Set("hl", "en-IN")
+		params.Set("gl", "IN")
+		params.Set("ceid", "IN:en")
 	}
 	return "https://news.google.com/rss/search?" + params.Encode()
 }
