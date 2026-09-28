@@ -26,7 +26,7 @@ func httpGet(ctx context.Context, client *http.Client, rawURL string) ([]byte, e
 	}
 	req.Header.Set("User-Agent", "")
 	req.Header.Set("Accept", "application/rss+xml, application/xml, application/json;q=0.9, */*;q=0.8")
-	req.Header.Set("Accept-Language", "en-IN,en;q=0.9")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -69,7 +69,7 @@ func (g *GoogleNewsScraper) Trust() int { return news.TrustMajorFin }
 func (g *GoogleNewsScraper) Search(ctx context.Context, query string, limit int) ([]Finding, error) {
 	hl, gl := g.HL, g.GL
 	if hl == "" {
-		hl, gl = "en-IN", "IN"
+		hl, gl = "en-US", "US"
 	}
 	feedURL := news.GoogleNewsSearch(query, hl, gl)
 
@@ -220,7 +220,7 @@ func (p *PublisherScraper) Search(ctx context.Context, query string, limit int) 
 		window = "14d"
 	}
 	scoped := fmt.Sprintf("site:%s %s when:%s", p.Domain, query, window)
-	feedURL := news.GoogleNewsSearch(scoped, "en-IN", "IN")
+	feedURL := news.GoogleNewsSearch(scoped, "en-US", "US")
 
 	client := p.Client
 	if client == nil {

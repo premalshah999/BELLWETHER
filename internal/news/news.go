@@ -95,8 +95,8 @@ func GoogleNewsFeed(symbol, company string, indian bool) string {
 
 	params := url.Values{
 		"q":    {query},
-		"hl":   {"en-IN"},
-		"gl":   {"IN"},
+		"hl":   {"en-US"},
+		"gl":   {"US"},
 		"ceid": {"IN:en"},
 	}
 	if !indian {

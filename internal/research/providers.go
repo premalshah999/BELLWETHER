@@ -141,7 +141,7 @@ func (t *TavilyScraper) client() *http.Client {
 type BraveScraper struct {
 	Client *http.Client
 	APIKey string
-	// Country and SearchLang scope results; "IN" and "en" for this app.
+	// Country and SearchLang scope results; "US" and "en" for this app.
 	Country    string
 	SearchLang string
 	// Freshness is Brave's recency filter: "pd" past day, "pw" past week,
@@ -163,7 +163,7 @@ func (b *BraveScraper) Search(ctx context.Context, query string, limit int) ([]F
 	}
 	country := b.Country
 	if country == "" {
-		country = "IN"
+		country = "US"
 	}
 	lang := b.SearchLang
 	if lang == "" {

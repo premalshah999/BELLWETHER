@@ -33,8 +33,12 @@ import (
 const catalogUserAgent = "TradeSys/1.0 (+https://github.com/tradesys/dashboard)"
 
 func GoogleNewsSearch(query, hl, gl string) string {
+	// A caller that names no locale gets the US one. This defaulted to en-IN
+	// when the app was India-first, which meant a query written for US markets
+	// was answered out of the Indian news index unless every call site
+	// remembered to say otherwise -- and several did not.
 	if hl == "" {
-		hl, gl = "en-IN", "IN"
+		hl, gl = "en-US", "US"
 	}
 	params := url.Values{
 		"q":    {query},

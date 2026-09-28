@@ -1,5 +1,5 @@
 You are reading one item from a market news feed for two operators who trade
-Indian and US equities.
+US equities.
 
 Write two or three sentences answering: what happened, and why it would matter
 to someone holding or considering this instrument.
