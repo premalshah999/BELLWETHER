@@ -1,0 +1,220 @@
+package main
+
+import (
+	"log/slog"
+	"net"
+	"net/http"
+	"time"
+
+	"github.com/tradesys/dashboard/internal/config"
+	"github.com/tradesys/dashboard/internal/marketdata"
+	"github.com/tradesys/dashboard/internal/news"
+	"github.com/tradesys/dashboard/internal/news/company"
+	"github.com/tradesys/dashboard/internal/research"
+	"github.com/tradesys/dashboard/internal/storage/postgres"
+)
+
+// Assembly of the on-demand research scrapers.
+
+// buildResearchEngine assembles the on-demand scrapers.
+//
+// These are separate from the scheduled catalog on purpose. The catalog exists
+// to never miss anything on a fixed beat; this exists to answer a question
+// somebody just typed, so it favours breadth and accepts that any individual
+// scraper may be slow or rate-limited. Every one of them degrades
+// independently.
+func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company.Master, router *marketdata.Router, log *slog.Logger) *research.Engine {
+	// The same transport reasoning as the ingestion engine: Go's default TLS
+	// handshake timeout of ten seconds is shorter than some of these
+	// endpoints take to negotiate at all. GDELT measured about 25 seconds
+	// from this host and failed every single research call on the handshake,
+	// which reads as "GDELT is down" rather than "our client gives up early".
+	client := &http.Client{
+		Timeout: 60 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+			TLSHandshakeTimeout:   30 * time.Second,
+			ResponseHeaderTimeout: 45 * time.Second,
+			ExpectContinueTimeout: 2 * time.Second,
+			IdleConnTimeout:       90 * time.Second,
+			MaxIdleConnsPerHost:   4,
+			ForceAttemptHTTP2:     true,
+		},
+	}
+
+	client.Transport = &research.DiscoveryTransport{Base: client.Transport}
+
+	scrapers := []research.Scraper{
+		// Our own archive first. It is the only source built for this
+		// domain -- filings resolved to venue-qualified symbols, deduplicated
+		// and classified -- and the only one that costs nothing and answers in
+		// milliseconds.
+		&research.LocalScraper{Store: store, Window: 45 * 24 * time.Hour},
+
+		// Discovery, US-scoped. The en-IN pass and GDELT's india pass were
+		// removed with the rest of the Indian layer: a question typed into a
+		// US equities product was being answered partly out of the Indian
+		// news index, which is where a research answer picks up a company
+		// this app cannot price.
+		&research.GoogleNewsScraper{Client: client, HL: "en-US", GL: "US"},
+		// GDELT's sourcecountry takes a country name, not a two-letter
+		// code, as one token with no internal space -- see the comment on
+		// gdelt-us-business in internal/news/catalog.go for what was and
+		// was not confirmed live.
+		&research.GDELTScraper{Client: client, Country: "unitedstates", Timespan: "7d"},
+
+		// Publishers that will not serve a search endpoint directly, reached
+		// by scoping discovery to their domain. What comes back is a headline
+		// and a link to them.
+		//
+		// The wires first, then the US financial press. Several of these also
+		// have direct feeds in the ingestion catalogue, and that is not a
+		// duplication: the catalogue has what they published this week, while
+		// a research question needs their archive, which is what scoping
+		// discovery to the domain reaches.
+		&research.PublisherScraper{Client: client, Domain: "reuters.com", Label: "reuters", TrustLevel: news.TrustWire},
+		&research.PublisherScraper{Client: client, Domain: "bloomberg.com", Label: "bloomberg", TrustLevel: news.TrustWire},
+		&research.PublisherScraper{Client: client, Domain: "apnews.com", Label: "ap", TrustLevel: news.TrustWire},
+		&research.PublisherScraper{Client: client, Domain: "wsj.com", Label: "wsj", TrustLevel: news.TrustMajorFin},
+		&research.PublisherScraper{Client: client, Domain: "ft.com", Label: "ft", TrustLevel: news.TrustMajorFin},
+		&research.PublisherScraper{Client: client, Domain: "cnbc.com", Label: "cnbc", TrustLevel: news.TrustMajorFin},
+		&research.PublisherScraper{Client: client, Domain: "marketwatch.com", Label: "marketwatch", TrustLevel: news.TrustMajorFin},
+		&research.PublisherScraper{Client: client, Domain: "barrons.com", Label: "barrons", TrustLevel: news.TrustMajorFin},
+		&research.PublisherScraper{Client: client, Domain: "fortune.com", Label: "fortune", TrustLevel: news.TrustMajorFin},
+		// Specialist rather than major: a useful archive on individual US
+		// names, and openly a mix of staff reporting and contributor pieces,
+		// which is what the lower trust records.
+		&research.PublisherScraper{Client: client, Domain: "seekingalpha.com", Label: "seeking_alpha", TrustLevel: news.TrustSpecialist},
+		&research.PublisherScraper{Client: client, Domain: "investors.com", Label: "ibd", TrustLevel: news.TrustSpecialist},
+	}
+
+	// The Federal Register: every proposed and final rule, executive order
+	// and agency notice the US government publishes, free and keyless --
+	// unrelated to SEC and so not gated on SEC_USER_AGENT.
+	scrapers = append(scrapers, &research.FederalRegisterScraper{Client: client})
+
+	officialFeeds := append(news.AdditionalOfficialSources(),
+		news.ContactGatedOfficialSources(cfg.SECUserAgent)...)
+	for _, src := range officialFeeds {
+		scrapers = append(scrapers, &research.FeedScraper{Source: src, Client: client})
+	}
+
+	// SEC's own text, searched directly -- not a headline about a filing,
+	// the filing itself. Gated on the same declared contact every other SEC
+	// endpoint in this app requires; omitted rather than registered to fail
+	// every call when SEC_USER_AGENT is unset.
+	if cfg.SECUserAgent != "" {
+		scrapers = append(scrapers, &research.SECFullTextScraper{Client: client, UserAgent: cfg.SECUserAgent})
+	} else {
+		log.Warn("SEC_USER_AGENT is not set; the SEC full-text research scraper is disabled")
+	}
+
+	// The private metasearch node, when one is running. Two configurations
+	// of it rather than one: the news category is narrow and fresh, the
+	// general web reaches sector reports, regulator pages and primary
+	// documents that never appear in a news index. Asking both is cheap —
+	// there is no per-query cost — and they return materially different
+	// material for the same question.
+	if u := cfg.SearXNGURL; u != "" {
+		scrapers = append(scrapers,
+			// Paged more deeply than the other scrapers, because these are
+			// the results that can actually be read. SearXNG returns the
+			// publisher's own URL; Google News returns an opaque token that
+			// resolves to a JavaScript shim, so a research question that
+			// leans on Google News gets forty headlines and no article text.
+			&research.SearXNGScraper{
+				Client: client, BaseURL: u, Label: "searxng_news",
+				Categories: "news", TimeRange: "month", Language: "en", Pages: 2,
+			},
+			&research.SearXNGScraper{
+				Client: client, BaseURL: u, Label: "searxng_web",
+				Language: "en", Pages: 2,
+			},
+			// The same index without the recency filter. A question about a
+			// company's history, a past regulatory action or a multi-year
+			// trend is answered by material the month-bounded news query
+			// cannot see at all.
+			&research.SearXNGScraper{
+				Client: client, BaseURL: u, Label: "searxng_archive",
+				Categories: "news", Language: "en", Pages: 2,
+			},
+		)
+	}
+
+	// Commercial search, when configured. These index independently of the
+	// feed-based scrapers, so what they add is coverage the curated catalog
+	// cannot reach — and two providers agreeing on a fact is corroboration in
+	// a way that two feeds carrying the same wire copy is not.
+	if key := cfg.TavilyAPIKey; key != "" {
+		scrapers = append(scrapers, &research.TavilyScraper{
+			Client: client, APIKey: key, Depth: "basic",
+		})
+	}
+	if key := cfg.BraveAPIKey; key != "" {
+		scrapers = append(scrapers, &research.BraveScraper{
+			Client: client, APIKey: key, Country: "IN", SearchLang: "en", Freshness: "pw",
+		})
+	}
+
+	// Entity resolution runs over every finding, so a research result says
+	// which listed companies it concerns rather than leaving the reader to
+	// spot them. The threshold is high: a wrong symbol on a research answer
+	// is a wrong answer.
+	resolve := func(text string) []string {
+		matches := master.ResolveAbove(text, 0.9)
+		out := make([]string, 0, len(matches))
+		for _, m := range matches {
+			out = append(out, m.Symbol)
+		}
+		return out
+	}
+
+	// A question naming an industry gets the listed universe for it. No news
+	// article enumerates the cement companies on the exchange; the industry
+	// mapping does, for 752 of them, and without it a question about "which
+	// companies" can only be answered by whichever ones happened to be in the
+	// retrieved articles.
+	universe := func(query string) []research.UniverseNote {
+		var out []research.UniverseNote
+		for _, industry := range master.IndustriesMentioned(query) {
+			symbols := master.SymbolsInIndustry(industry)
+			if len(symbols) == 0 {
+				continue
+			}
+			// Capped: an industry with 121 members would otherwise crowd the
+			// prompt out with a list nobody reads.
+			if len(symbols) > 40 {
+				symbols = symbols[:40]
+			}
+			out = append(out, research.UniverseNote{Industry: industry, Symbols: symbols})
+		}
+		return out
+	}
+
+	articleFetcher := research.NewArticleFetcher()
+	articleFetcher.UserAgent = cfg.SECUserAgent
+	engine := research.NewEngine(scrapers,
+		research.WithLogger(log),
+		research.WithSymbolResolver(resolve),
+		research.WithUniverseLookup(universe),
+		// Historical and statistical questions are answered with arithmetic
+		// over the price series rather than from prose about it. Routed
+		// through the market data router so research inherits its provider
+		// fallback, cache and single-flight rather than opening a second path
+		// to the same upstreams.
+		research.WithPrices(research.RouterPrices{
+			Router: router, Exchange: marketdata.ExchangeNSE,
+		}),
+		// Reads the pages behind the results rather than working from their
+		// headlines. This is the difference between a report and a list of
+		// links: without it the model sees a title and a forty-word snippet,
+		// and for Google News results the snippet is the title again.
+		research.WithArticleFetcher(articleFetcher),
+		// Fundamentals, already compared against the peer group. A question
+		// about a company is incomplete without whether it is expensive, and
+		// no amount of news coverage answers that.
+		research.WithValuations(storeValuations{DB: store}))
+	log.Info("research engine ready", "scrapers", len(scrapers), "prices", router != nil)
+	return engine
+}
