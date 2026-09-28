@@ -43,7 +43,8 @@ func compile(alternatives ...string) *regexp.Regexp {
 // patterns come before the commercial ones.
 var headlineRules = []rule{
 	// Trouble first. These change an investment case rather than adjusting it.
-	{compile("insolvency", "bankruptcy", "liquidation", "winding up", "NCLT"), TypeInsolvency, 2},
+	{compile("insolvency", "bankruptcy", "liquidation", "winding up",
+		"chapter (?:7|11|15)", "receivership", "files for chapter", "debtor[- ]in[- ]possession"), TypeInsolvency, 2},
 	// Both orderings occur: "auditor resigns" and "resigns as auditor". The
 	// second is more common in practice, because the headline names the audit
 	// firm first.
@@ -52,10 +53,14 @@ var headlineRules = []rule{
 	// "fined", "penalty" and "non-compliance" were all missing, and between
 	// them they cover the most common wording of an exchange penalty:
 	// "Ircon fined Rs 9.66 lakh each by NSE, BSE for board non-compliance".
-	{compile("SEBI (?:bars|debars|penalis|penaliz|orders|fines)", "show cause notice",
-		"regulatory action", "banned by", "debarred", "fined", "penalty", "penalised", "penalized",
-		"non[- ]compliance", "violat(es|ed|ion)"), TypeRegulatoryAction, 2},
-	{compile("raid(s|ed)?", "search and seizure", "tax demand", "GST demand", "income tax notice"), TypeTaxAction, 1},
+	{compile("(?:SEC|FTC|DOJ|CFTC|FINRA|OSHA|EPA|FDA) (?:bars|debars|charges|sues|fines|orders|penalis|penaliz)",
+		"show cause notice", "regulatory action", "banned by", "debarred", "fined", "penalty",
+		"penalised", "penalized", "non[- ]compliance", "violat(es|ed|ion)",
+		"enforcement action", "consent order", "cease and desist", "wells notice",
+		"deferred prosecution", "settles with the (?:SEC|FTC|DOJ)"), TypeRegulatoryAction, 2},
+	{compile("raid(s|ed)?", "search and seizure", "tax demand", "income tax notice",
+		"IRS (?:assess|audit|notice|demand|dispute)", "tax assessment", "back taxes",
+		"transfer pricing (?:dispute|adjustment)"), TypeTaxAction, 1},
 	{compile("lawsuit", "litigation", "sues", "sued", "court order", "arbitration", "tribunal"), TypeLitigation, 0},
 	{compile("downgrade(s|d)?", "upgrade(s|d)?", "credit rating", "rating action", "outlook revised"), TypeCreditRating, 0},
 
@@ -70,11 +75,21 @@ var headlineRules = []rule{
 	{compile("acquir(e|es|ed|ing|ition)", "takeover", "buys stake", "acquisition"), TypeAcquisition, 1},
 	{compile("merger", "merges", "amalgamation"), TypeMerger, 1},
 	{compile("demerger", "demerges", "spin[- ]?off", "scheme of arrangement"), TypeDemerger, 1},
-	{compile("stake sale", "sells stake", "divest(s|ed|ment)?", "block deal", "offer for sale"), TypeStakeSale, 0},
+	{compile("stake sale", "sells (?:[\\w-]+ ){0,3}stake", "divest(s|ed|ment)?", "block deal",
+		"offer for sale", "secondary offering", "trims (?:its )?(?:[\\w-]+ ){0,2}stake",
+		"exits (?:its )?(?:[\\w-]+ ){0,2}(?:stake|position)"), TypeStakeSale, 0},
 
 	// Results and returns.
+	// Guidance before earnings, because the table is evaluated in order and
+	// the first match wins. "3M cuts its full-year earnings guidance" is a
+	// guidance story that happens to contain the word "earnings"; with
+	// earnings first it was filed as a results announcement. The bump beside
+	// each rule is importance, not precedence -- only position decides which
+	// rule wins.
+	{compile("guidance", "outlook (?:raised|cut|lowered|reaffirmed)", "forecast(s|ed)?",
+		"(?:raises|cuts|lowers|reaffirms|withdraws) (?:its )?(?:full[- ]year|FY|Q[1-4]|annual)",
+		"pre[- ]announce"), TypeGuidance, 1},
 	{compile("Q[1-4] results", "quarterly results", "net profit", "revenue (?:rose|fell|up|down)", "earnings", "PAT", "EBITDA"), TypeEarnings, 1},
-	{compile("guidance", "outlook (?:raised|cut|lowered)", "forecast(s|ed)?"), TypeGuidance, 1},
 	{compile("dividend", "interim dividend", "final dividend"), TypeDividend, 0},
 	{compile("buyback", "buy[- ]back", "share repurchase"), TypeBuyback, 1},
 	{compile("bonus issue", "stock split", "share split", "rights issue"), TypeBonus, 0},
@@ -85,22 +100,36 @@ var headlineRules = []rule{
 		"lands (?:[\\w-]+ ){0,3}(?:order|contract|deal)", "L1 bidder",
 		"receives (?:an? )?order"), TypeOrderWin, 1},
 	{compile("contract", "agreement", "MoU", "partnership", "tie[- ]?up", "joint venture"), TypeContract, 0},
-	{compile("order cancel(led|ed)?", "contract terminated", "deal called off"), TypeOrderCancelled, 1},
+	{compile("order cancel(led|ed)?", "cancel(?:s|led|ed)? (?:an? |its )?(?:[\\w-]+ ){0,3}(?:order|contract)",
+		"contract terminated", "terminates (?:an? |its )?(?:[\\w-]+ ){0,2}(?:contract|agreement)",
+		"deal called off", "deal collapses", "walks away from"), TypeOrderCancelled, 1},
 
 	// Money.
-	{compile("fund rais(e|ing)", "QIP", "raises (?:Rs|₹|\\$)", "IPO", "preferential allotment"), TypeFundRaise, 0},
+	{compile("fund rais(e|ing)", "raises (?:Rs|₹|\\$)", "IPO", "preferential allotment",
+		"(?:secondary|follow[- ]on|equity) offering", "at[- ]the[- ]market offering",
+		"private placement", "PIPE (?:deal|financing)", "convertible note"), TypeFundRaise, 0},
 	{compile("pledge(d|s)?", "encumbrance", "promoter (?:selling|buying|stake)"), TypePledge, 1},
-	{compile("bond(s)? issue", "NCD", "debenture", "debt raise", "refinanc(e|ing)"), TypeDebt, 0},
+	{compile("bond(s)? issue", "debt raise", "refinanc(e|ing)",
+		"(?:senior|unsecured|secured|convertible) notes", "notes offering", "prices (?:a |an )?\\$",
+		"credit facility", "revolving credit", "term loan", "coupon", "tender offer for"), TypeDebt, 0},
 
 	// Investment.
-	{compile("capex", "capital expenditure", "new plant", "expansion", "greenfield", "brownfield"), TypeCapex, 0},
+	{compile("capex", "capital expenditure", "new (?:[\\w-]+ ){0,2}(?:plant|fab|facility|factory|mill)",
+		"expansion", "greenfield", "brownfield", "will invest (?:Rs|₹|\\$)",
+		"breaks ground", "production capacity"), TypeCapex, 0},
 	{compile("launch(es|ed)?", "new product", "unveils"), TypeNewProduct, 0},
 
 	// Above the company.
-	{compile("repo rate", "monetary policy", "RBI (?:cuts|raises|holds)", "inflation", "GDP", "IIP", "CPI", "WPI"), TypeMacroEvent, 0},
+	{compile("monetary policy", "inflation", "GDP", "CPI", "PPI", "PCE",
+		"federal funds rate", "fed funds", "FOMC", "(?:the )?Fed (?:cuts|raises|holds|hikes)",
+		"nonfarm payrolls", "jobless claims", "unemployment rate", "retail sales",
+		"consumer confidence", "yield curve", "rate (?:cut|hike)", "repo rate"), TypeMacroEvent, 0},
 	{compile("crude", "brent", "OPEC", "oil price"), TypeCommodityEvent, 0},
 	{compile("tariff", "sanction(s)?", "war", "geopolitic", "trade restriction", "export ban"), TypeGeopoliticalEvent, 0},
-	{compile("circular", "regulation", "guidelines", "SEBI (?:proposes|notifies)", "RBI (?:notifies|issues)"), TypeRegulatoryPolicy, 0},
+	{compile("circular", "regulation", "guidelines",
+		"(?:SEC|FTC|Fed|Federal Reserve|CFPB|FCC|FERC|EPA|FDA|USTR) (?:proposes|adopts|finalis|finaliz|issues|notifies)",
+		"(?:proposed|final|interim) rule", "rulemaking", "comment period",
+		"executive order", "Federal Register"), TypeRegulatoryPolicy, 0},
 }
 
 // FastClassification is the deterministic first reading of an item.
@@ -124,7 +153,8 @@ type FastClassification struct {
 var urgentPattern = compile(
 	"breaking", "just in", "halt(ed|s)? trading", "trading halt(ed|s)?", "circuit breaker",
 	"resign(s|ed)", "steps down", "insolvency", "bankruptcy", "fraud",
-	"SEBI bars", "raid", "default(s|ed)?", "downgrade", "emergency",
+	"SEC charges", "raid", "default(s|ed)?", "downgrade", "emergency",
+	"chapter 11", "guidance cut", "recall", "short report",
 )
 
 // ClassifyHeadline gives an item a type and an importance without a model.
