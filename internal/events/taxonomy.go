@@ -7,8 +7,6 @@
 // paying a model to guess at something the document already says.
 package events
 
-import "strings"
-
 // Type is the classification of an event.
 //
 // The taxonomy is deliberately finer than "business news". An operator cannot
@@ -164,174 +162,12 @@ func (t Type) BaselineImportance() int {
 	}
 }
 
-// subjectMap translates NSE's own filing subjects into the taxonomy.
+// The NSE subject classifier used to live here: subjectMap, with a hundred
+// exchange filing categories, plus normalizeSubject and ClassifySubject. All
+// three were reachable only from ParseFiling, which is gone, so they described
+// a vocabulary this product no longer reads.
 //
-// Keys are normalised by normalizeSubject before lookup, which strips the
-// noise NSE appends to the same category in several forms: the "-XBRL" suffix
-// marking a structured submission, the "(Sub-para 4-Para B)" regulation
-// references, and "Update-" prefixes on follow-up filings. Without that,
-// "Acquisition", "Acquisition-XBRL" and "Update-Acquisition (including
-// agreement to acquire)-XBRL" would be three unrelated categories.
-var subjectMap = map[string]Type{
-	"declaration of nav": TypeFundNAV,
-
-	"outcome of board meeting":  TypeBoardMeeting,
-	"board meeting intimation":  TypeBoardMeeting,
-	"committee meeting updates": TypeBoardMeeting,
-
-	"shareholders meeting":            TypeAGM,
-	"notice of shareholders meetings": TypeAGM,
-	"annual report":                   TypeAnnualReport,
-
-	"analysts/institutional investor meet/con. call updates": TypeConcall,
-	"analyst/investor meet para a":                           TypeConcall,
-	"investor presentation":                                  TypeInvestorPresentation,
-
-	"change in directors/kmp/smp/auditor/rta":        TypeManagementChange,
-	"resignation of director/kmp/smp":                TypeManagementChange,
-	"change in management":                           TypeManagementChange,
-	"change in director(s)":                          TypeManagementChange,
-	"change in company secretary/compliance officer": TypeManagementChange,
-	"appointment":                                    TypeManagementChange,
-	"resignation":                                    TypeManagementChange,
-	"cessation":                                      TypeManagementChange,
-	"change in auditors":                             TypeAuditorChange,
-	"demise":                                         TypeDemise,
-
-	"bagging/receiving of orders/contracts": TypeOrderWin,
-	"awarding of order(s)/contract(s)":      TypeOrderWin,
-	"agreements":                            TypeContract,
-	"agreements,contracts,arrangements,mou": TypeContract,
-	"rescission/termination(s)":             TypeOrderCancelled,
-
-	"acquisition": TypeAcquisition,
-	"acquisition (including agreement to acquire)":  TypeAcquisition,
-	"acquisition of 'to be incorporated companies'": TypeAcquisition,
-	"sale or disposal":                        TypeStakeSale,
-	"corporate insolvency resolution process": TypeInsolvency,
-	"corporate debt restructuring":            TypeDebt,
-
-	"credit rating":      TypeCreditRating,
-	"credit rating- new": TypeCreditRating,
-
-	"alteration of capital and fund raising": TypeFundRaise,
-	"issue of securities":                    TypeFundRaise,
-	"allotment of securities":                TypeAllotment,
-	"rights issue":                           TypeRightsIssue,
-	"buyback":                                TypeBuyback,
-	"isd for buyback-tender offer":           TypeBuyback,
-	"esop/esos/esps":                         TypeAllotment,
-	"options to purchase securities esops":   TypeAllotment,
-
-	"record date":         TypeRecordDate,
-	"record date updates": TypeRecordDate,
-
-	"actions initiated/taken or orders passed":                                  TypeRegulatoryAction,
-	"action(s) taken or orders passed":                                          TypeRegulatoryAction,
-	"action(s) initiated or orders passed":                                      TypeRegulatoryAction,
-	"pendency of any litigation(s) or dispute(s)":                               TypeLitigation,
-	"pendency of litigation(s)/dispute(s) or the outcome impacting the company": TypeLitigation,
-
-	"price movement":    TypePriceMovement,
-	"spurt in volume":   TypeVolumeSpurt,
-	"news verification": TypeNewsVerify,
-
-	"trading window":                TypeTradingWindow,
-	"press release":                 TypePressRelease,
-	"copy of newspaper publication": TypeNewspaperPublication,
-
-	// Subjects observed in live traffic that the first pass did not recognise.
-	// A licence granted and a licence suspended arrive through one NSE
-	// subject line, so they are split into two types here rather than left to
-	// a classifier that would have to guess the sign.
-	"product launch":                          TypeNewProduct,
-	"offer for sale":                          TypeStakeSale,
-	"amendment to aoa/moa":                    TypeAdministrative,
-	"registrar & share transfer agent update": TypeAdministrative,
-	"intimation under regulation 50(1)":       TypeAdministrative,
-	"trading plan under pit":                  TypeInsiderTransaction,
-	"key licenses/regulatory approvals":       TypeRegulatoryApproval,
-	"granting/withdrawal/surrender/cancellation/suspension of key licenses/ regulatory approvals": TypeRegulatoryApproval,
-	"statement of value for debt service reserve account or any other form of security offered":   TypeDebt,
-	"disclosure of unitholding pattern - invits":                                                  TypeShareholdingChange,
-	"disclosure of additional issue of units by the invit":                                        TypeFundRaise,
-
-	"security cover certificate":                                   TypeAdministrative,
-	"disclosure under regulation 51":                               TypeAdministrative,
-	"intimation under regulation 50(2)":                            TypeAdministrative,
-	"confirmation of redemption/payment of interest and principal": TypeDebt,
-	"corrigendum":     TypeAdministrative,
-	"updates":         TypeAdministrative,
-	"general updates": TypeAdministrative,
-}
-
-// xbrlSuffix and paraRef are the decorations NSE appends to subjects.
-var (
-	subjectDecorations = []string{"-xbrl", " -xbrl", "- xbrl"}
-)
-
-// normalizeSubject reduces an NSE subject line to a lookup key.
-func normalizeSubject(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	s = strings.TrimPrefix(s, "update-")
-	s = strings.TrimPrefix(s, "update -")
-	s = strings.TrimSpace(s)
-
-	// Drop regulation references such as "(Sub-para 4-Para B)".
-	if i := strings.Index(s, "(sub-para"); i >= 0 {
-		s = s[:i]
-	}
-	s = strings.TrimSpace(s)
-
-	for _, d := range subjectDecorations {
-		s = strings.TrimSuffix(s, d)
-	}
-	return strings.Join(strings.Fields(s), " ")
-}
-
-// ClassifySubject maps an NSE filing subject to a type.
-//
-// The second return reports whether the subject was recognised. An unknown
-// subject is not an error — NSE adds categories — but it should be visible, so
-// that a new one shows up in the health page rather than silently landing in a
-// bucket nobody reviews.
-func ClassifySubject(subject string) (Type, bool) {
-	key := normalizeSubject(subject)
-	if key == "" {
-		return TypeUnclassified, false
-	}
-	if t, ok := subjectMap[key]; ok {
-		return t, true
-	}
-	// A few subjects vary enough in wording that an exact key is brittle,
-	// while a distinctive substring is not.
-	for _, probe := range []struct {
-		needle string
-		typ    Type
-	}{
-		{"order", TypeOrderWin},
-		{"acquisition", TypeAcquisition},
-		{"amalgamation", TypeMerger},
-		{"scheme of arrangement", TypeDemerger},
-		{"credit rating", TypeCreditRating},
-		{"litigation", TypeLitigation},
-		{"dispute", TypeLitigation},
-		{"resignation", TypeManagementChange},
-		{"appointment", TypeManagementChange},
-		{"auditor", TypeAuditorChange},
-		{"dividend", TypeDividend},
-		{"buyback", TypeBuyback},
-		{"bonus", TypeBonus},
-		{"split", TypeStockSplit},
-		{"pledge", TypePledge},
-		{"encumbrance", TypePledge},
-		{"insolvency", TypeInsolvency},
-		{"fund raising", TypeFundRaise},
-		{"allotment", TypeAllotment},
-	} {
-		if strings.Contains(key, probe.needle) {
-			return probe.typ, true
-		}
-	}
-	return TypeUnclassified, false
-}
+// The Type constants they mapped to are deliberately kept. Events classified
+// under them are still in the archive, and a type constant is how those rows
+// are read back; removing one would not tidy anything, it would make old data
+// unreadable.

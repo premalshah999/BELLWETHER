@@ -212,18 +212,26 @@ func (m *Master) MergeUS(tickers []USTicker, listings []USListing) {
 	sort.Slice(m.ordered, func(i, j int) bool { return m.ordered[i].Symbol < m.ordered[j].Symbol })
 }
 
-// LoadEmbeddedWithUS builds the NSE master and merges the embedded US
-// universe into it -- what every caller resolving companies from free text
-// should use, since the app covers both venues.
-func LoadEmbeddedWithUS() (*Master, error) {
-	m, err := LoadEmbedded()
-	if err != nil {
-		return nil, err
-	}
+// LoadEmbeddedUSMaster builds a resolver over the US universe alone. This is
+// what every runtime caller resolving companies from free text should use.
+//
+// It replaces LoadEmbeddedWithUS, which built the NSE master and merged the US
+// universe on top of it. Carrying both was not free even before the product
+// became US-only: 2,557 Indian legal names competed with US ones for the same
+// headline phrases, and every collision between them had to be settled by a
+// venue preference that free text usually does not carry.
+//
+// Load and LoadEmbedded still exist and the NSE CSVs are still embedded, for
+// migration 0019 and nothing else -- see the note on Load.
+func LoadEmbeddedUSMaster() (*Master, error) {
 	tickers, listings, err := LoadEmbeddedUS()
 	if err != nil {
 		return nil, fmt.Errorf("company: load embedded US universe: %w", err)
 	}
+	m := newMaster()
 	m.MergeUS(tickers, listings)
+	if len(m.ordered) == 0 {
+		return nil, fmt.Errorf("company: US master is empty")
+	}
 	return m, nil
 }

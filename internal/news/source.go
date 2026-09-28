@@ -20,10 +20,6 @@ const (
 	// articles from publishers whose own feeds we cannot fetch. It returns
 	// headlines and links that point at the original publisher.
 	MethodGoogleNews Method = "google_news"
-	// MethodNSEAnnounce is an NSE corporate-filing feed. Same XML shape as
-	// RSS, but the fields carry exchange-specific meaning: the title is a
-	// company's legal name and the description encodes a filing category.
-	MethodNSEAnnounce Method = "nse_announcements"
 	// MethodGDELT is the GDELT DOC API, used as a coverage-expansion layer.
 	MethodGDELT Method = "gdelt"
 	// MethodSECFiling is an SEC EDGAR "current filings" Atom feed (8-K,

@@ -38,8 +38,6 @@ func (t TimestampTrust) Reliable() bool { return t != TimestampObserved }
 // TimestampTrust classifies a source's published_at.
 func (s Source) TimestampTrust() TimestampTrust {
 	switch s.Method {
-	case MethodNSEAnnounce:
-		return TimestampExact
 	case MethodGoogleNews:
 		// The whole reason this type exists.
 		return TimestampObserved

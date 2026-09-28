@@ -25,14 +25,6 @@ import (
 // The BSE and RBI gaps are real and worth closing; see the corporate-feed
 // interface, which exists so those can be added without touching this list.
 
-// nseFeed is the archive host NSE serves its corporate filing feeds from.
-const nseFeed = "https://nsearchives.nseindia.com/content/RSS/"
-
-// GoogleNewsSearch builds a Google News RSS search URL.
-//
-// Discovery through Google News is how a publisher whose own feed we cannot
-// fetch still reaches us: the result carries that publisher's headline and a
-// link to their page. It is discovery, not content — see UsageDiscoveryOnly.
 // catalogUserAgent identifies this app to a publisher that refuses
 // anonymous clients. The engine sends no User-Agent by default, which most
 // feeds accept and a few drop outright; this is the polite minimum for the
@@ -61,50 +53,6 @@ func GoogleNewsSearch(query, hl, gl string) string {
 // to the publisher and useless to the operator.
 func DefaultSources() []Source {
 	var out []Source
-
-	// ---- Layer A: official exchange and regulator filings -----------------
-	//
-	// Ground truth. When one of these disagrees with a newspaper, it wins.
-	official := []struct {
-		id, name, file, category string
-		refresh                  time.Duration
-	}{
-		{"nse-announcements", "NSE Corporate Announcements", "Online_announcements.xml", "filings", time.Minute},
-		{"nse-corp-actions", "NSE Corporate Actions", "Corporate_action.xml", "corporate_actions", 10 * time.Minute},
-		{"nse-results", "NSE Financial Results", "Financial_Results.xml", "results", 5 * time.Minute},
-		{"nse-board-meetings", "NSE Board Meetings", "Board_Meetings.xml", "board_meetings", 10 * time.Minute},
-		{"nse-insider", "NSE Insider Trading", "Insider_Trading.xml", "insider", 15 * time.Minute},
-		{"nse-shareholding", "NSE Shareholding Patterns", "Shareholding_Pattern.xml", "shareholding", 30 * time.Minute},
-		{"nse-annual-reports", "NSE Annual Reports", "Annual_Reports.xml", "annual_reports", time.Hour},
-		{"nse-circulars", "NSE Circulars", "Circulars.xml", "circulars", 30 * time.Minute},
-	}
-	for _, f := range official {
-		out = append(out, Source{
-			ID: f.id, Name: f.name, URL: nseFeed + f.file,
-			Method: MethodNSEAnnounce, Category: f.category,
-			Country: "IN", Language: "en",
-			Trust: TrustOfficial, Refresh: f.refresh, Timeout: 20 * time.Second,
-			Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
-		})
-	}
-	// RBI publishes at rbi.org.in rather than at the path its own RSS index
-	// page advertises; the documented one serves HTML. One regulator
-	// announcement here can reprice an entire sector, so these rank alongside
-	// exchange filings rather than alongside news about them.
-	rbi := []struct{ id, name, file, category string }{
-		{"rbi-press", "RBI Press Releases", "pressreleases_rss.xml", "regulatory"},
-		{"rbi-notifications", "RBI Notifications", "notifications_rss.xml", "regulatory"},
-		{"rbi-speeches", "RBI Speeches", "speeches_rss.xml", "regulatory"},
-		{"rbi-publications", "RBI Publications", "Publication_rss.xml", "regulatory"},
-	}
-	for _, f := range rbi {
-		out = append(out, Source{
-			ID: f.id, Name: f.name, URL: "https://rbi.org.in/" + f.file,
-			Method: MethodRSS, Category: f.category, Country: "IN", Language: "en",
-			Trust: TrustOfficial, Refresh: 10 * time.Minute, Timeout: 20 * time.Second,
-			Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
-		})
-	}
 
 	// The US regulators and policy bodies that play the same role for the US
 	// as RBI plays for India: an announcement here reprices a sector, or the
@@ -141,89 +89,6 @@ func DefaultSources() []Source {
 		Trust: TrustOfficial, Refresh: 20 * time.Minute, Timeout: 20 * time.Second,
 		Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
 	})
-
-	// PIB is deliberately absent, having been measured rather than assumed.
-	//
-	// Its ministry announcements — budget measures, FPI policy, tariff and duty
-	// changes — genuinely do move sectors before they reach a filing, which is
-	// why it was carried for a while. What it delivered in practice was 43
-	// items producing 42 events, exactly one company match, and not a single
-	// Latin-script headline. Every combination of the Lang and Regid parameters
-	// that returns items returns Devanagari; the documented English variants
-	// either redirect to the Hindi feed or serve an empty page.
-	//
-	// The cost was not neutral. The classifier rated several of those items at
-	// importance 6 on their subject matter, so a Hindi notice about a bus
-	// compliance certificate sat at the top of an English market feed above an
-	// actual merger. RBI and SEBI already cover the financial announcements
-	// that matter here, in English and with company names the resolver can
-	// match. Restore this only alongside a translation step and a way to keep
-	// naval and scholarship notices out of a markets feed.
-
-	// The other exchange.
-	//
-	// Eight NSE feeds and nothing from the BSE, which lists several thousand
-	// companies the NSE does not. Its notices carry trading suspensions,
-	// corporate actions in the securities-lending segment and the exchange's
-	// own enforcement — events that move a price and appear nowhere else in
-	// this catalogue.
-	out = append(out, Source{
-		ID: "bse-notices", Name: "BSE Notices",
-		URL:    "https://www.bseindia.com/data/xml/notices.xml",
-		Method: MethodRSS, Category: "filings", Country: "IN", Language: "en",
-		Trust: TrustOfficial, Refresh: 5 * time.Minute, Timeout: 20 * time.Second,
-		Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
-	})
-
-	// Named for its press releases, but the feed SEBI actually publishes here
-	// is its orders: final orders, attachment notices and recovery
-	// certificates, each naming the company it concerns.
-	out = append(out, Source{
-		ID: "sebi-press", Name: "SEBI Orders & Press Releases",
-		URL:    "https://www.sebi.gov.in/sebirss.xml",
-		Method: MethodRSS, Category: "regulatory", Country: "IN", Language: "en",
-		Trust: TrustOfficial, Refresh: 15 * time.Minute, Timeout: 20 * time.Second,
-		Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
-	})
-
-	// ---- Layer C: Indian financial media ----------------------------------
-	//
-	// Usage classes here are deliberately cautious. Mint and Indian Express
-	// state that their feeds are for personal, non-commercial use; the others
-	// publish copyright notices that stop short of granting reproduction. So
-	// none of them are set to DisplayFull: we show a headline, a publisher
-	// and a link, and send the reader onward.
-	indian := []struct {
-		id, name, url, category string
-		usage                   UsageClass
-		refresh                 time.Duration
-	}{
-		{"bs-markets", "Business Standard Markets", "https://www.business-standard.com/rss/markets-106.rss", "markets", UsageLegalReview, 3 * time.Minute},
-		{"bs-companies", "Business Standard Companies", "https://www.business-standard.com/rss/companies-101.rss", "companies", UsageLegalReview, 3 * time.Minute},
-		{"bs-economy", "Business Standard Economy", "https://www.business-standard.com/rss/economy-102.rss", "economy", UsageLegalReview, 10 * time.Minute},
-		{"bs-finance", "Business Standard Finance", "https://www.business-standard.com/rss/finance-103.rss", "finance", UsageLegalReview, 10 * time.Minute},
-		{"mint-markets", "Mint Markets", "https://www.livemint.com/rss/markets", "markets", UsageNonCommercial, 3 * time.Minute},
-		{"mint-companies", "Mint Companies", "https://www.livemint.com/rss/companies", "companies", UsageNonCommercial, 3 * time.Minute},
-		{"mint-industry", "Mint Industry", "https://www.livemint.com/rss/industry", "industry", UsageNonCommercial, 10 * time.Minute},
-		{"mint-money", "Mint Money", "https://www.livemint.com/rss/money", "money", UsageNonCommercial, 15 * time.Minute},
-		{"et-markets", "Economic Times Markets", "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms", "markets", UsageLegalReview, 3 * time.Minute},
-		{"et-stocks", "Economic Times Stocks", "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms", "markets", UsageLegalReview, 3 * time.Minute},
-		{"et-industry", "Economic Times Industry", "https://economictimes.indiatimes.com/industry/rssfeeds/13352306.cms", "industry", UsageLegalReview, 10 * time.Minute},
-		{"et-economy", "Economic Times Economy", "https://economictimes.indiatimes.com/news/economy/rssfeeds/1373380680.cms", "economy", UsageLegalReview, 10 * time.Minute},
-		{"bl-markets", "Hindu BusinessLine Markets", "https://www.thehindubusinessline.com/markets/feeder/default.rss", "markets", UsageLegalReview, 5 * time.Minute},
-		{"bl-companies", "Hindu BusinessLine Companies", "https://www.thehindubusinessline.com/companies/feeder/default.rss", "companies", UsageLegalReview, 5 * time.Minute},
-		{"bl-economy", "Hindu BusinessLine Economy", "https://www.thehindubusinessline.com/economy/feeder/default.rss", "economy", UsageLegalReview, 15 * time.Minute},
-		{"ndtv-profit", "NDTV Profit", "https://feeds.feedburner.com/ndtvprofit-latest", "markets", UsageLegalReview, 5 * time.Minute},
-		{"business-today", "Business Today Markets", "https://www.businesstoday.in/rss/markets", "markets", UsageLegalReview, 5 * time.Minute},
-	}
-	for _, f := range indian {
-		out = append(out, Source{
-			ID: f.id, Name: f.name, URL: f.url,
-			Method: MethodRSS, Category: f.category, Country: "IN", Language: "en",
-			Trust: TrustMajorFin, Refresh: f.refresh, Timeout: 15 * time.Second,
-			Usage: f.usage, Display: DisplayLinkOnly, Enabled: true,
-		})
-	}
 
 	// ---- Layer D: global financial media ----------------------------------
 	//
@@ -279,68 +144,6 @@ func DefaultSources() []Source {
 			Method: MethodRSS, Category: f.category, Country: f.country, Language: "en",
 			Trust: f.trust, Refresh: f.refresh, Timeout: 15 * time.Second,
 			Usage: UsageLegalReview, Display: DisplayLinkOnly, Enabled: true,
-		})
-	}
-
-	// ---- Layer B: premium-publisher discovery -----------------------------
-	//
-	// Reuters and Bloomberg do not serve us directly, so these queries find
-	// their India coverage through Google News. What comes back is a headline
-	// and a link to the publisher — which is exactly what we display.
-	//
-	// Google's own feed terms describe RSS use as non-commercial and say
-	// feeds may not be redistributed, so every one of these is marked
-	// UsageDiscoveryOnly and needs a decision before this app is sold to
-	// anyone. The classification is here, in the data, so that decision can
-	// be enforced in one place instead of being remembered.
-	discovery := []struct{ id, name, query string }{
-		{"disc-reuters-india", "Reuters India (via discovery)", "site:reuters.com India stocks OR markets OR companies when:1d"},
-		{"disc-bloomberg-india", "Bloomberg India (via discovery)", "site:bloomberg.com India markets OR stocks when:1d"},
-		{"disc-reuters-banking", "Reuters India Banking (via discovery)", "site:reuters.com India banking OR RBI when:2d"},
-		{"disc-india-earnings", "India Earnings (via discovery)", "India quarterly results OR earnings NSE when:1d"},
-		{"disc-india-ipo", "India IPO (via discovery)", "India IPO listing subscription when:2d"},
-
-		// Event classes rather than publishers.
-		//
-		// The five queries above ask "what is Reuters saying about India".
-		// These ask "has anything of a kind that moves a price happened to
-		// anyone", which is the question the rest of this system is built
-		// around and which no single publisher's feed answers. Each was
-		// measured against Google News before being added; the counts in the
-		// comments are what they returned on a normal trading day.
-		//
-		// A sixth query for brokerage upgrades and downgrades was tried and
-		// dropped: it returned two items, one of them a US stock. Broker
-		// calls are syndicated too thinly and too generically to be found
-		// this way, and a query that returns noise is worse than no query.
-
-		// 22 items: "Apollo Tyres Shares in Focus After Rs 930 Cr Block Deal".
-		{"disc-block-deals", "Block & Bulk Deals (via discovery)",
-			`India "block deal" OR "bulk deal" NSE BSE shares when:2d`},
-		// 18 items: "Fineotex credit rating upgraded to ICRA AA-". A rating
-		// action is a solvency judgement and reprices equity as well as debt.
-		{"disc-rating-actions", "Credit Rating Actions (via discovery)",
-			`CRISIL OR ICRA OR "CARE Ratings" rating downgrade OR upgrade India company when:3d`},
-		// 16 items: "Advent Hotels promoters release pledge over 32.6 lakh
-		// shares". Pledged promoter stock is the mechanism behind a good
-		// share of sudden Indian smallcap collapses.
-		{"disc-promoter-pledge", "Promoter Pledges (via discovery)",
-			`India promoter pledge OR "pledged shares" stake when:3d`},
-		// 7 items: "Tejas Networks shares rally 10% on Rs 1,537 crore order
-		// win". For a capital-goods or engineering name this is the single
-		// most common reason the price moves before anything is filed.
-		{"disc-order-wins", "Order Wins (via discovery)",
-			`India company "order win" OR "bags order" OR "wins contract" crore when:2d`},
-		// 55 items: "HDFC Bank CEO Jagdishan to step down".
-		{"disc-leadership", "Leadership Changes (via discovery)",
-			`India company CEO OR CFO OR "managing director" resigns OR appointed board when:2d`},
-	}
-	for _, f := range discovery {
-		out = append(out, Source{
-			ID: f.id, Name: f.name, URL: GoogleNewsSearch(f.query, "en-IN", "IN"),
-			Method: MethodGoogleNews, Category: "discovery", Country: "IN", Language: "en",
-			Trust: TrustWire, Refresh: 10 * time.Minute, Timeout: 20 * time.Second,
-			Usage: UsageDiscoveryOnly, Display: DisplayLinkOnly, Enabled: true,
 		})
 	}
 
@@ -502,16 +305,6 @@ func DefaultSources() []Source {
 	// Not a breaking-news source and not treated as one. Its job is to answer
 	// "what are our direct feeds missing?", so it polls slowly and its items
 	// carry aggregator-level trust until something better corroborates them.
-	out = append(out, Source{
-		ID: "gdelt-india-business", Name: "GDELT India Business",
-		URL:    "https://api.gdeltproject.org/api/v2/doc/doc?query=(stocks%20OR%20shares%20OR%20earnings)%20sourcecountry:india&mode=ArtList&format=json&maxrecords=75&timespan=60min",
-		Method: MethodGDELT, Category: "discovery", Country: "IN", Language: "en",
-		// GDELT's TLS handshake from a datacentre IP measures 15-20 seconds
-		// before any data flows, so the timeout has to accommodate a slow
-		// start rather than a slow feed.
-		Trust: TrustAggregator, Refresh: 30 * time.Minute, Timeout: 90 * time.Second,
-		Usage: UsagePublicReviewed, Display: DisplayLinkOnly, Enabled: true,
-	})
 	// Same query, US-scoped. Two earlier attempts here were both wrong, and
 	// production health data is what proved it: "sourcecountry:us"
 	// (lowercase code) parses without error but matches nothing (confirmed

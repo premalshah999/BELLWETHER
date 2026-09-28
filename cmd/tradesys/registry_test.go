@@ -36,8 +36,10 @@ func TestBuildRegistrySECGating(t *testing.T) {
 		}
 	}
 	// The rest of the catalog must still be present -- this is additive,
-	// not a replacement of the static list.
-	if _, ok := with.Get("nse-announcements"); !ok {
+	// not a replacement of the static list. The canary is a Federal Reserve
+	// feed rather than an exchange one: it is Layer A official, needs no key,
+	// and is the least likely source in the catalogue to be removed.
+	if _, ok := with.Get("fed-press"); !ok {
 		t.Error("buildRegistry dropped the static catalog while adding SEC sources")
 	}
 }

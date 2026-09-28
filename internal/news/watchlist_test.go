@@ -82,7 +82,7 @@ func TestWatchlistSourcesDeduplicate(t *testing.T) {
 
 // TestRegistryReplaceSwapsOnlyItsCategory is the guarantee that makes the
 // registry safe to rebuild while the scheduler is reading it: a watchlist
-// change must never drop an exchange feed.
+// change must never drop a catalogue feed.
 func TestRegistryReplaceSwapsOnlyItsCategory(t *testing.T) {
 	reg, err := DefaultRegistry()
 	if err != nil {
@@ -91,7 +91,7 @@ func TestRegistryReplaceSwapsOnlyItsCategory(t *testing.T) {
 	before := reg.Len()
 
 	added, removed, err := reg.Replace("watchlist",
-		WatchlistSources([]Watched{{Ticker: "RELIANCE", Venue: marketdata.ExchangeNSE}, {Ticker: "TCS", Venue: marketdata.ExchangeNSE}}))
+		WatchlistSources([]Watched{{Ticker: "AAPL", Venue: marketdata.ExchangeUS}, {Ticker: "MSFT", Venue: marketdata.ExchangeUS}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,25 +101,25 @@ func TestRegistryReplaceSwapsOnlyItsCategory(t *testing.T) {
 	if reg.Len() != before+2 {
 		t.Errorf("registry has %d sources, want %d", reg.Len(), before+2)
 	}
-	if _, ok := reg.Get("nse-announcements"); !ok {
-		t.Fatal("replacing the watchlist dropped an exchange feed")
+	if _, ok := reg.Get("fed-press"); !ok {
+		t.Fatal("replacing the watchlist dropped a catalogue feed")
 	}
 
 	// Shrinking the watchlist removes only what left it.
-	added, removed, err = reg.Replace("watchlist", WatchlistSources([]Watched{{Ticker: "TCS", Venue: marketdata.ExchangeNSE}}))
+	added, removed, err = reg.Replace("watchlist", WatchlistSources([]Watched{{Ticker: "MSFT", Venue: marketdata.ExchangeUS}}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(added) != 0 || len(removed) != 1 || removed[0] != "watch-reliance.nse" {
-		t.Errorf("added %v removed %v, want watch-reliance removed", added, removed)
+	if len(added) != 0 || len(removed) != 1 || removed[0] != "watch-aapl" {
+		t.Errorf("added %v removed %v, want watch-aapl removed", added, removed)
 	}
-	if _, ok := reg.Get("watch-tcs.nse"); !ok {
-		t.Error("watch-tcs.nse should have survived")
+	if _, ok := reg.Get("watch-msft"); !ok {
+		t.Error("watch-msft should have survived")
 	}
-	if _, ok := reg.Get("watch-reliance.nse"); ok {
-		t.Error("watch-reliance.nse should have been removed")
+	if _, ok := reg.Get("watch-aapl"); ok {
+		t.Error("watch-aapl should have been removed")
 	}
-	if _, ok := reg.Get("nse-announcements"); !ok {
+	if _, ok := reg.Get("fed-press"); !ok {
 		t.Fatal("the curated catalog must survive every rebuild")
 	}
 }

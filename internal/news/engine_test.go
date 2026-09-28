@@ -437,44 +437,6 @@ func TestGDELTRateLimitProseIsAnError(t *testing.T) {
 	}
 }
 
-// TestNSEDatesAreIST is the timezone rule stated as a test.
-//
-// NSE writes "25-Aug-2026 19:28:37" with no zone. Read as UTC that filing
-// lands 5h30m before it happened, which reorders the day and makes ingestion
-// latency come out negative.
-func TestNSEDatesAreIST(t *testing.T) {
-	feed := `<?xml version="1.0"?><rss version="2.0"><channel><title>NSE</title>
-<item><title>Maharashtra Seamless Limited</title><link>https://nsearchives.nseindia.com/corporate/MAHSEAMLES_25082026192709_x.pdf</link>
-<description>informed the Exchange |SUBJECT: Updates</description><pubDate>25-Aug-2026 19:28:37</pubDate></item>
-</channel></rss>`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, feed)
-	}))
-	defer srv.Close()
-
-	store := newFakeStore()
-	clock := time.Date(2026, 8, 25, 14, 30, 0, 0, time.UTC)
-	e := newTestEngine(t, store, func() time.Time { return clock },
-		testSource(srv.URL, func(s *Source) { s.Method = MethodNSEAnnounce }))
-
-	if res := e.RunOnce(context.Background()); res.NewItems != 1 {
-		t.Fatalf("run = %+v, want one item", res)
-	}
-	// 19:28:37 IST is 13:58:37 UTC.
-	want := time.Date(2026, 8, 25, 13, 58, 37, 0, time.UTC)
-	if got := store.items[0].PublishedAt; !got.Equal(want) {
-		t.Errorf("PublishedAt = %v, want %v (IST converted to UTC)", got, want)
-	}
-	// And the latency against our fetch time must be positive and sane.
-	lat, ok := store.items[0].Latency()
-	if !ok {
-		t.Fatal("expected a measurable latency")
-	}
-	if lat < 0 || lat > time.Hour {
-		t.Errorf("latency = %v, want a small positive duration", lat)
-	}
-}
-
 // Go omits the User-Agent header entirely when it is set to the empty string.
 // This pins that behaviour, since the whole fetch strategy depends on it.
 func TestNoUserAgentIsSent(t *testing.T) {

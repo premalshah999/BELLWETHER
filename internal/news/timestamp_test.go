@@ -104,7 +104,7 @@ func TestSourceTimestampTrust(t *testing.T) {
 			if got.Reliable() {
 				t.Errorf("%s must not be treated as a reliable publication time", s.ID)
 			}
-		case MethodNSEAnnounce:
+		case MethodSECFiling:
 			if got != TimestampExact {
 				t.Errorf("%s = %s, want exact: a filing carries its own filing time", s.ID, got)
 			}

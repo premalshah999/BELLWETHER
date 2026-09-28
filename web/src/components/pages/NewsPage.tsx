@@ -20,8 +20,15 @@ const LEVELS = [
   { label: "6+", min: 6 },
   { label: "8+", min: 8 },
 ];
-/** How many items one page of the feed holds. */
-const PAGE = 200;
+/**
+ * How many items one page of the feed holds.
+ *
+ * 500, which is also the server's ceiling (see ListEvents in
+ * internal/storage/postgres/events_read.go) -- so one page is the most the
+ * API will return and "load more" genuinely fetches beyond it rather than
+ * walking up to a limit the backend would have allowed all along.
+ */
+const PAGE = 500;
 
 const UNIVERSES = [
   { label: "index", value: "index" as const },
