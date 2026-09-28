@@ -10,7 +10,6 @@ func AdditionalOfficialSources() []Source {
 		{"ecb-statistics", "ECB statistical releases", "https://www.ecb.europa.eu/rss/statpress.html", "EU", "economy"},
 		{"boe-news", "Bank of England news", "https://www.bankofengland.co.uk/rss/news", "GB", "regulatory"},
 		{"eia-energy", "EIA Today in Energy", "https://www.eia.gov/rss/todayinenergy.xml", "US", "energy"},
-		{"ftc-press", "FTC competition and consumer protection", "https://www.ftc.gov/feeds/press-release.xml", "US", "regulatory"},
 
 		// The US agencies whose announcements reprice a sector before any
 		// publisher writes about them, and which nothing else in this
@@ -67,6 +66,21 @@ func ContactGatedOfficialSources(contact string) []Source {
 		//
 		// Worth the wiring for one feed, because this is the CPI and payroll
 		// release feed and those two numbers move every index in the universe.
+		// FTC had been 403ing for 282 consecutive polls before anyone looked,
+		// for exactly this reason: it was registered with the catalogue's
+		// URL-style agent. Its URL was never wrong. A source that fails this
+		// consistently should have been read as misconfigured rather than
+		// down, which is an argument for the health page distinguishing the
+		// two -- 282 identical failures is not an outage.
+		{
+			ID: "ftc-press", Name: "FTC competition and consumer protection",
+			URL:     "https://www.ftc.gov/feeds/press-release.xml",
+			Country: "US", Category: "regulatory",
+			Method: MethodRSS, Language: "en", Trust: TrustOfficial,
+			Refresh: 5 * time.Minute, Timeout: 15 * time.Second,
+			Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
+			UserAgent: contact,
+		},
 		{
 			ID: "bls-releases", Name: "BLS news releases",
 			URL:     "https://www.bls.gov/feed/bls_latest.rss",
