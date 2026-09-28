@@ -17,16 +17,29 @@ import (
 func pipelineFixtures(t *testing.T) (*DB, *events.Processor, context.Context, time.Time) {
 	t.Helper()
 	db := newTestDB(t)
-	master, err := company.LoadEmbedded()
+	master, err := company.LoadEmbeddedUSMaster()
 	if err != nil {
-		t.Fatalf("LoadEmbedded: %v", err)
+		t.Fatalf("LoadEmbeddedUSMaster: %v", err)
 	}
-	registry, err := news.DefaultRegistry()
+	// SEC sources are gated on a declared contact string at runtime, so the
+	// default registry does not carry them. The filing tests below need them
+	// registered: the processor looks a raw item's source up by id to learn
+	// its method and trust, and an unknown source is filtered out.
+	sources := append(news.DefaultSources(), news.SECSources("TradeSys-test/1.0 (test@example.com)")...)
+	registry, err := news.NewRegistry(sources...)
 	if err != nil {
-		t.Fatalf("DefaultRegistry: %v", err)
+		t.Fatalf("NewRegistry: %v", err)
 	}
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	// SEC entity resolution goes through the filer's declared CIK rather than
+	// a text guess, so the fixture supplies the same index main wires in.
 	p := events.NewProcessor(db, master, registry,
+		events.WithUSCIKIndex(map[string]string{
+			"0000018230": "CAT",  // Caterpillar
+			"0000789019": "MSFT", // Microsoft
+			"0000073309": "NUE",  // Nucor
+			"0001274494": "FSLR", // First Solar
+		}),
 		events.WithProcessorClock(func() time.Time { return now }))
 	return db, p, context.Background(), now
 }
@@ -39,16 +52,22 @@ func item(source, hash, title, desc, url string, discovered time.Time) news.RawI
 	}
 }
 
-// TestPipelineFilingBecomesEvent walks one exchange filing through the whole
-// deterministic path: parsed, typed, entity-resolved, stored with its facts.
+// TestPipelineFilingBecomesEvent walks one SEC filing through the whole
+// deterministic path: parsed, typed, entity-resolved from the filer's own CIK,
+// and stored with the item codes it declared.
+//
+// This used to feed an NSE corporate announcement through ParseFiling. That
+// parser and the format it read are both gone, so the test now exercises the
+// filing path the product actually has.
 func TestPipelineFilingBecomesEvent(t *testing.T) {
 	db, p, ctx, now := pipelineFixtures(t)
 
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{
-		item("nse-announcements", "h1",
-			"Larsen & Toubro Limited",
-			"Larsen & Toubro Limited has informed the Exchange regarding receipt of an order worth Rs 4,200 crore |SUBJECT: Bagging/Receiving of orders/contracts",
-			"https://nsearchives.nseindia.com/corporate/LT_25082026120000_Order.pdf", now),
+		item("sec-8k", "h1",
+			"8-K - CATERPILLAR INC (0000018230) (Filer)",
+			"Filed: 2026-08-25 AccNo: 0000018230-26-000123 Size: 191 KB "+
+				"Item 1.01: Entry into a Material Definitive Agreement",
+			"https://www.sec.gov/Archives/edgar/data/18230/000001823026000123-index.htm", now),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -69,36 +88,49 @@ func TestPipelineFilingBecomesEvent(t *testing.T) {
 		t.Fatalf("got %d events, want 1", len(list))
 	}
 	e := list[0]
-	if e.Type != string(events.TypeOrderWin) {
-		t.Errorf("type = %s, want ORDER_WIN", e.Type)
-	}
 	if !e.Official {
-		t.Error("an NSE filing must be marked official")
+		t.Error("an SEC filing must be marked official")
 	}
-	if e.Importance == nil || *e.Importance < 7 {
-		t.Errorf("importance = %v, want the ORDER_WIN baseline", e.Importance)
-	}
-	if len(e.Entities) != 1 || e.Entities[0].Symbol != "LT.NSE" {
-		t.Fatalf("entities = %+v, want LT resolved from the document path", e.Entities)
-	}
-	if e.Entities[0].MatchMethod != "nse_document_path" {
-		t.Errorf("match method = %s, want the path symbol to win", e.Entities[0].MatchMethod)
+	if len(e.Entities) != 1 || e.Entities[0].Symbol != "CAT" {
+		t.Fatalf("entities = %+v, want CAT resolved from the filer's CIK", e.Entities)
 	}
 	if e.ConfirmedAt.IsZero() {
 		t.Error("an official filing is its own confirmation")
 	}
+
+	// The filer's own declaration is kept verbatim beside the derived type:
+	// it is a stronger signal than any classifier, and a filing naming
+	// several items has more going on than one type can carry.
+	facts, err := db.EventFacts(ctx, e.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := facts["SEC_ITEMS"]; got != "1.01" {
+		t.Errorf("SEC_ITEMS = %q, want the declared item code", got)
+	}
+	if got := facts["SEC_CIK"]; got != "0000018230" {
+		t.Errorf("SEC_CIK = %q, want the filer's CIK on the event", got)
+	}
 }
 
-// TestPipelineExtractsDividendFacts is the claim that the numbers come out
-// without a model.
-func TestPipelineExtractsDividendFacts(t *testing.T) {
+// TestPipelineExtractsFilingFactsWithoutAModel is the claim that the
+// structured detail comes out deterministically.
+//
+// It used to assert the PURPOSE / RECORD DATE / EX DATE fields lifted out of
+// NSE's pipe-delimited corporate-action format. Those fields do not exist in
+// any feed this product now reads; the equivalent claim for SEC is that a
+// filing declaring several 8-K items has all of them recorded, not just the
+// one the type maps to.
+func TestPipelineExtractsFilingFactsWithoutAModel(t *testing.T) {
 	db, p, ctx, now := pipelineFixtures(t)
 
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{
-		item("nse-corp-actions", "d1",
-			"Relaxo Footwears Limited - Ex-Date: 17-Sep-2026",
-			"SERIES:EQ |PURPOSE:DIVIDEND - RS 3.50 PER SHARE |FACE VALUE:1 |RECORD DATE:18-Sep-2026",
-			"https://www.nseindia.com/companies-listing/corporate-filings-actions", now),
+		item("sec-8k", "d1",
+			"8-K - NUCOR CORP (0000073309) (Filer)",
+			"Filed: 2026-08-25 AccNo: 0000073309-26-000044 Size: 88 KB "+
+				"Item 2.02: Results of Operations and Financial Condition "+
+				"Item 8.01: Other Events",
+			"https://www.sec.gov/Archives/edgar/data/73309/000007330926000044-index.htm", now),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -110,40 +142,37 @@ func TestPipelineExtractsDividendFacts(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("got %d events", len(list))
 	}
-	if list[0].Type != string(events.TypeDividend) {
-		t.Errorf("type = %s, want DIVIDEND", list[0].Type)
+	if list[0].Type != string(events.TypeEarnings) {
+		t.Errorf("type = %s, want EARNINGS from item 2.02", list[0].Type)
 	}
 	facts, err := db.EventFacts(ctx, list[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := facts["PURPOSE"]; got != "DIVIDEND - RS 3.50 PER SHARE" {
-		t.Errorf("PURPOSE = %q", got)
-	}
-	if got := facts["RECORD DATE"]; got != "18-Sep-2026" {
-		t.Errorf("RECORD DATE = %q", got)
-	}
-	// The ex-date lives in the title, not the description.
-	if got := facts["EX DATE"]; got != "17-Sep-2026" {
-		t.Errorf("EX DATE = %q, want it lifted out of the title", got)
+	// Both codes, in the order the filer declared them -- the second is the
+	// part a single Type would have thrown away.
+	if got := facts["SEC_ITEMS"]; got != "2.02,8.01" {
+		t.Errorf("SEC_ITEMS = %q, want both declared items", got)
 	}
 	if list[0].OccurredAt.IsZero() {
-		t.Error("a dated corporate action must carry an occurred_at")
+		t.Error("a filing carries its own filed date as occurred_at")
 	}
 }
 
-// TestPipelineFiltersFundNAV pins the noise filter: 440 of a day's 1,600 NSE
-// announcements are mutual-fund NAV declarations.
+// TestPipelineFiltersFundNAV pins the noise filter. A fund's net asset value
+// is arithmetic on holdings that already moved, not news about a company, so
+// it never becomes an event -- the judgement is about the instrument, not
+// about importance. See Type.Equity in internal/events/taxonomy.go.
 func TestPipelineFiltersFundNAV(t *testing.T) {
 	db, p, ctx, now := pipelineFixtures(t)
 
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{
-		item("nse-announcements", "n1", "Some AMC Mutual Fund",
-			"Some AMC has informed the Exchange regarding NAV |SUBJECT: Declaration of NAV",
-			"https://nsearchives.nseindia.com/corporate/x.pdf", now),
-		item("nse-announcements", "n2", "Infosys Limited",
-			"Infosys Limited has informed the Exchange regarding a press release |SUBJECT: Press Release",
-			"https://nsearchives.nseindia.com/corporate/INFY_25082026120000_pr.pdf", now),
+		item("prnewswire", "n1", "Vanguard Growth Fund declaration of NAV",
+			"Declaration of NAV for the period ending August 25.",
+			"https://www.prnewswire.com/news-releases/nav-1.html", now),
+		item("prnewswire", "n2", "Microsoft Corporation announces a quarterly dividend",
+			"Microsoft Corporation declared a quarterly dividend of $0.83 per share.",
+			"https://www.prnewswire.com/news-releases/msft-dividend.html", now),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -170,15 +199,18 @@ func TestPipelineClustersAcrossSources(t *testing.T) {
 	db, p, ctx, now := pipelineFixtures(t)
 
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{
-		item("nse-announcements", "c1", "Tata Steel Limited",
-			"Tata Steel Limited has informed the Exchange regarding acquisition of a stake in a European mill |SUBJECT: Acquisition",
-			"https://nsearchives.nseindia.com/corporate/TATASTEEL_25082026120000_a.pdf", now),
-		item("et-markets", "c2",
-			"Tata Steel acquisition of stake in European mill", "",
-			"https://economictimes.indiatimes.com/x", now.Add(20*time.Minute)),
-		item("bs-markets", "c3",
-			"Tata Steel acquisition European mill stake", "",
-			"https://www.business-standard.com/y", now.Add(40*time.Minute)),
+		// The company's own release, then two rewrites of it -- the ordinary
+		// US shape of one story arriving three times.
+		item("globenewswire-public", "c1",
+			"Nucor completes acquisition of a stake in a European mill",
+			"Nucor Corporation today completed the acquisition of a stake in a European mill.",
+			"https://www.globenewswire.com/news-release/nucor-european-mill", now),
+		item("wsj-markets", "c2",
+			"Nucor completes acquisition of a stake in a European mill", "",
+			"https://www.wsj.com/articles/nucor-european-mill", now.Add(20*time.Minute)),
+		item("cnbc-finance", "c3",
+			"Nucor acquisition of European mill stake completes", "",
+			"https://www.cnbc.com/2026/08/25/nucor-mill.html", now.Add(40*time.Minute)),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -207,8 +239,10 @@ func TestPipelineClustersAcrossSources(t *testing.T) {
 	if full.SourceCount != 3 {
 		t.Errorf("source_count = %d, want 3", full.SourceCount)
 	}
-	if full.BestTrust != 100 {
-		t.Errorf("best_trust = %d, want the exchange's 100", full.BestTrust)
+	// The release outranks both rewrites of it, so the event carries the
+	// company's own trust rather than a newspaper's.
+	if full.BestTrust != 90 {
+		t.Errorf("best_trust = %d, want the company release's 90", full.BestTrust)
 	}
 }
 
@@ -219,12 +253,14 @@ func TestPipelineKeepsUnrelatedEventsApart(t *testing.T) {
 	db, p, ctx, now := pipelineFixtures(t)
 
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{
-		item("nse-announcements", "k1", "Reliance Industries Limited",
-			"Reliance Industries Limited has informed the Exchange regarding receipt of a large order |SUBJECT: Bagging/Receiving of orders/contracts",
-			"https://nsearchives.nseindia.com/corporate/RELIANCE_25082026120000_a.pdf", now),
-		item("nse-announcements", "k2", "Reliance Industries Limited",
-			"Reliance Industries Limited has informed the Exchange regarding a SEBI order imposing a penalty |SUBJECT: Actions initiated/taken or orders passed",
-			"https://nsearchives.nseindia.com/corporate/RELIANCE_25082026130000_b.pdf", now.Add(time.Hour)),
+		item("wsj-markets", "k1",
+			"First Solar wins a contract to supply a 900 MW project",
+			"First Solar said it had won a contract to supply panels for a 900 MW utility project.",
+			"https://www.wsj.com/articles/first-solar-contract", now),
+		item("wsj-markets", "k2",
+			"SEC fines First Solar over disclosure failures",
+			"The SEC issued an order imposing a penalty on First Solar over disclosure failures.",
+			"https://www.wsj.com/articles/first-solar-sec-penalty", now.Add(time.Hour)),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -250,9 +286,9 @@ func TestPipelineKeepsUnrelatedEventsApart(t *testing.T) {
 func TestPipelineIsIdempotent(t *testing.T) {
 	db, p, ctx, now := pipelineFixtures(t)
 
-	raw := item("nse-announcements", "i1", "Wipro Limited",
-		"Wipro Limited has informed the Exchange regarding a credit rating action |SUBJECT: Credit Rating",
-		"https://nsearchives.nseindia.com/corporate/WIPRO_25082026120000_c.pdf", now)
+	raw := item("sec-press", "i1", "Accenture plc",
+		"Accenture plc has informed the Exchange regarding a credit rating action |SUBJECT: Credit Rating",
+		"https://www.sec.gov/Archives/edgar/data/WIPRO_25082026120000_c.pdf", now)
 
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{raw}); err != nil {
 		t.Fatal(err)
@@ -281,12 +317,14 @@ func TestListEventsFilters(t *testing.T) {
 	db, p, ctx, now := pipelineFixtures(t)
 
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{
-		item("nse-announcements", "f1", "Infosys Limited",
-			"Infosys Limited has informed the Exchange regarding an order win |SUBJECT: Bagging/Receiving of orders/contracts",
-			"https://nsearchives.nseindia.com/corporate/INFY_25082026120000_a.pdf", now),
-		item("nse-announcements", "f2", "Wipro Limited",
-			"Wipro Limited has informed the Exchange regarding a newspaper publication |SUBJECT: Copy of Newspaper Publication",
-			"https://nsearchives.nseindia.com/corporate/WIPRO_25082026120100_b.pdf", now),
+		item("globenewswire-public", "f1",
+			"Microsoft wins a contract to supply a federal cloud programme",
+			"Microsoft Corporation said it had won a contract to supply cloud services to a federal programme.",
+			"https://www.globenewswire.com/news-release/msft-contract", now),
+		item("globenewswire-public", "f2",
+			"Accenture publishes a newspaper notice of its annual meeting",
+			"Accenture plc published a newspaper notice of its annual general meeting.",
+			"https://www.globenewswire.com/news-release/acn-notice", now),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +332,7 @@ func TestListEventsFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bySymbol, _ := db.ListEvents(ctx, EventFilter{Symbol: "INFY.NSE"})
+	bySymbol, _ := db.ListEvents(ctx, EventFilter{Symbol: "MSFT"})
 	if len(bySymbol) != 1 {
 		t.Errorf("symbol filter returned %d, want 1", len(bySymbol))
 	}
@@ -328,9 +366,9 @@ func TestClusteringSurvivesABacklog(t *testing.T) {
 
 	// The filing, as XBRL: no symbol in the path.
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{
-		item("nse-announcements", "x1", "Suzlon Energy Limited",
-			"Suzlon Energy Limited has informed the Exchange about Bagging/Receiving of orders/contracts (Sub-para 4-Para B) |SUBJECT: Bagging/Receiving of orders/contracts",
-			"https://nsearchives.nseindia.com/corporate/xbrl/REG30_PARA_B_2328_WebXMLFile.xml", now),
+		item("sec-press", "x1", "First Solar Inc",
+			"First Solar Inc has informed the Exchange about Bagging/Receiving of orders/contracts (Sub-para 4-Para B) |SUBJECT: Bagging/Receiving of orders/contracts",
+			"https://www.sec.gov/Archives/edgar/data/xbrl/REG30_PARA_B_2328_WebXMLFile.xml", now),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +380,7 @@ func TestClusteringSurvivesABacklog(t *testing.T) {
 	// is what a backfill looks like.
 	var noise []news.RawItem
 	for i := 0; i < 300; i++ {
-		noise = append(noise, item("et-markets", "noise"+strconv.Itoa(i),
+		noise = append(noise, item("wsj-markets", "noise"+strconv.Itoa(i),
 			"Global markets update number "+strconv.Itoa(i), "",
 			"https://economictimes.indiatimes.com/n"+strconv.Itoa(i), now))
 	}
@@ -355,9 +393,9 @@ func TestClusteringSurvivesABacklog(t *testing.T) {
 
 	// The same filing arrives as a PDF. It must still find its twin.
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{
-		item("nse-announcements", "x2", "Suzlon Energy Limited",
-			"Suzlon Energy Limited has informed the Exchange about Bagging/Receiving of orders/contracts |SUBJECT: Bagging/Receiving of orders/contracts",
-			"https://nsearchives.nseindia.com/corporate/SUZLON1_25082026093153_S.pdf", now.Add(time.Minute)),
+		item("sec-press", "x2", "First Solar Inc",
+			"First Solar Inc has informed the Exchange about Bagging/Receiving of orders/contracts |SUBJECT: Bagging/Receiving of orders/contracts",
+			"https://www.sec.gov/Archives/edgar/data/SUZLON1_25082026093153_S.pdf", now.Add(time.Minute)),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +407,7 @@ func TestClusteringSurvivesABacklog(t *testing.T) {
 		t.Errorf("merged = %d, want the duplicate filing attached to the existing event", res.Merged)
 	}
 
-	suzlon, err := db.ListEvents(ctx, EventFilter{Symbol: "SUZLON.NSE"})
+	suzlon, err := db.ListEvents(ctx, EventFilter{Symbol: "FSLR"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,13 +425,13 @@ func TestFilingHeadlineDropsBoilerplate(t *testing.T) {
 	db, p, ctx, now := pipelineFixtures(t)
 
 	for i, phrasing := range []string{
-		"Infosys Limited has informed the Exchange about a credit rating action |SUBJECT: Credit Rating",
-		"Infosys Limited has informed the Exchange that a credit rating action occurred |SUBJECT: Credit Rating",
-		"Infosys Limited has informed the Exchange regarding a credit rating action |SUBJECT: Credit Rating",
+		"Microsoft Corporation has informed the Exchange about a credit rating action |SUBJECT: Credit Rating",
+		"Microsoft Corporation has informed the Exchange that a credit rating action occurred |SUBJECT: Credit Rating",
+		"Microsoft Corporation has informed the Exchange regarding a credit rating action |SUBJECT: Credit Rating",
 	} {
 		if _, err := db.SaveRawItems(ctx, []news.RawItem{
-			item("nse-announcements", "b"+strconv.Itoa(i), "Infosys Limited", phrasing,
-				"https://nsearchives.nseindia.com/corporate/INFY_2508202612000"+strconv.Itoa(i)+"_c.pdf",
+			item("sec-press", "b"+strconv.Itoa(i), "Microsoft Corporation", phrasing,
+				"https://www.sec.gov/Archives/edgar/data/INFY_2508202612000"+strconv.Itoa(i)+"_c.pdf",
 				now.Add(time.Duration(i)*3*time.Hour)),
 		}); err != nil {
 			t.Fatal(err)
@@ -402,7 +440,7 @@ func TestFilingHeadlineDropsBoilerplate(t *testing.T) {
 	if _, err := p.ProcessBatch(ctx, 100); err != nil {
 		t.Fatal(err)
 	}
-	list, _ := db.ListEvents(ctx, EventFilter{Symbol: "INFY.NSE"})
+	list, _ := db.ListEvents(ctx, EventFilter{Symbol: "MSFT"})
 	if len(list) == 0 {
 		t.Fatal("expected events")
 	}
@@ -419,13 +457,18 @@ func TestFilingHeadlineDropsBoilerplate(t *testing.T) {
 func TestSurveillanceHeadlineIsCondensed(t *testing.T) {
 	db, p, ctx, now := pipelineFixtures(t)
 
-	const boilerplate = "Significant movement in price has been observed in Shanthi Gears Limited. " +
-		"The Exchange, in order to ensure that investors have latest relevant information about the " +
-		"company and to inform the market place so that the interest of the investors is safeguarded, " +
-		"has written to the company. The response from the company is awaited. |SUBJECT: Price movement"
+	// A release whose substance is one clause followed by several sentences of
+	// legal boilerplate -- the ordinary shape of a US press release, and the
+	// reason a headline cannot just be the first 140 characters of the body.
+	const boilerplate = "Significant movement in the price of Timken Company shares has been observed. " +
+		"This release contains forward-looking statements which involve risks and uncertainties, and " +
+		"the interests of shareholders are safeguarded by the disclosures set out in the company's " +
+		"most recent annual report on file with the Commission. Readers are cautioned not to place " +
+		"undue reliance on them. The response from the company is awaited."
 
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{
-		item("nse-announcements", "s1", "Shanthi Gears Limited", boilerplate, "", now),
+		item("globenewswire-public", "s1",
+			"Timken Company: significant price movement", boilerplate, "", now),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -443,12 +486,12 @@ func TestSurveillanceHeadlineIsCondensed(t *testing.T) {
 	if strings.Contains(e.Headline, "safeguarded") {
 		t.Errorf("statutory boilerplate leaked into the headline: %q", e.Headline)
 	}
-	if !strings.Contains(e.Headline, "Shanthi Gears") {
+	if !strings.Contains(e.Headline, "Timken") {
 		t.Errorf("headline lost the company: %q", e.Headline)
 	}
-	if e.Type != string(events.TypePriceMovement) {
-		t.Errorf("type = %s, want PRICE_MOVEMENT", e.Type)
-	}
+	// No type assertion here any more. PRICE_MOVEMENT was only ever reachable
+	// through NSE's own subject vocabulary, which went with that parser; this
+	// test is about the condensing, which is what US releases need.
 	// The full text must survive in the summary; only the headline is cut.
 	if !strings.Contains(e.Summary, "safeguarded") {
 		t.Errorf("the full notice must remain in the summary, got %q", e.Summary)
@@ -460,11 +503,11 @@ func TestSurveillanceHeadlineIsCondensed(t *testing.T) {
 // discarded, because the processor resolved companies from the headline and
 // ignored the fact that the query itself named one.
 //
-// "Ambani weighs aluminium entry" is about Reliance. No text matching will say
-// so; the source knows because that is what it searched for.
+// "The oil major weighs a lithium entry" is about Exxon. No text matching will
+// say so; the source knows, because that is what it searched for.
 func TestWatchlistItemsAreAttributedToTheirCompany(t *testing.T) {
 	db := newTestDB(t)
-	master, err := company.LoadEmbedded()
+	master, err := company.LoadEmbeddedUSMaster()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +515,7 @@ func TestWatchlistItemsAreAttributedToTheirCompany(t *testing.T) {
 
 	// A registry containing one watchlist source, as the running system builds.
 	registry, err := news.NewRegistry(news.WatchlistSource(
-		marketdata.Symbol{Ticker: "RELIANCE", Exchange: marketdata.ExchangeNSE}, "Reliance Industries Limited"))
+		marketdata.Symbol{Ticker: "XOM", Exchange: marketdata.ExchangeUS}, "Exxon Mobil Corporation"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,8 +524,8 @@ func TestWatchlistItemsAreAttributedToTheirCompany(t *testing.T) {
 
 	ctx := context.Background()
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{
-		item("watch-reliance.nse", "w1",
-			"Ambani weighs aluminium entry, setting up potential clash", "",
+		item("watch-xom", "w1",
+			"The oil major weighs a lithium entry, setting up a potential clash", "",
 			"https://news.google.com/rss/articles/abc", now),
 	}); err != nil {
 		t.Fatal(err)
@@ -497,7 +540,7 @@ func TestWatchlistItemsAreAttributedToTheirCompany(t *testing.T) {
 			res.Created, res.Filtered)
 	}
 
-	list, err := db.ListEvents(ctx, storage.EventFilter{Symbol: "RELIANCE.NSE"})
+	list, err := db.ListEvents(ctx, storage.EventFilter{Symbol: "XOM"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,7 +548,7 @@ func TestWatchlistItemsAreAttributedToTheirCompany(t *testing.T) {
 		t.Fatalf("found %d events for RELIANCE.NSE, want 1", len(list))
 	}
 	ents := list[0].Entities
-	if len(ents) == 0 || ents[0].Symbol != "RELIANCE.NSE" {
+	if len(ents) == 0 || ents[0].Symbol != "XOM" {
 		t.Fatalf("entities = %+v, want RELIANCE.NSE attributed from the query", ents)
 	}
 	if ents[0].Relationship != news.RelPrimary {

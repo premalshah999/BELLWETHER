@@ -1,10 +1,13 @@
 package company
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func usMaster(t *testing.T) *Master {
 	t.Helper()
-	m, err := LoadEmbeddedWithUS()
+	m, err := LoadEmbeddedUSMaster()
 	if err != nil {
 		t.Fatalf("load master with US: %v", err)
 	}
@@ -64,24 +67,82 @@ func TestUSMatchesAreNotSuffixedNSE(t *testing.T) {
 	t.Fatal("AAPL did not resolve at all")
 }
 
-// TestNSEResolutionUnchanged is the back-compat half: merging ten thousand
-// US registrants must not cost a single NSE match that worked before.
-func TestNSEResolutionUnchanged(t *testing.T) {
+// The resolver no longer holds NSE listings, and this is what that costs.
+//
+// A one-word US legal name matches a headline about a foreign company that
+// merely starts with the same word. Measured against the retained NSE listing
+// file, 27 one-word US names are the first word of an Indian company name, and
+// 11 of those produce a confident match on a genuinely unrelated company --
+// the rest are either caught by the common-word lexicon or are Indian
+// subsidiaries of the US parent, where naming the parent is defensible.
+//
+// This is pinned rather than fixed, deliberately. Every structural guard tried
+// was worse than the disease:
+//
+//   - Dropping a one-word match followed by another capitalised word loses
+//     "Apple Vision Pro" and "Tesla Model Y", which are common; these
+//     headlines are not, now that no Indian source is polled.
+//   - Keying on a foreign legal form does not work either: 11.9% of the US
+//     registrants in SEC's own exchange file carry "Limited" or "Ltd",
+//     because that file includes foreign ADRs -- Alibaba, BHP, Chubb, and
+//     HDB and IBN, which are the Indian bank ADRs.
+//   - Blocklisting the phrases would lose the real company: "visa", "hp" and
+//     "reliance" are the registered names of Visa, HP and Reliance Inc.
+//
+// If this is ever worth fixing, the fix is a curated parent/subsidiary table,
+// not a heuristic. Until then it is a known, bounded, measured limitation, and
+// this test fails loudly if the shape of it changes.
+func TestForeignNameCollisionIsAKnownLimitation(t *testing.T) {
 	m := usMaster(t)
-	matches := m.ResolveAboveForVenue("Reliance Industries Limited announced a demerger", 0.9, VenueNSE)
-	for _, mt := range matches {
-		if mt.CanonicalSymbol() == "RELIANCE.NSE" {
-			if mt.Venue != VenueNSE {
-				t.Errorf("Venue = %q, want %q", mt.Venue, VenueNSE)
-			}
-			return
+
+	for _, tc := range []struct {
+		text, wrongly string
+	}{
+		{"Reliance Industries Limited announced a demerger", "RS"},
+		{"VISA Chrome Limited reports a loss", "V"},
+		{"HP Adhesives Limited lists on the NSE", "HPQ"},
+	} {
+		var got []string
+		for _, mt := range m.ResolveAbove(tc.text, 0.9) {
+			got = append(got, mt.CanonicalSymbol())
+		}
+		if !slices.Contains(got, tc.wrongly) {
+			t.Errorf("%q no longer resolves to %s (got %v).\n"+
+				"If that was deliberate, good -- update this test and say what fixed it.",
+				tc.text, tc.wrongly, got)
 		}
 	}
-	var got []string
-	for _, mt := range matches {
-		got = append(got, mt.CanonicalSymbol())
+
+	// The other half of the measurement: generic one-word names are already
+	// held out by the common-word lexicon, and must stay that way.
+	for _, text := range []string{
+		"Eastern Silk Industries Limited restructures",
+		"Popular Vehicles and Services Limited files for an IPO",
+		"Team India Guaranty Limited appoints a CEO",
+	} {
+		if got := m.ResolveAbove(text, 0.9); len(got) != 0 {
+			t.Errorf("%q resolved to %v; the common-word lexicon should hold these out", text, got)
+		}
 	}
-	t.Errorf("RELIANCE.NSE not resolved; got %v", got)
+}
+
+// A real US company still resolves from an ordinary headline -- the control
+// for the test above, and the reason none of those guards were added.
+func TestOrdinaryUSHeadlinesStillResolve(t *testing.T) {
+	m := usMaster(t)
+	for text, want := range map[string]string{
+		"Visa reported record quarterly earnings": "V",
+		"Apple unveils the Vision Pro headset":    "AAPL",
+		"Nvidia lifts its data centre guidance":   "NVDA",
+	} {
+		var got []string
+		for _, mt := range m.ResolveAbove(text, 0.9) {
+			got = append(got, mt.CanonicalSymbol())
+		}
+		if !slices.Contains(got, want) {
+			t.Errorf("%q -> %v, want %s among them", text, got, want)
+		}
+	}
 }
 
 // TestCrossVenueTickerNeedsAPreference covers the genuinely ambiguous case

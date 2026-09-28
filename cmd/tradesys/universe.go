@@ -6,30 +6,27 @@ import (
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
-// scanUniverse is the combined NSE + US scan universe: every symbol the
-// scanner and the fundamentals runner cover, and what index_constituents
-// records as current membership.
+// scanUniverse is the US scan universe: every symbol the scanner and the
+// fundamentals runner cover, and what index_constituents records as current
+// membership.
+//
+// It was NSE + US. The NSE half is gone: this is a US equities product, and a
+// second venue in the universe was not free -- it decided what reached the
+// default market feed (which admits an event only when one of its companies is
+// a constituent), what the screens ran over, and which companies a peer group
+// could be drawn from. Carrying 750 Indian names through all of that to serve
+// a market the product no longer covers cost a third of every scan and made
+// the feed read as an Indian paper.
 type scanUniverse struct {
 	symbols  []marketdata.Symbol
 	listings []postgres.ConstituentListing
 }
 
-// buildScanUniverse combines the NSE scan subset (industry.csv, via the
-// embedded master) with the US scan subset (the S&P 500, via us_listings.csv)
-// into one venue-tagged universe. Both are the same kind of thing -- a
-// liquid, recognizable subset of a much larger listed universe -- built the
-// same way for the same reason.
-func buildScanUniverse(nse *company.Master, usListings []company.USListing) scanUniverse {
-	nseIndustry := nse.IndexConstituents() // symbol -> industry, NSE scan subset
-
+// buildScanUniverse turns the embedded S&P 1500 listing set into one
+// venue-tagged universe -- a liquid, recognizable subset of a much larger
+// listed universe, which is what a scan universe is for.
+func buildScanUniverse(usListings []company.USListing) scanUniverse {
 	var u scanUniverse
-	for symbol, industry := range nseIndustry {
-		sym := marketdata.Symbol{Ticker: symbol, Exchange: marketdata.ExchangeNSE}
-		u.symbols = append(u.symbols, sym)
-		u.listings = append(u.listings, postgres.ConstituentListing{
-			Symbol: sym.String(), Industry: industry, Venue: "NSE", Taxonomy: "nse-industry",
-		})
-	}
 	for _, l := range usListings {
 		sym := marketdata.Symbol{Ticker: l.Symbol, Exchange: marketdata.ExchangeUS}
 		u.symbols = append(u.symbols, sym)
@@ -48,8 +45,8 @@ func (u *scanUniverse) Symbols() []marketdata.Symbol { return u.symbols }
 
 // buildUSCIKIndex builds the CIK -> ticker map SEC filing entity resolution
 // needs, from the full SEC ticker reference (not just the scan universe --
-// a filer worth attributing a filing to is not necessarily one of the 504
-// S&P 500 names).
+// a filer worth attributing a filing to is not necessarily one of the
+// 1,504 S&P 1500 names).
 func buildUSCIKIndex(usTickers []company.USTicker) map[string]string {
 	byCIK := make(map[string]string, len(usTickers))
 	for _, t := range usTickers {

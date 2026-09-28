@@ -155,6 +155,27 @@ type Master struct {
 }
 
 // Load reads a master from an NSE EQUITY_L.csv document.
+// newMaster allocates an empty master. Sized for the US universe, which is
+// the larger of the two by an order of magnitude.
+func newMaster() *Master {
+	return &Master{
+		bySymbol:    make(map[string]Company, 14000),
+		byPhrase:    make(map[string][]string, 16000),
+		aliasPhrase: make(map[string]bool, len(brandAliases)),
+		leadPhrase:  make(map[string]bool, 2048),
+		solePhrase:  make(map[string]bool, 16000),
+	}
+}
+
+// Load reads the NSE listed universe from a CSV.
+//
+// RETAINED FOR MIGRATION 0019 ONLY. Nothing at runtime resolves companies
+// through this any more -- LoadEmbeddedUSMaster is that path. It survives, with
+// data/equity_l.csv and data/industry.csv, because migration 0019 needs the NSE
+// master to venue-qualify historical rows, and the code behind a shipped
+// migration cannot be deleted: a database created tomorrow still has to run it,
+// and the migration runner hard-fails when a name in go_migrations.manifest is
+// not registered. Deleting any of this breaks a fresh deploy, not an old one.
 func Load(r io.Reader) (*Master, error) {
 	cr := csv.NewReader(bufio.NewReader(r))
 	cr.FieldsPerRecord = -1
@@ -175,13 +196,7 @@ func Load(r io.Reader) (*Master, error) {
 	}
 	isinIdx, seriesIdx := col["ISIN NUMBER"], col["SERIES"]
 
-	m := &Master{
-		bySymbol:    make(map[string]Company, 2600),
-		byPhrase:    make(map[string][]string, 3000),
-		aliasPhrase: make(map[string]bool, len(brandAliases)),
-		leadPhrase:  make(map[string]bool, 512),
-		solePhrase:  make(map[string]bool, 3000),
-	}
+	m := newMaster()
 	get := func(rec []string, i int) string {
 		if i >= 0 && i < len(rec) {
 			return strings.TrimSpace(rec[i])

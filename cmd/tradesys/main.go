@@ -209,7 +209,7 @@ func runReprocess() error {
 	// resolver has to be able to name a US company from free text, or every
 	// US publisher's item arrives entity-free and the relevance gate
 	// discards it (see company.MergeUS for the measured damage that did).
-	master, err := company.LoadEmbeddedWithUS()
+	master, err := company.LoadEmbeddedUSMaster()
 	if err != nil {
 		return fmt.Errorf("load company master: %w", err)
 	}
@@ -335,7 +335,7 @@ func run() error {
 	// and rebuilding it costs one polling cycle.
 	attention := news.NewTracker(time.Now)
 
-	companyMaster, err := company.LoadEmbeddedWithUS()
+	companyMaster, err := company.LoadEmbeddedUSMaster()
 	if err != nil {
 		return fmt.Errorf("load company master: %w", err)
 	}
@@ -343,9 +343,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load us company master: %w", err)
 	}
-	universe := buildScanUniverse(companyMaster, usListings)
+	universe := buildScanUniverse(usListings)
 	usByCIK := buildUSCIKIndex(usTickers)
-	log.Info("scan universe ready", "nse", len(companyMaster.IndexConstituents()), "us", len(usListings))
+	log.Info("scan universe ready", "us", len(usListings))
 
 	// The market scanner: the half of the intelligence layer that does not
 	// wait to be told.

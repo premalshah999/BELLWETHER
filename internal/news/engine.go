@@ -561,7 +561,7 @@ func (e *Engine) acquireHost(ctx context.Context, rawURL string) (func(), error)
 // moment the parser reached them.
 func (e *Engine) parse(src Source, body []byte, discoveredAt time.Time) ([]RawItem, error) {
 	switch src.Method {
-	case MethodRSS, MethodGoogleNews, MethodNSEAnnounce, MethodSECFiling:
+	case MethodRSS, MethodGoogleNews, MethodSECFiling:
 		return e.parseFeedItems(src, body, discoveredAt)
 	case MethodGDELT:
 		return e.parseGDELT(src, body, discoveredAt)
@@ -577,12 +577,11 @@ func (e *Engine) parseFeedItems(src Source, body []byte, discoveredAt time.Time)
 	if err != nil {
 		return nil, err
 	}
-	// NSE stamps its filings in IST without saying so; everyone else either
-	// carries an explicit zone or is close enough to UTC not to matter.
+	// Every feed now either carries an explicit zone or is close enough to
+	// UTC not to matter. The one that did not was NSE, which stamped its
+	// filings in IST without saying so; that special case went with the
+	// exchange.
 	loc := time.UTC
-	if src.Method == MethodNSEAnnounce {
-		loc = e.istLocation
-	}
 
 	trust := src.TimestampTrust()
 	out := make([]RawItem, 0, len(parsed))

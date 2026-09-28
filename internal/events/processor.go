@@ -446,22 +446,6 @@ func (p *Processor) interpret(src news.Source, item news.RawItem) (typ Type, hea
 		}
 		return f.Type, headline, headline, facts, f.FiledDate
 	}
-	if src.Method == news.MethodNSEAnnounce {
-		f := ParseFiling(src.ID, item.Title, item.Description, item.URL, p.loc)
-		headline = buildFilingHeadline(f)
-		facts = map[string]string{}
-		for k, v := range f.Facts {
-			facts[k] = v
-		}
-		if f.Symbol != "" {
-			facts["NSE_SYMBOL_PATH"] = f.Symbol
-		}
-		if f.Subject != "" {
-			facts["NSE_SUBJECT"] = f.Subject
-		}
-		return f.Type, headline, f.Summary, facts, f.OccurredAt
-	}
-
 	if src.Method == news.MethodFederalRegister {
 		pf := parsePipeFacts(item.Description)
 		facts = map[string]string{}
@@ -499,34 +483,6 @@ func (p *Processor) interpret(src news.Source, item news.RawItem) (typ Type, hea
 	}
 	facts = map[string]string{"FAST_RULE_MATCH": fast.Matched}
 	return fast.Type, item.Title, item.Description, facts, time.Time{}
-}
-
-// buildFilingHeadline composes a readable headline from a filing.
-//
-// NSE's title field is the company's legal name and its description is the
-// substance, so neither alone reads as a headline. Joined and condensed, they
-// do.
-func buildFilingHeadline(f Filing) string {
-	company := strings.TrimSpace(f.Company)
-	summary := condenseHeadline(f.Summary)
-	switch {
-	case company == "" && summary == "":
-		return "Exchange filing"
-	case company == "":
-		return summary
-	case summary == "":
-		return company
-	}
-	// Filings frequently name the company inside the description, and the
-	// exchange's surveillance notices name it in the middle of the sentence
-	// rather than at the start ("Significant movement in price has been
-	// observed in X"). Prefixing the company again produces "X: … observed in
-	// X", so the prefix is added only when the sentence does not already
-	// carry the name.
-	if strings.Contains(strings.ToLower(summary), strings.ToLower(company)) {
-		return summary
-	}
-	return company + ": " + summary
 }
 
 // maxHeadlineChars is where a headline stops being a headline.
