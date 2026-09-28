@@ -3,24 +3,43 @@ package events
 import "testing"
 
 func TestClassifyHeadline(t *testing.T) {
+	// One case per event type the keyword pass can actually produce, with US
+	// fixtures. These were Indian ("L&T bags Rs 4,200 crore metro contract",
+	// "SEBI bars Karvy", "RBI holds repo rate") which no longer describes
+	// anything this product reads, and covered 13 of the 29 reachable types.
 	cases := []struct {
 		name     string
 		headline string
 		want     Type
 	}{
-		{"order win", "L&T bags Rs 4,200 crore metro contract", TypeOrderWin},
-		{"resignation", "Infosys CFO resigns with immediate effect", TypeManagementChange},
-		{"regulatory", "SEBI bars Karvy from securities market", TypeRegulatoryAction},
-		{"insolvency", "NCLT admits Company X for insolvency proceedings", TypeInsolvency},
-		{"auditor", "Deloitte resigns as auditor of Company Y", TypeAuditorChange},
-		{"results", "TCS Q1 results: net profit rises 12%", TypeEarnings},
-		{"acquisition", "Reliance acquires majority stake in retail chain", TypeAcquisition},
-		{"credit", "ICRA downgrades Company Z long-term rating", TypeCreditRating},
-		{"macro", "RBI holds repo rate at 6.5%", TypeMacroEvent},
-		{"commodity", "Brent crude rises 4% after OPEC decision", TypeCommodityEvent},
-		{"geopolitics", "US announces fresh tariff on steel imports", TypeGeopoliticalEvent},
-		{"buyback", "Wipro board approves share buyback", TypeBuyback},
-		{"pledge", "Promoter pledge rises to 42% in Company A", TypePledge},
+		{"order win", "Caterpillar bags a $4.2 billion mining equipment contract", TypeOrderWin},
+		{"contract", "Lockheed Martin signs a definitive agreement with the Air Force", TypeContract},
+		{"order cancelled", "Boeing says an airline cancelled an order for 30 aircraft", TypeOrderCancelled},
+		{"resignation", "Intel CFO resigns with immediate effect", TypeManagementChange},
+		{"regulatory action", "The SEC bars a broker-dealer from the securities market", TypeRegulatoryAction},
+		{"regulatory policy", "The Federal Reserve proposes a new capital rule for large banks", TypeRegulatoryPolicy},
+		{"insolvency", "Rite Aid files for Chapter 11 bankruptcy protection", TypeInsolvency},
+		{"auditor", "Deloitte resigns as auditor of a mid-cap industrial", TypeAuditorChange},
+		{"earnings", "Nvidia Q3 results: net profit rises 12%", TypeEarnings},
+		{"guidance", "3M cuts its full-year earnings guidance", TypeGuidance},
+		{"acquisition", "Exxon acquires a majority stake in a shale producer", TypeAcquisition},
+		{"merger", "Two regional banks agree to an all-stock merger of equals", TypeMerger},
+		{"demerger", "Honeywell announces a spin-off of its aerospace division", TypeDemerger},
+		{"stake sale", "SoftBank sells its remaining stake in a payments firm", TypeStakeSale},
+		{"credit rating", "Moody's downgrades the long-term rating of a US utility", TypeCreditRating},
+		{"macro", "The Federal Reserve holds the federal funds rate at 4.5%", TypeMacroEvent},
+		{"commodity", "Brent crude rises 4% after the OPEC decision", TypeCommodityEvent},
+		{"geopolitics", "The US announces a fresh tariff on steel imports", TypeGeopoliticalEvent},
+		{"buyback", "Apple's board approves a $110 billion share buyback", TypeBuyback},
+		{"dividend", "Chevron declares a quarterly dividend of $1.71 per share", TypeDividend},
+		{"bonus", "The board approves a bonus issue of one share for every two held", TypeBonus},
+		{"fund raise", "Rivian raises $1.5 billion in a convertible note offering", TypeFundRaise},
+		{"debt", "Ford prices a $2 billion senior unsecured notes offering", TypeDebt},
+		{"capex", "Micron will invest $15 billion in a new fabrication plant", TypeCapex},
+		{"new product", "Apple unveils a new product line at its September event", TypeNewProduct},
+		{"litigation", "A jury orders Johnson & Johnson to pay damages in a product lawsuit", TypeLitigation},
+		{"tax", "The IRS assesses a tax demand against a Fortune 500 filer", TypeTaxAction},
+		{"pledge", "An insider pledged shares against a personal loan", TypePledge},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -87,7 +106,7 @@ func TestUrgent(t *testing.T) {
 	urgent := []string{
 		"BREAKING: Company X CFO resigns",
 		"Trading halted in Company Y shares",
-		"SEBI bars promoter from the market",
+		"SEC charges an executive over disclosure failures",
 		"Company Z defaults on bond payment",
 	}
 	routine := []string{
@@ -110,7 +129,7 @@ func TestUrgent(t *testing.T) {
 // TestTroublePrecedesCommerce pins the ordering: a story that is both is
 // primarily the regulatory one.
 func TestTroublePrecedesCommerce(t *testing.T) {
-	got, matched := ClassifyHeadline("Company wins order after SEBI bars rival bidder", "")
+	got, matched := ClassifyHeadline("Company wins order after the SEC bars a rival bidder", "")
 	if !matched {
 		t.Fatal("expected a match")
 	}
