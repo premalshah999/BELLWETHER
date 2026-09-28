@@ -877,7 +877,9 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 	// unrelated to SEC and so not gated on SEC_USER_AGENT.
 	scrapers = append(scrapers, &research.FederalRegisterScraper{Client: client})
 
-	for _, src := range news.AdditionalOfficialSources() {
+	officialFeeds := append(news.AdditionalOfficialSources(),
+		news.ContactGatedOfficialSources(cfg.SECUserAgent)...)
+	for _, src := range officialFeeds {
 		scrapers = append(scrapers, &research.FeedScraper{Source: src, Client: client})
 	}
 
@@ -1096,8 +1098,14 @@ func buildRegistry(secUserAgent string) (*news.Registry, error) {
 	sources := news.DefaultSources()
 	if secUserAgent != "" {
 		sources = append(sources, news.SECSources(secUserAgent)...)
+		// The same declared contact unlocks the official feeds that demand
+		// one but have nothing to do with SEC -- BLS, whose CPI and payroll
+		// releases 403 without it. DefaultSources registers only the keyless
+		// ones, so these are additive rather than duplicated.
+		sources = append(sources, news.ContactGatedOfficialSources(secUserAgent)...)
 	} else {
-		slog.Warn("SEC_USER_AGENT is not set; the SEC filings tape (8-K/Form 4/13F) is disabled")
+		slog.Warn("SEC_USER_AGENT is not set; the SEC filings tape (8-K/Form 4/13F) " +
+			"and the BLS release feed are disabled")
 	}
 	return news.NewRegistry(sources...)
 }
