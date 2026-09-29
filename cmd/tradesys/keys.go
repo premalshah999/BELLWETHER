@@ -26,7 +26,7 @@ func runIssueKey(ctx context.Context, databaseURL, name, roleName, note string) 
 		return fmt.Errorf("unknown role %q: use owner, operator or viewer", roleName)
 	}
 	if name == "" {
-		return fmt.Errorf("a key needs a name: -name \"Premal\"")
+		return fmt.Errorf("a key needs a name: -name \"alice\"")
 	}
 
 	migrationOpt, err := venueMigrationOption()

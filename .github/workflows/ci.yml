@@ -31,6 +31,8 @@ jobs:
       - run: npm --prefix web ci
       # Build before Go checks: the Go binary embeds this output.
       - run: npm --prefix web run build
+      - name: gofmt
+        run: test -z "$(gofmt -l ./cmd ./internal)" || { gofmt -l ./cmd ./internal; exit 1; }
       - run: go vet ./...
       - run: go test -race ./...
       - run: go build ./cmd/tradesys

@@ -21,17 +21,21 @@ company_tickers_exchange.json: the filer's declared identity beats a
 third-party transcription of it, and the CIK is the join key for every SEC
 filing the app ingests.
 
-Usage:  python3 scripts/build_us_listings.py [--dry-run]
+Usage:  SEC_USER_AGENT="App/1.0 (you@example.com)" \
+        python3 scripts/build_us_listings.py [--dry-run]
 """
 
 import argparse
 import csv
+import os
 import pathlib
 import sys
 
 import pandas as pd
 
-UA = "TradeSys/1.0 (you@example.com)"
+# Wikipedia, like SEC, asks automated clients to name a contact. Same
+# variable the app uses: "AppName/1.0 (you@example.com)".
+UA = os.environ.get("SEC_USER_AGENT", "").strip()
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = ROOT / "internal" / "news" / "company" / "data"
 TICKERS = DATA / "us_tickers.csv"
@@ -75,6 +79,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="report, write nothing")
     args = ap.parse_args()
+    if not UA:
+        sys.exit("set SEC_USER_AGENT, e.g. \"Bellwether/1.0 (you@example.com)\"")
 
     if not TICKERS.exists():
         print(f"missing {TICKERS}", file=sys.stderr)

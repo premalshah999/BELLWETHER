@@ -154,7 +154,7 @@ services:
       UWSGI_THREADS: "4"
 
     volumes:
-      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./deploy/searxng/settings.yml:/etc/searxng/settings.yml:ro
 
     # No ports. Reachable only from the application over the compose network,
     # which is the correct posture for something that exists to make outbound
@@ -300,7 +300,11 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Public HTTPS entry point. Off by default, so a local install needs no
+  # domain: `docker compose up` serves the app on http://localhost:8080 only.
+  # To publish it, set PUBLIC_HOSTNAME and COMPOSE_PROFILES=public in .env.
   caddy:
+    profiles: ["public"]
     image: caddy:2-alpine
     container_name: tradesys-caddy
     restart: unless-stopped
@@ -320,10 +324,10 @@ services:
       - "443:443"
 
     environment:
-      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME in .env}
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:-}
 
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       # Certificates and ACME account keys. Losing this volume means
       # re-issuing, which Let's Encrypt rate-limits, so keep it.
       - caddy-data:/data

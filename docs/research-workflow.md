@@ -1,9 +1,10 @@
-# Bellwether: research and operations changes
+# Research workflow
 
-This branch improves the existing shared trading workspace. It does not turn
-the shared database model into an isolated, multi-tenant SaaS.
+How the research engine retrieves, ranks, reads and cites sources, and the
+limits it runs within. It is a shared workspace for a small team, not an
+isolated multi-tenant service.
 
-## Delivered
+## How it works
 
 - Research offers **Evidence only** (the UI default, no AI calls) and an
   optional **AI brief**. Both retrieve sources and market measurements.
