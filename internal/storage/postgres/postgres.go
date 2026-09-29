@@ -86,7 +86,16 @@ func Open(ctx context.Context, dsn string, opts ...Option) (*DB, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, errors.New("postgres: empty DATABASE_URL")
 	}
-	handle, err := sql.Open("pgx", dsn)
+
+	// Adjust the DSN for the managed service behind it before connecting --
+	// TLS, and the exec mode a transaction pooler needs. See prepareDSN for
+	// why each of those is not safe to leave to the default.
+	prepared, notes, err := prepareDSN(dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	handle, err := sql.Open("pgx", prepared)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: open: %w", err)
 	}
@@ -98,6 +107,11 @@ func Open(ctx context.Context, dsn string, opts ...Option) (*DB, error) {
 	d := &DB{db: handle, log: slog.Default()}
 	for _, opt := range opts {
 		opt(d)
+	}
+	if len(notes) > 0 {
+		d.log.Info("database connection adjusted for its provider",
+			"target", redactDSN(prepared), "provider", providerOf(hostOf(prepared)),
+			"applied", strings.Join(notes, ", "))
 	}
 
 	// The database container may still be starting. Compose waits on its

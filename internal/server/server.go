@@ -22,6 +22,7 @@ import (
 	"github.com/tradesys/dashboard/internal/research"
 	"github.com/tradesys/dashboard/internal/scanner"
 	"github.com/tradesys/dashboard/internal/storage"
+	"github.com/tradesys/dashboard/internal/storage/postgres"
 	"github.com/tradesys/dashboard/internal/stream"
 )
 
@@ -91,6 +92,14 @@ type Deps struct {
 	// AI is the feature layer. Nil when no LLM is configured, and every
 	// handler must cope with that rather than assuming it exists.
 	AI *ai.Service
+	// NewsArchive is the second Postgres holding aged news, when one is
+	// configured. Nil means the single-database deployment, where the primary
+	// holds everything and no read ever fans out.
+	//
+	// Consulted only by the events feed, and only when the window a caller
+	// asks for reaches past the hot cutoff. See internal/storage/postgres's
+	// Archive for why the split is by time rather than by table.
+	NewsArchive *postgres.Archive
 	// NewsPoller backs the manual "collect news now" action.
 	NewsPoller *news.Poller
 	// Ingest is the multi-source fetch engine. Read here only to report

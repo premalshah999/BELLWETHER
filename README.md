@@ -447,6 +447,42 @@ rails stack beneath the main pane.
   `ALLOW_UNAUTHENTICATED=true` explicitly enables open local development.
 - **`-sync-congress`** runs the daily congressional-filings fetch on demand
   (backfill or resync), reusing the exact path the cron job calls.
+- **News storage can span two Postgres servers.** The news graph — events,
+  their evidence, the companies they name and the raw items behind all of it —
+  is one joined structure, and Postgres cannot join across servers, so it
+  cannot be divided by table. It is divided by time instead, which is the one
+  cut that leaves each piece whole: an event and everything hanging off it
+  always live on the same server, both servers carry the identical schema, and
+  a read spanning the cutoff is two identical queries merged rather than a
+  distributed join.
+
+  ```
+  DATABASE_URL              the primary: recent news, and everything else
+  NEWS_ARCHIVE_DATABASE_URL the archive: aged news only (optional)
+  NEWS_HOT_WINDOW           how long news stays on the primary (default 720h)
+  ```
+
+  Both Neon and Supabase are ordinary Postgres and work as either target. Two
+  adjustments are applied automatically, because both are silent failures
+  otherwise: `sslmode=require` (libpq's default is `prefer`, which falls back
+  to plaintext without complaining), and `default_query_exec_mode=exec` on a
+  transaction-mode pooler (`-pooler` on Neon, port 6543 on Supabase), where
+  pgx's cached prepared statements otherwise fail intermittently under load
+  with "prepared statement does not exist". A value you set yourself is never
+  overridden.
+
+  Leaving `NEWS_ARCHIVE_DATABASE_URL` empty keeps everything on one database,
+  which is the deployment this app had before and still supports. An archive
+  that is unreachable degrades to the primary and logs it, rather than failing
+  the feed: the primary holds everything recent, which is what nearly every
+  read asks for.
+- **`-rollover-news`** moves aged news to the archive now rather than at
+  02:30. Worth running by hand the first time: an existing database has months
+  to move. Add **`-reclaim-space`** to return the freed space to the
+  filesystem — it takes an exclusive lock per table, so ingestion stalls and
+  the feed errors while it runs. Without it the rollover stops the primary
+  growing rather than shrinking it, because Postgres marks freed pages
+  reusable without returning them.
 - **`-refresh-calendar`** rebuilds the forward catalyst calendar for the
   whole universe on demand (about three minutes for 2,254 symbols), reusing
   the path the weekday-morning cron calls.

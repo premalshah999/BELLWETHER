@@ -36,6 +36,7 @@ func startAISchedules(
 	store *postgres.DB,
 	marketScanner *scanner.Runner,
 	fundamentalsRunner *fundamentals.Runner,
+	newsArchive *postgres.Archive,
 ) *cron.Cron {
 	c := cron.New(cron.WithLocation(cfg.DisplayTZ), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger), cron.Recover(cron.DefaultLogger)))
 
@@ -167,6 +168,30 @@ func startAISchedules(
 	// Retention, outside market hours. Events and the evidence behind them
 	// are kept indefinitely — they are the historical record everything later
 	// will be tested against. What is pruned is items that produced no event.
+	// Move aged news to the archive, in the quiet window between the US close
+	// and the next open.
+	//
+	// Given an hour rather than the shared fifteen minutes: the first run on an
+	// existing database has months of news to move, in batches, to a managed
+	// endpoint that is not on this machine. Subsequent runs move a day's worth
+	// and finish in seconds.
+	if newsArchive != nil {
+		addWithin("news rollover", "CRON_TZ=America/New_York 30 2 * * *", time.Hour,
+			func(runCtx context.Context) {
+				moved, err := newsArchive.Rollover(runCtx, time.Now())
+				if err != nil {
+					// Partial progress is kept: the rollover copies before it
+					// deletes and every insert is idempotent, so an
+					// interrupted run is finished by the next one.
+					log.Warn("news rollover incomplete", "moved", moved, "err", err)
+					return
+				}
+				if moved > 0 {
+					log.Info("news rolled over", "events", moved)
+				}
+			})
+	}
+
 	add("prune orphan items", "15 2 * * *", func(runCtx context.Context) {
 		cutoff := time.Now().AddDate(0, 0, -orphanRetentionDays)
 		n, err := store.PruneOrphanRawItems(runCtx, cutoff)
