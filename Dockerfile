@@ -53,7 +53,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # tradeoff worth an 8MB runtime dependency for), and a data directory. The
 # timezone database is compiled into the binary.
 # ---------------------------------------------------------------------------
-FROM alpine:3.21
+FROM alpine:3.24
 
 RUN apk add --no-cache ca-certificates poppler-utils \
     && adduser -D -u 10001 -h /data tradesys \
