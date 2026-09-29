@@ -94,6 +94,11 @@ func main() {
 		"fetch new House Clerk PTR filings for the current year, then exit")
 	refreshCal := flag.Bool("refresh-calendar", false,
 		"refresh the forward corporate calendar for the whole universe, then exit")
+	rolloverNews := flag.Bool("rollover-news", false,
+		"move aged news to the archive database now, then exit")
+	reclaimSpace := flag.Bool("reclaim-space", false,
+		"after -rollover-news, rewrite the news tables to return freed space to disk. "+
+			"Takes an exclusive lock per table: ingestion stalls and the feed errors while it runs")
 
 	// Key management is a command-line operation and has no HTTP equivalent.
 	// Issuing a key grants access to everything, so the right to do it is
@@ -161,6 +166,13 @@ func main() {
 	if *refreshCal {
 		if err := runRefreshCalendar(); err != nil {
 			slog.Error("calendar refresh failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *rolloverNews {
+		if err := runRolloverNews(*reclaimSpace); err != nil {
+			slog.Error("news rollover failed", "err", err)
 			os.Exit(1)
 		}
 		return
@@ -259,6 +271,31 @@ func run() error {
 		return err
 	}
 	defer store.Close()
+
+	// The news archive, when a second database is configured for it.
+	//
+	// Deliberately not fatal when it cannot be opened. The primary holds
+	// everything recent, which is what almost every read asks for, so an
+	// unreachable archive should cost the long tail of the feed rather than
+	// the whole app -- and a free-tier endpoint that is asleep or rate-limited
+	// is a normal Tuesday, not an outage.
+	var newsArchive *postgres.Archive
+	if cfg.NewsArchiveURL != "" {
+		opt, optErr := venueMigrationOption()
+		if optErr != nil {
+			return optErr
+		}
+		newsArchive, err = postgres.OpenArchive(ctx, store, cfg.NewsArchiveURL, cfg.NewsHotWindow,
+			postgres.WithLogger(log), opt)
+		if err != nil {
+			log.Error("news archive unavailable; running on the primary alone", "err", err)
+			newsArchive = nil
+		} else {
+			defer newsArchive.Close()
+		}
+	} else {
+		log.Info("no news archive configured; the primary holds all news")
+	}
 
 	providers, deps, budgets, searcher := buildProviders(cfg, store, log)
 	if len(providers) == 0 {
@@ -539,7 +576,7 @@ func run() error {
 	}
 
 	aiCron := startAISchedules(ctx, cfg, log, aiService, newsPoller, eventProcessor, store,
-		marketScanner, fundamentalsRunner)
+		marketScanner, fundamentalsRunner, newsArchive)
 	defer func() { <-aiCron.Stop().Done() }()
 
 	srv := &http.Server{
@@ -558,6 +595,7 @@ func run() error {
 			Stream:        streamHub,
 			StreamPumps:   streamPumps,
 			AI:            aiService,
+			NewsArchive:   newsArchive,
 			NewsPoller:    newsPoller,
 			Ingest:        ingestEngine,
 			Attention:     attention,

@@ -158,7 +158,18 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		filter.Since = s.now().Add(-time.Duration(hours) * time.Hour)
 	}
 
-	list, err := reader.ListEvents(r.Context(), filter)
+	// The archive is consulted only when the window reaches past the hot
+	// cutoff, which the default 72-hour feed never does. When it is not
+	// configured this is the single-database path unchanged.
+	var (
+		list []news.Event
+		err  error
+	)
+	if a := s.deps.NewsArchive; a != nil {
+		list, err = a.ListEvents(r.Context(), filter, s.now())
+	} else {
+		list, err = reader.ListEvents(r.Context(), filter)
+	}
 	if err != nil {
 		s.deps.Log.Error("list events failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read events.")
