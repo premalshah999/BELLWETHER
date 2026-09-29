@@ -20,6 +20,7 @@ import {
 } from "../../lib/api";
 import { formatAgo } from "../../lib/format";
 import { Empty } from "../ui/Empty";
+import { EventSource } from "../EventSource";
 import { Pill } from "../ui/Pill";
 
 type Attention = {
@@ -276,7 +277,7 @@ function BriefCard({ data, stale, note, loading, error, onGenerate }: { data: Mo
 }
 
 function NewsRow({ event }: { event: MarketEvent }) {
-  const body = <><span className="block text-ui leading-snug text-text-primary">{event.headline}</span><span className="mt-1 flex flex-wrap items-center gap-2 text-meta text-text-muted"><span>{event.event_type.toLowerCase().replace(/_/g, " ")}</span>{event.official && <Pill tone="neutral">official</Pill>}<span>{formatAgo(event.published_at ?? event.discovered_at)}</span>{event.source_count > 1 && <span>{event.source_count} sources</span>}</span></>;
+  const body = <><span className="block text-ui leading-snug text-text-primary">{event.headline}</span><span className="mt-1 flex flex-wrap items-center gap-2 text-meta text-text-muted"><span>{event.event_type.toLowerCase().replace(/_/g, " ")}</span>{event.official && <Pill tone="neutral">official</Pill>}<span>{formatAgo(event.published_at ?? event.discovered_at)}</span><EventSource event={event} /></span></>;
   return event.primary_url ? <a href={event.primary_url} target="_blank" rel="noreferrer noopener" className="block px-4 py-3 hover:bg-bg-panel-hover">{body}</a> : <div className="px-4 py-3">{body}</div>;
 }
 

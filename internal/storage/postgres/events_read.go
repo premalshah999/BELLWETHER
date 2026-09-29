@@ -24,11 +24,16 @@ const eventColumns = `e.id, e.fingerprint, e.event_type, e.headline, e.summary,
        -- A lateral join keeps this one index lookup per row instead of a
        -- second query per event.
        COALESCE(link.url, '') AS primary_url,
-       COALESCE(link.trust_kind, '') AS timestamp_trust`
+       COALESCE(link.trust_kind, '') AS timestamp_trust,
+       -- Who that best link came from. Without these the feed could show a
+       -- headline and a link but never say who reported it -- which, for an
+       -- app whose argument is provenance, is the one thing a row must say.
+       COALESCE(link.source_id, '') AS primary_source_id,
+       COALESCE(link.publisher, '') AS primary_publisher`
 
 const eventJoin = `
 LEFT JOIN LATERAL (
-    SELECT ri.url,
+    SELECT ri.url, ee.source_id, ri.publisher,
            -- Whether the publication time on this event may be believed.
            -- Derived from which source supplied it rather than stored twice,
            -- so the two cannot disagree.
@@ -240,7 +245,8 @@ func scanEvents(rows *sql.Rows) ([]news.Event, []int64, error) {
 		if err := rows.Scan(&e.ID, &e.Fingerprint, &e.Type, &e.Headline, &e.Summary,
 			&occurred, &published, &e.DiscoveredAt, &confirmed, &e.UpdatedAt,
 			&importance, &confidence, &e.BestTrust, &e.SourceCount, &e.Official,
-			&classified, &e.Model, &e.PrimaryURL, &trustKind); err != nil {
+			&classified, &e.Model, &e.PrimaryURL, &trustKind,
+			&e.PrimarySourceID, &e.PrimaryPublisher); err != nil {
 			return nil, nil, fmt.Errorf("postgres: scan event: %w", err)
 		}
 		e.OccurredAt = timeOrZero(occurred)
