@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tradesys/dashboard/internal/jev"
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
 	"github.com/tradesys/dashboard/internal/search"
@@ -42,7 +43,11 @@ type Service struct {
 	researchJobs    int
 	researchContext context.Context
 
-	client    *Client
+	client *Client
+	// jev makes decisions when configured: event classification goes to it
+	// instead of the text model. Nil or unconfigured leaves the text model
+	// doing both, as before.
+	jev       *jev.Client
 	market    MarketSource
 	news      NewsSource
 	search    SearchSource

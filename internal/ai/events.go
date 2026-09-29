@@ -47,7 +47,16 @@ const classifyBatchSize = 6
 // deterministic pipeline has already typed and entity-resolved everything, so
 // a failure here degrades the feed rather than emptying it.
 func (s *Service) ClassifyEvents(ctx context.Context, limit int) (int, error) {
-	if s.client == nil {
+	// Classification is a decision, so it goes to Jev when Jev is configured.
+	// The text model is kept for writing, which Jev cannot do; routing its
+	// thousands of daily classifications away is also what lets the text
+	// model's daily dollar cap cover the briefs and research that need it.
+	//
+	// When Jev is configured it is the only classifier. An event Jev fails on
+	// waits for the next run rather than falling back to the text model:
+	// otherwise a Jev outage would spend the whole day's text-model budget on
+	// the backlog and leave nothing for the prose only that model can write.
+	if !s.JevConfigured() && s.client == nil {
 		return 0, ErrNotConfigured
 	}
 	store, ok := s.store.(EventStore)
@@ -64,6 +73,9 @@ func (s *Service) ClassifyEvents(ctx context.Context, limit int) (int, error) {
 	}
 	if len(pending) == 0 {
 		return 0, nil
+	}
+	if s.JevConfigured() {
+		return s.classifyEventsWithJev(ctx, store, pending)
 	}
 
 	// Batches run concurrently, because they are independent and the wall

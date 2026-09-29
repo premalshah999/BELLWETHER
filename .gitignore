@@ -1,5 +1,8 @@
 # Secrets
 .env
+# Backups of .env carry the same credentials, so they are ignored the same way.
+.env.*
+!.env.example
 
 # Runtime data
 /data/

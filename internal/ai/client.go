@@ -21,8 +21,15 @@ const estimatedTokensPerChar = 0.3
 
 // Client speaks the OpenAI chat-completions protocol.
 type Client struct {
-	budgetMu         sync.Mutex
-	reserved         int
+	budgetMu sync.Mutex
+	reserved int
+	// dailyCapUSD is the most the client may spend per UTC day. Zero means
+	// no daily cap -- the monthly token budget still applies.
+	dailyCapUSD float64
+	// reservedUSD is the worst-case cost of calls in flight. Taken under the
+	// same lock as the check, so concurrent calls cannot each pass the check
+	// and overshoot the cap together.
+	reservedUSD      float64
 	accountingFailed bool
 
 	baseURL      string
@@ -61,6 +68,13 @@ func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h
 
 // WithLogger sets the logger.
 func WithLogger(l *slog.Logger) Option { return func(c *Client) { c.log = l } }
+
+// WithDailyCapUSD caps spend per UTC day, in US dollars.
+//
+// Checked against the worst case before each call -- peak rate, every input
+// token a cache miss, the whole output allowance spent -- so a call can only
+// ever come in under what was reserved for it, never over.
+func WithDailyCapUSD(usd float64) Option { return func(c *Client) { c.dailyCapUSD = usd } }
 
 // WithClock replaces the time source, used by tests to cross a month boundary.
 func WithClock(now func() time.Time) Option { return func(c *Client) { c.now = now } }
@@ -215,6 +229,16 @@ type chatResponse struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
+		// DeepSeek's documentation lists the cache split inside
+		// prompt_tokens_details, while its responses have carried it at the
+		// top level of usage. Both are read and whichever is present wins, so
+		// the accounting does not break on whichever layout arrives.
+		CacheHitTokens      int `json:"prompt_cache_hit_tokens"`
+		CacheMissTokens     int `json:"prompt_cache_miss_tokens"`
+		PromptTokensDetails struct {
+			CacheHitTokens  int `json:"prompt_cache_hit_tokens"`
+			CacheMissTokens int `json:"prompt_cache_miss_tokens"`
+		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
 	Model string `json:"model"`
 	Error *struct {
@@ -237,9 +261,16 @@ func (c *Client) Complete(ctx context.Context, req Request) (Response, error) {
 		return Response{}, err
 	}
 	reservation := estimateTokens(req.Messages) + max(0, req.MaxTokens)
+	reservationUSD := estimateCostUSD(c.modelFor(req), estimateTokens(req.Messages), req.MaxTokens)
 	c.reserved += reservation
+	c.reservedUSD += reservationUSD
 	c.budgetMu.Unlock()
-	defer func() { c.budgetMu.Lock(); c.reserved -= reservation; c.budgetMu.Unlock() }()
+	defer func() {
+		c.budgetMu.Lock()
+		c.reserved -= reservation
+		c.reservedUSD -= reservationUSD
+		c.budgetMu.Unlock()
+	}()
 
 	out, err := c.complete(ctx, req)
 	switch {
@@ -327,6 +358,8 @@ func (c *Client) complete(ctx context.Context, req Request) (Response, error) {
 		Usage: Usage{
 			PromptTokens:     parsed.Usage.PromptTokens,
 			CompletionTokens: parsed.Usage.CompletionTokens,
+			CacheHitTokens:   firstPositive(parsed.Usage.CacheHitTokens, parsed.Usage.PromptTokensDetails.CacheHitTokens),
+			CacheMissTokens:  firstPositive(parsed.Usage.CacheMissTokens, parsed.Usage.PromptTokensDetails.CacheMissTokens),
 			TotalTokens:      parsed.Usage.TotalTokens,
 		},
 	}
@@ -356,6 +389,9 @@ func (c *Client) complete(ctx context.Context, req Request) (Response, error) {
 func (c *Client) checkBudget(ctx context.Context, req Request) error {
 	if c.accountingFailed {
 		return fmt.Errorf("ai: usage accounting failed; refusing further calls until restart")
+	}
+	if err := c.checkDailyCap(ctx, req); err != nil {
+		return err
 	}
 	if c.budget == nil || c.monthlyLimit <= 0 {
 		if c.monthlyLimit == 0 {
@@ -393,12 +429,14 @@ func (c *Client) record(ctx context.Context, feature string, out Response) {
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 
+	at := c.now()
 	err := c.budget.RecordLLMUsage(recordCtx, UsageRecord{
 		Period:  c.Period(),
 		Feature: feature,
 		Model:   out.Model,
 		Usage:   out.Usage,
-		At:      c.now(),
+		At:      at,
+		CostUSD: out.Usage.CostUSD(out.Model, at),
 	})
 	if err != nil {
 		c.budgetMu.Lock()
@@ -507,3 +545,42 @@ type redactedError struct {
 
 func (e *redactedError) Error() string { return e.msg }
 func (e *redactedError) Unwrap() error { return e.cause }
+
+// checkDailyCap refuses a call that could take today's spend past the cap.
+//
+// Fails closed like the monthly budget: if today's spend cannot be read, the
+// call is refused, because not knowing what has been spent is exactly when
+// spending more is least safe. Called with budgetMu held.
+func (c *Client) checkDailyCap(ctx context.Context, req Request) error {
+	if c.dailyCapUSD <= 0 || c.budget == nil {
+		return nil
+	}
+	spent, err := c.budget.LLMSpendSince(ctx, startOfDay(c.now()))
+	if err != nil {
+		c.log.Error("could not read today's spend; refusing the call", "err", err)
+		return fmt.Errorf("ai: daily spend unreadable: %w", err)
+	}
+	worst := estimateCostUSD(c.modelFor(req), estimateTokens(req.Messages), req.MaxTokens)
+	if spent+c.reservedUSD+worst > c.dailyCapUSD {
+		return fmt.Errorf("%w: $%.4f spent today, $%.4f in flight, this call could cost up to $%.4f, cap $%.2f",
+			ErrDailyCapReached, spent, c.reservedUSD, worst, c.dailyCapUSD)
+	}
+	return nil
+}
+
+// modelFor is the model a request will be sent to.
+func (c *Client) modelFor(req Request) string {
+	if req.Cheap {
+		return c.cheapModel
+	}
+	return c.model
+}
+
+func firstPositive(vals ...int) int {
+	for _, v := range vals {
+		if v > 0 {
+			return v
+		}
+	}
+	return 0
+}

@@ -104,6 +104,7 @@ func buildProviders(cfg *config.Config, store storage.Store, log *slog.Logger) (
 	// truthful state from the first run.
 	deps = append(deps,
 		health.Dep{Provider: health.ProviderLLM, Kind: health.KindLLM, Configured: cfg.LLMConfigured()},
+		health.Dep{Provider: health.ProviderJev, Kind: health.KindLLM, Configured: cfg.TypeSafeAPIKey != ""},
 		health.Dep{Provider: tavily.Name, Kind: health.KindSearch, Configured: cfg.TavilyAPIKey != ""},
 		health.Dep{Provider: brave.Name, Kind: health.KindSearch, Configured: cfg.BraveAPIKey != ""},
 		// News needs no credentials, so it is always "configured" and its dot

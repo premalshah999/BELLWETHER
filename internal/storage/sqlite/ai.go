@@ -334,3 +334,11 @@ ON CONFLICT (key) DO UPDATE SET
 	}
 	return nil
 }
+
+// LLMSpendSince reports no spend.
+//
+// This store predates dollar accounting and records tokens only. It is not a
+// runtime store -- only the one-time importer and tests open it -- so it never
+// serves the daily cap, and reporting zero here cannot let a real call past
+// one. It exists to keep this type satisfying storage.Store.
+func (d *DB) LLMSpendSince(context.Context, time.Time) (float64, error) { return 0, nil }
