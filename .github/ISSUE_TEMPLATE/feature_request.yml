@@ -1,0 +1,20 @@
+name: Feature or data source
+description: Suggest a feature, or a source Bellwether should watch
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to find out or do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+  - type: input
+    id: source
+    attributes:
+      label: Data source URL (if suggesting one)
+      description: A feed or API URL, and whether it needs a key.

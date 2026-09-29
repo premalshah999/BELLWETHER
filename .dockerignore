@@ -19,3 +19,10 @@
 README.md
 *.md
 !web/package.json
+
+# Repository furniture the image never reads.
+docs/
+deploy/
+scripts/
+Makefile
+.editorconfig

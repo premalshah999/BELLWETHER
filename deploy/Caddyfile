@@ -8,7 +8,10 @@
 #
 # Caddy obtains and renews the certificate on its own; there is nothing to
 # schedule and nothing to remember.
-{$PUBLIC_HOSTNAME} {
+#
+# Unset, it falls back to localhost with Caddy's own local CA, which is
+# enough to try the proxy but not to publish anything.
+{$PUBLIC_HOSTNAME:localhost} {
 	# The live stream is proxied separately, before anything else can touch
 	# it, because the two defaults that make a proxy fast make a stream
 	# broken.
