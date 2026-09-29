@@ -364,6 +364,20 @@ func secFeed(formType string) string {
 // Ranked alongside the NSE exchange feeds (TrustOfficial): the filer
 // declares these facts under penalty of the securities laws, the same
 // standing an exchange disclosure has.
+// secFeedTimeout is how long an SEC filing feed is given to answer.
+//
+// Sixty seconds, not the catalogue's usual twenty, because browse-edgar is a
+// CGI endpoint whose response time is wildly variable under load rather than
+// merely slow. Five consecutive fetches of the 8-K feed from this host
+// measured 45s, three timeouts past 60s, and 1.2s -- with TLS completing in
+// 30ms every time, so the variance is SEC's own processing, not the network.
+//
+// At twenty seconds a large share of polls failed, which is what put sec-8k
+// and sec-13f permanently in the degraded column: not an outage, a deadline
+// shorter than the endpoint's normal spread. Still well inside the 8-K feed's
+// two-minute refresh, so a slow poll cannot overlap the next one.
+const secFeedTimeout = 60 * time.Second
+
 func SECSources(userAgent string) []Source {
 	filings := []struct {
 		id, name, formType string
@@ -388,7 +402,7 @@ func SECSources(userAgent string) []Source {
 			ID: f.id, Name: f.name, URL: secFeed(f.formType),
 			Method: MethodSECFiling, Category: "filings",
 			Country: "US", Language: "en", UserAgent: userAgent,
-			Trust: TrustOfficial, Refresh: f.refresh, Timeout: 20 * time.Second,
+			Trust: TrustOfficial, Refresh: f.refresh, Timeout: secFeedTimeout,
 			Usage: UsageOfficial, Display: DisplayFull, Enabled: true,
 		})
 	}
