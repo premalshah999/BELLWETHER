@@ -26,8 +26,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.AlphaVantageDailyLimit != 25 {
 		t.Errorf("AlphaVantageDailyLimit = %d, want 25", cfg.AlphaVantageDailyLimit)
 	}
-	if cfg.DisplayTZID != "Asia/Kolkata" {
-		t.Errorf("DisplayTZID = %q, want Asia/Kolkata", cfg.DisplayTZID)
+	if cfg.DisplayTZID != "America/New_York" {
+		t.Errorf("DisplayTZID = %q, want America/New_York", cfg.DisplayTZID)
 	}
 	if cfg.DisplayTZ == nil {
 		t.Error("DisplayTZ was not resolved")

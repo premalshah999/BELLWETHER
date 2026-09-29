@@ -88,10 +88,10 @@ const (
 // them directly. An exchange filing is ground truth; a wire service is very
 // nearly so; an aggregator we cannot identify is barely evidence at all.
 const (
-	TrustOfficial   = 100 // NSE, BSE, SEBI: the company said it, on the record
+	TrustOfficial   = 100 // SEC, federal agencies: said on the record, by the source itself
 	TrustWire       = 95  // Reuters, AP, Bloomberg
 	TrustCompanyIR  = 90  // the company's own investor-relations release
-	TrustMajorFin   = 80  // Business Standard, Mint, ET, FT, CNBC
+	TrustMajorFin   = 80  // WSJ, FT, CNBC, Barron's
 	TrustSpecialist = 70  // narrower trade publications
 	TrustGeneric    = 50  // general press with no financial desk
 	TrustAggregator = 20  // unattributed aggregators and content farms
