@@ -48,6 +48,20 @@ type Config struct {
 	// job moves it to the archive.
 	NewsHotWindow time.Duration
 
+	// LLMDailyUSDCap caps text-model spend per UTC day, in US dollars. Zero
+	// disables the daily cap; the monthly token budget still applies.
+	LLMDailyUSDCap float64
+
+	// TypeSafeAPIKey enables Jev for decisions -- event classification and
+	// news scoring. Empty leaves those on the text model.
+	TypeSafeAPIKey string
+	// JevModel pins a Jev model; empty follows jev-latest.
+	JevModel string
+	// JevInputPriceUSD is Jev's price per million input tokens, for spend
+	// accounting. TypeSafe's API reference does not state pricing, so this is
+	// configurable rather than hardcoded.
+	JevInputPriceUSD float64
+
 	// Market data
 	AlphaVantageKey        string
 	AlphaVantageDailyLimit int
@@ -122,6 +136,10 @@ func Load(envFile string) (*Config, error) {
 		DatabaseURL:            envStr("DATABASE_URL", ""),
 		NewsArchiveURL:         envStr("NEWS_ARCHIVE_DATABASE_URL", ""),
 		NewsHotWindow:          envDuration("NEWS_HOT_WINDOW", 30*24*time.Hour),
+		LLMDailyUSDCap:         envFloat("LLM_DAILY_USD_CAP", 1.00),
+		TypeSafeAPIKey:         envStr("TYPESAFE_API_KEY", ""),
+		JevModel:               envStr("JEV_MODEL", ""),
+		JevInputPriceUSD:       envFloat("JEV_INPUT_PRICE_USD", 0.042),
 		DBPath:                 envStr("DB_PATH", "./data/tradesys.db"),
 		AlphaVantageKey:        envStr("ALPHAVANTAGE_API_KEY", ""),
 		AlphaVantageDailyLimit: envInt("ALPHAVANTAGE_DAILY_LIMIT", 25),
@@ -284,4 +302,16 @@ func parseLevel(s string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func envFloat(key string, def float64) float64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || f < 0 {
+		return def
+	}
+	return f
 }

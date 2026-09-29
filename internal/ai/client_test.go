@@ -26,6 +26,7 @@ type memBudget struct {
 	readErr  error
 	writeErr error
 	writes   int
+	records  []UsageRecord
 }
 
 func newMemBudget() *memBudget {
@@ -49,6 +50,7 @@ func (m *memBudget) RecordLLMUsage(_ context.Context, rec UsageRecord) error {
 		return m.writeErr
 	}
 	m.used[rec.Period] += rec.Usage.TotalTokens
+	m.records = append(m.records, rec)
 	if m.features[rec.Period] == nil {
 		m.features[rec.Period] = map[string]int{}
 	}
@@ -64,6 +66,18 @@ func (m *memBudget) LLMUsageByFeature(_ context.Context, period string) (map[str
 		out[k] = v
 	}
 	return out, nil
+}
+
+func (m *memBudget) LLMSpendSince(_ context.Context, since time.Time) (float64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var usd float64
+	for _, r := range m.records {
+		if !r.At.Before(since) {
+			usd += r.CostUSD
+		}
+	}
+	return usd, nil
 }
 
 func (m *memBudget) totalUsed(period string) int {

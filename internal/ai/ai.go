@@ -68,6 +68,12 @@ type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+	// CacheHitTokens and CacheMissTokens split PromptTokens by whether
+	// DeepSeek served them from its context cache. A hit costs a fiftieth of
+	// a miss, so without the split a call cannot be priced accurately -- see
+	// CostUSD, which treats an unreported split as all misses.
+	CacheHitTokens  int `json:"prompt_cache_hit_tokens,omitempty"`
+	CacheMissTokens int `json:"prompt_cache_miss_tokens,omitempty"`
 }
 
 // UsageRecord is one billed call, stored for the budget meter and the
@@ -79,6 +85,8 @@ type UsageRecord struct {
 	Model   string
 	Usage   Usage
 	At      time.Time
+	// CostUSD is what the call cost at the rate in force when it was made.
+	CostUSD float64
 }
 
 // BudgetStore persists token consumption. Declared here, at the point of use,
@@ -90,9 +98,17 @@ type BudgetStore interface {
 	RecordLLMUsage(ctx context.Context, rec UsageRecord) error
 	// LLMUsageByFeature breaks a period down for the settings page.
 	LLMUsageByFeature(ctx context.Context, period string) (map[string]int, error)
+	// LLMSpendSince sums the USD cost of calls recorded at or after a moment.
+	// The daily cap asks it for spend since UTC midnight.
+	LLMSpendSince(ctx context.Context, since time.Time) (float64, error)
 }
 
 // BudgetState is what the UI renders on the budget meter.
+// ErrDailyCapReached is returned when a call would take the day's spend past
+// the configured USD cap. It is a limit the operator set, not a fault, and is
+// reported to health as skipped rather than failed.
+var ErrDailyCapReached = errors.New("ai: daily spend cap reached")
+
 type BudgetState struct {
 	Period    string         `json:"period"`
 	Used      int            `json:"used"`

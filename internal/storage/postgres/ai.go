@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tradesys/dashboard/internal/ai"
+	"github.com/tradesys/dashboard/internal/jev"
 	"github.com/tradesys/dashboard/internal/search"
 )
 
@@ -26,10 +27,12 @@ func (d *DB) LLMTokensUsed(ctx context.Context, period string) (int, error) {
 // RecordLLMUsage appends one usage record.
 func (d *DB) RecordLLMUsage(ctx context.Context, rec ai.UsageRecord) error {
 	_, err := d.db.ExecContext(ctx, `
-INSERT INTO llm_usage (period, feature, model, prompt_tokens, completion_tokens, total_tokens, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+INSERT INTO llm_usage (period, feature, model, prompt_tokens, completion_tokens, total_tokens,
+                       cache_hit_tokens, cache_miss_tokens, cost_usd, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		rec.Period, rec.Feature, rec.Model,
-		rec.Usage.PromptTokens, rec.Usage.CompletionTokens, rec.Usage.TotalTokens, rec.At.UTC())
+		rec.Usage.PromptTokens, rec.Usage.CompletionTokens, rec.Usage.TotalTokens,
+		rec.Usage.CacheHitTokens, rec.Usage.CacheMissTokens, rec.CostUSD, rec.At.UTC())
 	if err != nil {
 		return fmt.Errorf("postgres: record llm usage: %w", err)
 	}
@@ -390,4 +393,36 @@ func (d *DB) DeleteOutlook(ctx context.Context, id int64) error {
 		return fmt.Errorf("postgres: delete outlook: %w", err)
 	}
 	return nil
+}
+
+// LLMSpendSince sums the cost of calls recorded at or after a moment.
+func (d *DB) LLMSpendSince(ctx context.Context, since time.Time) (float64, error) {
+	var usd float64
+	if err := d.db.QueryRowContext(ctx,
+		`SELECT COALESCE(sum(cost_usd), 0) FROM llm_usage WHERE created_at >= $1`,
+		since.UTC()).Scan(&usd); err != nil {
+		return 0, fmt.Errorf("postgres: llm spend since: %w", err)
+	}
+	return usd, nil
+}
+
+// RecordJevUsage stores one Jev request's consumption and cost.
+func (d *DB) RecordJevUsage(ctx context.Context, feature string, u jev.Usage, costUSD float64, at time.Time) error {
+	if _, err := d.db.ExecContext(ctx, `
+INSERT INTO jev_usage (feature, input_tokens, output_tokens, cost_usd, created_at)
+VALUES ($1, $2, $3, $4, $5)`, feature, u.InputTokens, u.OutputTokens, costUSD, at.UTC()); err != nil {
+		return fmt.Errorf("postgres: record jev usage: %w", err)
+	}
+	return nil
+}
+
+// JevSpendSince sums the cost of Jev requests recorded at or after a moment.
+func (d *DB) JevSpendSince(ctx context.Context, since time.Time) (float64, error) {
+	var usd float64
+	if err := d.db.QueryRowContext(ctx,
+		`SELECT COALESCE(sum(cost_usd), 0) FROM jev_usage WHERE created_at >= $1`,
+		since.UTC()).Scan(&usd); err != nil {
+		return 0, fmt.Errorf("postgres: jev spend since: %w", err)
+	}
+	return usd, nil
 }

@@ -266,13 +266,6 @@ func startAISchedules(
 			}
 		})
 
-		// News scoring runs shortly after collection, on the cheap tier.
-		add("news digest", "25 * * * *", func(runCtx context.Context) {
-			if _, err := svc.RunNewsDigest(runCtx, 40); err != nil {
-				log.Warn("scheduled news digest failed", "err", err)
-			}
-		})
-
 		// Briefs for the important items, shortly after classification has
 		// decided which those are.
 		//
@@ -299,14 +292,35 @@ func startAISchedules(
 			}
 		})
 
+	}
+
+	// Decisions -- classification and news scoring -- run when either model
+	// can make them. They belong to Jev when a TypeSafe key is set and to the
+	// text model otherwise, which is decided inside the service, so the
+	// schedule only has to know that one of them exists.
+	if cfg.LLMConfigured() || svc.JevConfigured() {
+		// News scoring runs shortly after collection, on Jev when configured, else the text model's cheap tier.
+		add("news digest", "25 * * * *", func(runCtx context.Context) {
+			if _, err := svc.RunNewsDigest(runCtx, 40); err != nil {
+				log.Warn("scheduled news digest failed", "err", err)
+			}
+		})
+
 		// Event classification, hourly. Storage hands these back
-		// most-important-first, so a capped run spends the budget on what
-		// matters instead of on whatever happened to arrive last.
+		// most-important-first, so a capped run spends effort on what matters
+		// instead of on whatever happened to arrive last.
+		//
+		// The limit depends on who is classifying. The text model is a slow
+		// reasoning model in batches of six and 300 is what fits the
+		// fifteen-minute window. Jev answers one event in well under a second,
+		// eight at a time, so 3,000 fits with room -- enough to clear the
+		// backlog in about a day rather than months.
+		classifyLimit := 300
+		if svc.JevConfigured() {
+			classifyLimit = 3000
+		}
 		add("event classification", "40 * * * *", func(runCtx context.Context) {
-			// Sized to the fifteen-minute job budget with three batches in
-			// flight: enough to clear a day's collection in one pass rather
-			// than falling permanently behind it.
-			n, err := svc.ClassifyEvents(runCtx, 300)
+			n, err := svc.ClassifyEvents(runCtx, classifyLimit)
 			if err != nil {
 				log.Warn("event classification failed", "err", err)
 				return

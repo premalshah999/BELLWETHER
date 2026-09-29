@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tradesys/dashboard/internal/ai"
+	"github.com/tradesys/dashboard/internal/jev"
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/storage"
 )
@@ -21,6 +22,10 @@ import (
 // Named here rather than spelled as a literal at each end, so the declaration
 // in main and the sink below cannot drift apart.
 const ProviderLLM = "llm"
+
+// ProviderJev is the decision model, tracked separately from the text model
+// so a Jev outage and a DeepSeek cap show as two different dots.
+const ProviderJev = "jev"
 
 // Kind groups dependencies in the UI.
 const (
@@ -299,4 +304,11 @@ func errText(err error) string {
 		return s[:max] + "…"
 	}
 	return s
+}
+
+// JevSink adapts the Tracker to the Jev client's outcome port.
+func (t *Tracker) JevSink() jev.OutcomeSink {
+	return func(ctx context.Context, o jev.Outcome) {
+		t.Observe(ctx, ProviderJev, o.OK, o.Skipped, o.Err)
+	}
 }

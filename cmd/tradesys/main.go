@@ -29,6 +29,7 @@ import (
 	"github.com/tradesys/dashboard/internal/events"
 	"github.com/tradesys/dashboard/internal/fundamentals"
 	"github.com/tradesys/dashboard/internal/health"
+	"github.com/tradesys/dashboard/internal/jev"
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
 	"github.com/tradesys/dashboard/internal/news/company"
@@ -511,7 +512,28 @@ func run() error {
 		CheapModel:   cfg.LLMCheapModel,
 		MonthlyLimit: cfg.LLMMonthlyTokenBudget,
 		ExtraBody:    cfg.LLMExtraBody,
-	}, store, ai.WithLogger(log), ai.WithOutcomeSink(tracker.LLMSink()))
+	}, store, ai.WithLogger(log), ai.WithOutcomeSink(tracker.LLMSink()),
+		// A hard ceiling on text-model spend per UTC day, checked against the
+		// worst case before every call. See ai.WithDailyCapUSD.
+		ai.WithDailyCapUSD(cfg.LLMDailyUSDCap))
+
+	// Jev makes the decisions -- event classification and news scoring --
+	// when a TypeSafe key is set. Without one those stay on the text model.
+	jevOpts := []jev.Option{
+		jev.WithLogger(log),
+		jev.WithOutcomeSink(tracker.JevSink()),
+		jev.WithSpendRecorder(store),
+		jev.WithInputPrice(cfg.JevInputPriceUSD),
+	}
+	if cfg.JevModel != "" {
+		jevOpts = append(jevOpts, jev.WithModel(cfg.JevModel))
+	}
+	jevClient := jev.New(cfg.TypeSafeAPIKey, jevOpts...)
+	if jevClient.Configured() {
+		log.Info("decisions routed to jev", "model", jevClient.Model())
+	} else {
+		log.Info("no TYPESAFE_API_KEY; decisions stay on the text model")
+	}
 
 	aiService := ai.NewService(llm, router, store, cfg.DisplayTZ,
 		ai.WithServiceLogger(log),
@@ -520,7 +542,8 @@ func run() error {
 		ai.WithNews(store),
 		ai.WithScoreStore(store),
 		ai.WithWatchlist(store),
-		ai.WithAlerts(store))
+		ai.WithAlerts(store),
+		ai.WithJev(jevClient))
 
 	if !cfg.LLMConfigured() {
 		log.Info("no LLM configured; AI features will report as unconfigured and everything else runs normally")

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/tradesys/dashboard/internal/jev"
 	"github.com/tradesys/dashboard/internal/news"
 )
 
@@ -52,10 +54,18 @@ func (s *Service) RunNewsDigest(ctx context.Context, maxArticles int) (DigestSum
 	start := s.now()
 	summary := DigestSummary{}
 
-	status, err := s.guard(ctx)
-	summary.Status = status
-	if err != nil {
-		return summary, err
+	// Scoring is a decision, so it is Jev's when Jev is configured -- and then
+	// the text model's availability is irrelevant to it. Checking the text
+	// model's guard here would let its daily cap or an outage block work that
+	// never touches it.
+	if s.JevConfigured() {
+		summary.Status = StatusOK
+	} else {
+		status, err := s.guard(ctx)
+		summary.Status = status
+		if err != nil {
+			return summary, err
+		}
 	}
 	if s.scores == nil {
 		return summary, fmt.Errorf("ai: no score store configured")
@@ -119,6 +129,9 @@ func (s *Service) RunNewsDigest(ctx context.Context, maxArticles int) (DigestSum
 }
 
 func (s *Service) scoreBatch(ctx context.Context, symbol string, batch []news.Article) ([]news.Score, error) {
+	if s.JevConfigured() {
+		return s.scoreBatchWithJev(ctx, symbol, batch)
+	}
 	type promptArticle struct {
 		ID     string
 		Title  string
@@ -200,4 +213,71 @@ func truncateRunes(s string, max int) string {
 		return s
 	}
 	return string(r[:max]) + "…"
+}
+
+// relevanceLevels is how closely an article concerns a company, lowest first.
+var relevanceLevels = []string{
+	"Not about this company at all.",
+	"Mentions the company in passing, as one of many.",
+	"Relevant to the company but not mainly about it.",
+	"Directly and mainly about this company.",
+}
+
+// relevanceValues maps those levels onto the 0-1 relevance the store keeps.
+var relevanceValues = []float64{0, 0.33, 0.67, 1}
+
+// scoreBatchWithJev scores articles with Jev: relevance on a rubric and
+// sentiment as a choice, one request per article.
+//
+// No one-line summary is produced. Jev does not write text, and nothing in the
+// interface displays the one-liner -- the article's own headline serves that
+// purpose -- so this gives up nothing a reader sees.
+func (s *Service) scoreBatchWithJev(ctx context.Context, symbol string, batch []news.Article) ([]news.Score, error) {
+	now := s.now()
+	out := make([]news.Score, 0, len(batch))
+	var firstErr error
+	for _, a := range batch {
+		state := fmt.Sprintf("Company: %s\nHeadline: %s\nPublisher: %s\nAge: %s",
+			symbol, strings.TrimSpace(a.Title), a.Source, a.Age(now))
+		resp, err := s.jev.Ask(ctx, jev.Request{
+			Feature: FeatureNewsDigest,
+			State:   state,
+			Questions: map[string]jev.Question{
+				"relevance": jev.Score{
+					Instructions: "How closely does this article concern " + symbol + "?",
+					Criteria:     relevanceLevels,
+				},
+				"sentiment": jev.Choice{
+					Instructions: "Is this good or bad news for " + symbol + "'s shareholders?",
+					Criteria: map[string]string{
+						"positive": "Good news for " + symbol + ".",
+						"neutral":  "Neither good nor bad, or not about " + symbol + ".",
+						"negative": "Bad news for " + symbol + ".",
+					},
+				},
+			},
+		})
+		if err != nil {
+			// One article's failure is that article's; the rest are still scored.
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		sc := news.Score{ArticleID: a.ID, Model: resp.Model, ScoredAt: now}
+		if r, ok := resp.Score("relevance"); ok {
+			sc.Relevance = clamp(r.Expected(relevanceValues), 0, 1)
+		}
+		if c, ok := resp.Choice("sentiment"); ok {
+			// Sentiment from the distribution: the weight on good news minus the
+			// weight on bad, so an uncertain call lands near zero instead of at
+			// whichever end won by a whisker.
+			sc.Sentiment = clamp(c.Probabilities["positive"]-c.Probabilities["negative"], -1, 1)
+		}
+		out = append(out, sc)
+	}
+	if len(out) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
+	return out, nil
 }

@@ -476,6 +476,33 @@ rails stack beneath the main pane.
   that is unreachable degrades to the primary and logs it, rather than failing
   the feed: the primary holds everything recent, which is what nearly every
   read asks for.
+- **Two model providers, split by what they are for.** Jev (TypeSafe AI) makes
+  the decisions — what kind of event this is, how much it matters, whether it
+  is an event at all, which way it points for each company, how relevant and
+  how positive an article is. The text model (DeepSeek) writes the prose: the
+  morning brief, event briefs, research answers. Jev cannot write text and the
+  text model is a slow, expensive way to make thousands of small decisions a
+  day, so each does only the half it is good at.
+
+  ```
+  TYPESAFE_API_KEY      enables Jev; empty keeps decisions on the text model
+  JEV_MODEL             optional pin; default jev-latest
+  JEV_INPUT_PRICE_USD   per million input tokens, for spend tracking (0.042)
+  LLM_DAILY_USD_CAP     text-model spend ceiling per UTC day (1.00)
+  ```
+
+  Jev's answers are gated by confidence, per TypeSafe's own guidance to gate
+  each action by what a wrong answer costs: an unsure event type leaves the
+  keyword rules' type in place, an unsure direction is recorded as "unclear",
+  and an item Jev is at least 80% sure is not an event — commentary, a quote
+  page — is given importance zero, which drops it from the default feed
+  without deleting it.
+
+  The daily cap is checked against the worst case before every call — peak
+  rate, every input token uncached, the full output allowance spent — and that
+  worst case is reserved under the same lock as the check, so concurrent calls
+  cannot each pass it and overshoot together. Resets at UTC midnight, the
+  clock DeepSeek's own peak hours are defined on.
 - **`-rollover-news`** moves aged news to the archive now rather than at
   02:30. Worth running by hand the first time: an existing database has months
   to move. Add **`-reclaim-space`** to return the freed space to the
