@@ -98,7 +98,7 @@ happened, and the track record is on its own page.
 You need Docker. Nothing else — no keys are required to start.
 
 ```bash
-git clone https://github.com/<you>/bellwether.git && cd bellwether
+git clone https://github.com/premalshah999/BELLWETHER.git bellwether && cd bellwether
 cp .env.example .env
 docker compose up -d
 docker compose exec tradesys tradesys -issue-key -name "alice" -role owner
