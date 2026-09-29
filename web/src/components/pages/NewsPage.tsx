@@ -5,6 +5,7 @@ import { api, type EventQuery, type MarketEvent } from "../../lib/api";
 import { formatAgo } from "../../lib/format";
 import { Empty } from "../ui/Empty";
 import { Panel } from "../ui/Panel";
+import { EventSource } from "../EventSource";
 import { Pill } from "../ui/Pill";
 
 const WINDOWS = [
@@ -254,6 +255,7 @@ export function NewsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
                   {e.timestamp_trust === "observed" ? "seen " : ""}
                   {formatAgo(e.published_at || e.discovered_at)}
                 </span>
+                <EventSource event={e} />
                 {(e.entities ?? []).slice(0, 3).map((en) => (
                   <button
                     key={en.symbol}

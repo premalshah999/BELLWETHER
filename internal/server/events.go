@@ -251,6 +251,7 @@ func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 // envelope decorates an event for transport.
 func (s *Server) envelope(e news.Event, now time.Time) eventEnvelope {
 	e.Staleness = news.StalenessAt(e.PublishedAt, e.TimestampTrust, now)
+	e.Source = s.sourceLabel(e)
 
 	env := eventEnvelope{Event: e, AgeLabel: relativeAge(e.DiscoveredAt, now)}
 	// Latency is only meaningful against a timestamp we believe. An
@@ -557,4 +558,42 @@ func (s *Server) handleRefreshSymbolNews(w http.ResponseWriter, r *http.Request)
 	}
 	out.DurationMS = s.now().Sub(start).Milliseconds()
 	writeJSON(w, http.StatusOK, out)
+}
+
+// sourceLabel names who reported an event, for the feed row.
+//
+// A direct feed is named by its catalogue entry ("SEC 8-K Current Filings",
+// "WSJ Markets"). A discovery source is named by the item's own publisher,
+// because the source there is a search query: a Google News result for a
+// Reuters story was reported by Reuters, and "Google News" would be the one
+// label guaranteed to be wrong. Per-symbol watchlist searches are discovery
+// too. Falls back to the publisher when the source has left the catalogue --
+// an archived event from a feed since removed still has a publisher.
+func (s *Server) sourceLabel(e news.Event) string {
+	publisher := cleanPublisher(e.PrimaryPublisher)
+	if s.deps.Ingest == nil || e.PrimarySourceID == "" {
+		return publisher
+	}
+	src, ok := s.deps.Ingest.Registry().Get(e.PrimarySourceID)
+	if !ok {
+		return publisher
+	}
+	discovery := src.Method == news.MethodGoogleNews || src.Method == news.MethodGDELT ||
+		strings.HasPrefix(src.ID, "watch-")
+	if discovery && publisher != "" {
+		return publisher
+	}
+	return src.Name
+}
+
+// cleanPublisher turns a bare domain into something a person would call the
+// outlet: "www.wsj.com" and "wsj.com" both become "wsj.com", and a trailing
+// ".com" on a name that is already a name ("Bloomberg.com") is dropped.
+func cleanPublisher(p string) string {
+	p = strings.TrimSpace(p)
+	p = strings.TrimPrefix(p, "www.")
+	if strings.ContainsAny(p, " ") || (len(p) > 0 && p[0] >= 'A' && p[0] <= 'Z') {
+		p = strings.TrimSuffix(p, ".com")
+	}
+	return p
 }

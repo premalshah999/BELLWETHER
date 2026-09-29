@@ -10,6 +10,7 @@ import { DEFAULT_STUDIES, KLineChart } from "../KLineChart";
 import { BarAge } from "../BarAge";
 import { Empty } from "../ui/Empty";
 import { Panel } from "../ui/Panel";
+import { EventSource } from "../EventSource";
 import { Pill } from "../ui/Pill";
 
 /** Ranges offered on the dashboard chart, in trading days. */
@@ -344,6 +345,7 @@ function NewsPane({ symbol }: { symbol: string }) {
                   {e.timestamp_trust === "observed" ? "seen " : ""}
                   {formatAgo(e.published_at || e.discovered_at)}
                 </span>
+                <EventSource event={e} />
                 {e.event_type && e.event_type !== "UNCLASSIFIED" && (
                   <Pill tone="muted">{e.event_type.replace(/_/g, " ").toLowerCase()}</Pill>
                 )}

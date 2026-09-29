@@ -6,6 +6,7 @@ import { formatAgo } from "../../lib/format";
 import { venueOf } from "../../lib/symbol";
 import { Empty } from "../ui/Empty";
 import { Panel } from "../ui/Panel";
+import { EventSource } from "../EventSource";
 import { Pill } from "../ui/Pill";
 
 /**
@@ -193,6 +194,7 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
                       {e.timestamp_trust === "observed" ? "seen " : ""}
                       {formatAgo(e.published_at || e.discovered_at)}
                     </span>
+                    <EventSource event={e} />
                     {e.event_type && e.event_type !== "UNCLASSIFIED" && (
                       <Pill tone="muted">{e.event_type.replace(/_/g, " ").toLowerCase()}</Pill>
                     )}

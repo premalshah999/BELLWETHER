@@ -191,6 +191,17 @@ type Event struct {
 	// Carried on the list response so a feed row can link straight to the
 	// article rather than requiring the reader to expand it first.
 	PrimaryURL string `json:"primary_url,omitempty"`
+	// PrimarySourceID is the catalogue source that supplied PrimaryURL, and
+	// PrimaryPublisher the outlet named on the item itself. The two differ for
+	// a discovery source: a Google News result's source is the query, but its
+	// publisher is Reuters or the Wall Street Journal, which is what a reader
+	// wants to see. Source names the row; see Source on the API envelope.
+	PrimarySourceID  string `json:"primary_source_id,omitempty"`
+	PrimaryPublisher string `json:"-"`
+	// Source is the display name for who reported this: the catalogue name
+	// for a direct feed, the item's own publisher for a discovery result.
+	// Filled by the server, which holds the catalogue.
+	Source string `json:"source,omitempty"`
 }
 
 // Classified reports whether the model has processed this event yet.

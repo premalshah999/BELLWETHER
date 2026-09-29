@@ -552,6 +552,13 @@ export interface MarketEvent {
   staleness?: "fresh" | "recent" | "old" | "unknown";
   /** Best URL among the evidence, so a row can link out without expanding. */
   primary_url?: string;
+  /**
+   * Who reported this: the catalogue name for a direct feed, the outlet named
+   * on the item for a discovery result (a Google News hit for a Reuters story
+   * says Reuters). The source of primary_url, which is the best-trust link.
+   */
+  source?: string;
+  primary_source_id?: string;
   /** A short AI note on what the item means. Absent until one is asked for. */
   brief?: string;
   /** Whether published_at may be presented as a publication time. */
