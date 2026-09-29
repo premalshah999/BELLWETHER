@@ -31,7 +31,11 @@ type ingestSourceView struct {
 	Official  bool   `json:"official"`
 	RefreshMS int64  `json:"refresh_ms"`
 
-	Healthy             bool       `json:"healthy"`
+	Healthy bool `json:"healthy"`
+	// Chronic marks a source that has failed too many times in a row, with no
+	// success recent enough to call it an outage. It is not a claim about the
+	// cause -- only that this one will not fix itself.
+	Chronic             bool       `json:"chronic"`
 	ConsecutiveFailures int        `json:"consecutive_failures"`
 	LastError           string     `json:"last_error,omitempty"`
 	LastSuccessAt       *time.Time `json:"last_success_at,omitempty"`
@@ -42,12 +46,17 @@ type ingestSourceView struct {
 }
 
 type ingestSummary struct {
-	Sources   []ingestSourceView `json:"sources"`
-	Total     int                `json:"total"`
-	Healthy   int                `json:"healthy"`
-	Failing   int                `json:"failing"`
-	Unpolled  int                `json:"unpolled"`
-	ItemsHeld int                `json:"items_held"`
+	Sources []ingestSourceView `json:"sources"`
+	Total   int                `json:"total"`
+	Healthy int                `json:"healthy"`
+	// Failing counts sources that are down right now; Chronic counts the
+	// subset of those that have been down long enough to need a person. They
+	// were one number, which is how a source that had 403'd 282 times in a row
+	// sat next to a feed that had been rate-limited twice.
+	Failing   int `json:"failing"`
+	Chronic   int `json:"chronic"`
+	Unpolled  int `json:"unpolled"`
+	ItemsHeld int `json:"items_held"`
 }
 
 // handleIngestSources reports the state of every configured source.
@@ -89,6 +98,7 @@ func (s *Server) handleIngestSources(w http.ResponseWriter, r *http.Request) {
 			TotalNewItems: h.TotalNewItems,
 		}
 		v.Healthy = polled && h.Healthy()
+		v.Chronic = polled && h.Chronic(s.now())
 		if !h.LastSuccessAt.IsZero() {
 			t := h.LastSuccessAt
 			v.LastSuccessAt = &t
@@ -104,6 +114,9 @@ func (s *Server) handleIngestSources(w http.ResponseWriter, r *http.Request) {
 			out.Healthy++
 		default:
 			out.Failing++
+			if v.Chronic {
+				out.Chronic++
+			}
 		}
 		out.Sources = append(out.Sources, v)
 	}
@@ -116,6 +129,9 @@ func (s *Server) handleIngestSources(w http.ResponseWriter, r *http.Request) {
 		a, b := out.Sources[i], out.Sources[j]
 		if a.Healthy != b.Healthy {
 			return !a.Healthy
+		}
+		if a.Chronic != b.Chronic {
+			return a.Chronic
 		}
 		if a.Trust != b.Trust {
 			return a.Trust > b.Trust

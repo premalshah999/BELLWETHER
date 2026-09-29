@@ -176,6 +176,30 @@ func (s *Server) authenticate(r *http.Request) (auth.Profile, bool) {
 	return profile, true
 }
 
+// readOnlyPosts are POST routes that change nothing.
+//
+// Each earns its place by having no write in it, checked rather than assumed,
+// and the near misses are the useful part of this list:
+//
+//   - /api/screens/run takes an ad-hoc filter and queries scan metrics. No
+//     write. /api/screens/{id}/run is deliberately absent: it calls
+//     TouchScreen to record when the screen last ran, which is small but is
+//     still a write, and a read-only key should not be able to cause one.
+//   - /api/algorithms/validate and /preview are pure functions of the rule
+//     definition in the body.
+//   - /api/algorithms/backtest evaluates an unsaved definition against stored
+//     candles. /api/algorithms/{id}/backtest is absent for the same reason as
+//     the saved screen.
+//
+// Exact paths rather than prefixes, so a future route cannot fall into this
+// set by being named similarly to one that belongs in it.
+var readOnlyPosts = map[string]bool{
+	"/api/screens/run":         true,
+	"/api/algorithms/validate": true,
+	"/api/algorithms/preview":  true,
+	"/api/algorithms/backtest": true,
+}
+
 func bearerToken(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 	if h == "" {
@@ -222,7 +246,14 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		// read is refused, including the model-backed routes: those are GET-
 		// shaped in some cases but spend a shared budget, which is a write in
 		// every sense that matters.
-		if !profile.CanWrite() && r.Method != http.MethodGet && r.Method != http.MethodHead {
+		//
+		// The method is the rule and readOnlyPosts is the exception, because
+		// the method is a transport detail and not a statement of intent: a
+		// screen carries its filter in a body, so running one has to be a
+		// POST, and running one only reads. A read-only key that cannot run a
+		// screen is refusing a read.
+		if !profile.CanWrite() && r.Method != http.MethodGet && r.Method != http.MethodHead &&
+			!readOnlyPosts[r.URL.Path] {
 			writeError(w, http.StatusForbidden, "read_only",
 				"This key is read-only. Ask an owner for an operator key to make changes.")
 			return

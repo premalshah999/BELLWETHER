@@ -58,6 +58,45 @@ type SourceHealth struct {
 // Healthy reports whether the source is currently delivering.
 func (h SourceHealth) Healthy() bool { return h.ConsecutiveFailures == 0 }
 
+// chronicFailures is how many consecutive failures stop looking like an
+// outage, and staleSuccess is how long without a success confirms it.
+//
+// Ten and a day, rather than something tuned: the point is to separate a
+// publisher having a bad afternoon from a source that is never going to work
+// until somebody changes something, and those two are orders of magnitude
+// apart. GDELT rate-limiting us looks like four failures with a success two
+// hours ago. FTC refusing our User-Agent looked like 282 failures with the
+// same error every time and no success at all.
+const (
+	chronicFailures = 10
+	staleSuccess    = 24 * time.Hour
+)
+
+// Chronic reports a source that has been failing long enough that it is not a
+// transient outage.
+//
+// This distinction was missing, and it hid three real problems for an entire
+// session: FTC had returned 403 on 282 consecutive polls, and BLS and the SEC
+// feeds were failing steadily too. All three were counted the same way as a
+// feed that had been briefly rate-limited, so nothing ever said "this one is
+// not coming back on its own".
+//
+// It deliberately does not claim to know why. The cause could be a wrong
+// User-Agent, a moved URL, a revoked key or a publisher that has blocked this
+// host, and guessing between those from an error string is how a diagnostic
+// becomes misleading. What it does claim is narrow and checkable: this has
+// failed too many times in a row, with no success recently enough to call it
+// an outage, so somebody should look rather than wait.
+func (h SourceHealth) Chronic(now time.Time) bool {
+	if h.ConsecutiveFailures < chronicFailures {
+		return false
+	}
+	if h.LastSuccessAt.IsZero() {
+		return true
+	}
+	return now.Sub(h.LastSuccessAt) > staleSuccess
+}
+
 // Engine fetches every registered source on its own cadence.
 //
 // The design targets a single process serving a couple of operators, so it
