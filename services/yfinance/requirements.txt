@@ -2,4 +2,4 @@ yfinance==1.6.0
 # yfinance uses curl_cffi to talk to Yahoo; pinned so a transport change does
 # not arrive unannounced.
 curl_cffi==0.16.1
-pandas==2.3.3
+pandas==3.0.6
