@@ -33,7 +33,14 @@ export function EventStudyPage() {
   const types = typesData?.types ?? [];
 
   useEffect(() => {
-    if (!type && types[0]) setType(types[0].event_type);
+    // Earnings first: the type with the clearest, best-sampled answer.
+    // "Unclassified" leads by count but is the least meaningful to open on.
+    if (type || !types.length) return;
+    const pick =
+      types.find((t) => t.event_type === "EARNINGS") ??
+      types.find((t) => t.event_type !== "UNCLASSIFIED") ??
+      types[0];
+    if (pick) setType(pick.event_type);
   }, [type, types]);
 
   const { data: result, isLoading } = useQuery({

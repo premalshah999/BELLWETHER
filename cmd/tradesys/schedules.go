@@ -103,7 +103,6 @@ func startAISchedules(
 	// understood to under-report; the close scan is the one whose output
 	// should be trusted.
 	if marketScanner != nil {
-		nseScope := func(s marketdata.Symbol) bool { return s.IsIndian() }
 		usScope := func(s marketdata.Symbol) bool { return !s.IsIndian() && !s.IsIndex() }
 		scan := func(scope func(marketdata.Symbol) bool) func(context.Context) {
 			return func(runCtx context.Context) {
@@ -112,9 +111,6 @@ func startAISchedules(
 				}
 			}
 		}
-		add("market scan (nse close)", "CRON_TZ=Asia/Kolkata 45 15 * * 1-5", scan(nseScope))
-		add("market scan (nse intraday)", "CRON_TZ=Asia/Kolkata 15,45 10-14 * * 1-5", scan(nseScope))
-		add("market scan (nse open)", "CRON_TZ=Asia/Kolkata 45 9 * * 1-5", scan(nseScope))
 		add("market scan (us close)", "CRON_TZ=America/New_York 15 16 * * 1-5", scan(usScope))
 		add("market scan (us intraday)", "CRON_TZ=America/New_York 15,45 10-15 * * 1-5", scan(usScope))
 		add("market scan (us open)", "CRON_TZ=America/New_York 45 9 * * 1-5", scan(usScope))

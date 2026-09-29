@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { CalendarClock } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api, type UpcomingCatalyst } from "../../lib/api";
-import { venueOf } from "../../lib/symbol";
 import { Empty } from "../ui/Empty";
 import { Panel } from "../ui/Panel";
 import { Pill } from "../ui/Pill";
@@ -48,7 +47,6 @@ function tone(days: number | undefined): "brand" | "neutral" | "muted" {
  */
 export function CalendarPage({ onSelect }: { onSelect: (symbol: string) => void }) {
   const [days, setDays] = useState<number>(30);
-  const [venue, setVenue] = useState<"all" | "US" | "NSE">("all");
 
   const { data, isLoading } = useQuery({
     queryKey: ["calendar", days],
@@ -66,11 +64,7 @@ export function CalendarPage({ onSelect }: { onSelect: (symbol: string) => void 
     retry: false,
   });
 
-  const rows = useMemo(() => {
-    const all = data?.catalysts ?? [];
-    if (venue === "all") return all;
-    return all.filter((c) => (venueOf(c.symbol) === "NSE" ? "NSE" : "US") === venue);
-  }, [data, venue]);
+  const rows = useMemo(() => data?.catalysts ?? [], [data]);
 
   const earningsCount = rows.filter((r) => r.earnings_date).length;
 
@@ -99,23 +93,6 @@ export function CalendarPage({ onSelect }: { onSelect: (symbol: string) => void 
           ))}
         </div>
 
-        <div className="flex items-center gap-1">
-          {(["all", "US", "NSE"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setVenue(v)}
-              className={
-                "px-1.5 py-0.5 font-mono text-micro uppercase transition-colors " +
-                (venue === v
-                  ? "bg-brand-muted text-brand"
-                  : "text-text-muted hover:text-text-primary")
-              }
-            >
-              {v}
-            </button>
-          ))}
-        </div>
 
         <span className="ml-auto font-mono text-meta text-text-muted">
           {rows.length} scheduled

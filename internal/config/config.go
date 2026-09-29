@@ -166,7 +166,7 @@ func Load(envFile string) (*Config, error) {
 		TavilyAPIKey:   envStr("TAVILY_API_KEY", ""),
 		BraveAPIKey:    envStr("BRAVE_API_KEY", ""),
 		SearchProvider: envStr("SEARCH_PROVIDER", "tavily"),
-		DisplayTZID:    envStr("DISPLAY_TZ", "Asia/Kolkata"),
+		DisplayTZID:    envStr("DISPLAY_TZ", "America/New_York"),
 		SECUserAgent:   envStr("SEC_USER_AGENT", ""),
 	}
 
