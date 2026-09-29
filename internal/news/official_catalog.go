@@ -16,9 +16,6 @@ func AdditionalOfficialSources() []Source {
 		// catalogue reached. Each was pulled live from this host before being
 		// added, with the item count it returned:
 		//
-		//   DOJ    25 items -- merger challenges and antitrust suits. A suit
-		//                     against an announced deal is the single most
-		//                     direct way a merger arbitrage breaks.
 		//   USTR   10 items -- tariff and trade actions, which land on whole
 		//                     import-exposed sectors at once.
 		//   BEA    48 items -- GDP, personal income, trade balance.
@@ -29,7 +26,20 @@ func AdditionalOfficialSources() []Source {
 		// Two were tried and dropped rather than assumed: SEC's litigation
 		// feed 404s at every documented path, and Treasury's press feed
 		// returns 200 with zero items.
-		{"doj-news", "DOJ press releases", "https://www.justice.gov/news/rss?type=press_release", "US", "regulatory"},
+		//
+		// A third was added and later removed on measurement. DOJ's press
+		// feed was meant for merger challenges and antitrust suits, but it
+		// carries every US Attorney's office too: over 14 days it produced
+		// 104 events, all but one typed as regulatory policy at an average
+		// importance of 5.8, and not one concerned a listed company -- the
+		// ten that resolved to a ticker were false matches ("Salt Lake
+		// County" as LAKE, "New Orleans Man" as WEN). An official source
+		// skips the relevance gate, so this noise went straight to the top
+		// of the policy page. Neither the feed's component filter nor the
+		// JSON API's is honoured, and even the national (/opa/) releases are
+		// mostly criminal cases. The corporate enforcement it was meant to
+		// catch now arrives through disc-us-antitrust in catalog.go, which
+		// does pass the gate.
 		{"ustr-press", "USTR trade actions", "https://ustr.gov/rss.xml", "US", "regulatory"},
 		{"bea-news", "BEA economic releases", "https://apps.bea.gov/rss/rss.xml", "US", "economy"},
 		{"cftc-press", "CFTC press releases", "https://www.cftc.gov/RSS/RSSGP/rssgp.xml", "US", "regulatory"},

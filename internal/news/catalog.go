@@ -188,6 +188,15 @@ func DefaultSources() []Source {
 		// usually precedes the filing by hours to days.
 		{"disc-us-ma", "Mergers & Acquisitions (via discovery)",
 			`US company to acquire OR merger OR "definitive agreement" when:2d`},
+		// 23 items: "Live Nation and Ticketmaster Operate as an Illegal
+		// Monopoly, Jury Finds", "Judge Dismisses Michigan Climate Antitrust
+		// Suit Against Major Oil Companies". Corporate enforcement, which
+		// DOJ's own press feed buried under US Attorney sentencings (see
+		// official_catalog.go). Unlike that feed it goes through the
+		// relevance gate, so an item enters the stream only by naming a
+		// listed company.
+		{"disc-us-antitrust", "Antitrust & DOJ Actions (via discovery)",
+			`"Justice Department" antitrust lawsuit OR sues OR "blocks" company when:7d`},
 	}
 	for _, f := range usDiscovery {
 		out = append(out, Source{
