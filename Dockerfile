@@ -6,7 +6,7 @@
 # Done first and in its own stage so that a change to Go source does not
 # invalidate the npm install layer, which is by far the slowest step.
 # ---------------------------------------------------------------------------
-FROM node:24-alpine AS web
+FROM node:26-alpine AS web
 
 WORKDIR /build/web
 
