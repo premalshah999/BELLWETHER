@@ -98,10 +98,7 @@ type Config struct {
 	// StreamInterval is the live quote poll cadence during market hours.
 	StreamInterval time.Duration
 	// SessionSecret signs session cookies across restarts.
-	SessionSecret  string
-	TavilyAPIKey   string
-	BraveAPIKey    string
-	SearchProvider string
+	SessionSecret string
 
 	// Presentation
 	DisplayTZ   *time.Location
@@ -164,9 +161,6 @@ func Load(envFile string) (*Config, error) {
 		// market data feed. A licensed tick source makes this irrelevant.
 		StreamInterval: envDuration("STREAM_INTERVAL", 5*time.Second),
 		SessionSecret:  envStr("SESSION_SECRET", ""),
-		TavilyAPIKey:   envStr("TAVILY_API_KEY", ""),
-		BraveAPIKey:    envStr("BRAVE_API_KEY", ""),
-		SearchProvider: envStr("SEARCH_PROVIDER", "tavily"),
 		DisplayTZID:    envStr("DISPLAY_TZ", "America/New_York"),
 		SECUserAgent:   envStr("SEC_USER_AGENT", ""),
 	}
@@ -238,9 +232,6 @@ func (c *Config) TelegramConfigured() bool {
 func (c *Config) LLMConfigured() bool {
 	return c.LLMBaseURL != "" && c.LLMModel != "" && c.LLMAPIKey != ""
 }
-
-// SearchConfigured reports whether any search provider has a key.
-func (c *Config) SearchConfigured() bool { return c.TavilyAPIKey != "" || c.BraveAPIKey != "" }
 
 // envDuration reads a duration such as "5s" or "250ms".
 //

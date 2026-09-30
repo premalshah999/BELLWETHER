@@ -10,9 +10,6 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata/fixture"
 	"github.com/tradesys/dashboard/internal/marketdata/twelvedata"
 	"github.com/tradesys/dashboard/internal/marketdata/yfin"
-	"github.com/tradesys/dashboard/internal/search"
-	"github.com/tradesys/dashboard/internal/search/brave"
-	"github.com/tradesys/dashboard/internal/search/tavily"
 	"github.com/tradesys/dashboard/internal/server"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
@@ -99,25 +96,12 @@ func buildProviders(cfg *config.Config, store *postgres.DB, log *slog.Logger) (
 	deps = append(deps,
 		health.Dep{Provider: health.ProviderLLM, Kind: health.KindLLM, Configured: cfg.LLMConfigured()},
 		health.Dep{Provider: health.ProviderJev, Kind: health.KindLLM, Configured: cfg.TypeSafeAPIKey != ""},
-		health.Dep{Provider: tavily.Name, Kind: health.KindSearch, Configured: cfg.TavilyAPIKey != ""},
-		health.Dep{Provider: brave.Name, Kind: health.KindSearch, Configured: cfg.BraveAPIKey != ""},
 		// News needs no credentials, so it is always "configured" and its dot
 		// reflects whether the feeds are actually reachable.
 		health.Dep{Provider: "news", Kind: health.KindNews, Configured: true},
 		health.Dep{Provider: "telegram", Kind: health.KindNotify, Configured: cfg.TelegramConfigured()},
 	)
 	return providers, deps, budgets, searcher
-}
-
-// buildSearchProviders orders the search vendors by the operator's preference,
-// so the configured favourite is tried first and the other is the fallback.
-func buildSearchProviders(cfg *config.Config) []search.Provider {
-	tav := tavily.New(cfg.TavilyAPIKey)
-	brv := brave.New(cfg.BraveAPIKey)
-	if cfg.SearchProvider == "brave" {
-		return []search.Provider{brv, tav}
-	}
-	return []search.Provider{tav, brv}
 }
 
 func containsProvider(ps []marketdata.Provider, name string) bool {

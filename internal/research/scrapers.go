@@ -17,8 +17,7 @@ import (
 const maxBody = 4 << 20
 
 // httpGet performs a fetch with the same header policy as the ingestion
-// engine: no User-Agent at all, which is what NSE and several publishers
-// actually accept. See news.Engine.get for the measurements behind that.
+// engine: no User-Agent at all, which is what several publishers accept.
 func httpGet(ctx context.Context, client *http.Client, rawURL string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -108,7 +107,7 @@ func (g *GoogleNewsScraper) client() *http.Client {
 // expected traffic rather than a fault.
 type GDELTScraper struct {
 	Client *http.Client
-	// Country scopes results, e.g. "india". Empty searches worldwide.
+	// Country scopes results, e.g. "unitedstates". Empty searches worldwide.
 	Country string
 	// Timespan is the lookback window in GDELT's own syntax, e.g. "3d".
 	Timespan string
@@ -254,4 +253,73 @@ func firstLine(b []byte) string {
 		s = s[:90] + "…"
 	}
 	return s
+}
+
+// doJSON performs a request and returns the body.
+func doJSON(ctx context.Context, client *http.Client, req *http.Request, name string) ([]byte, error) {
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+		_ = resp.Body.Close()
+	}()
+
+	switch {
+	case resp.StatusCode == http.StatusTooManyRequests:
+		return nil, fmt.Errorf("%s: rate limited", name)
+	case resp.StatusCode != http.StatusOK:
+		return nil, fmt.Errorf("%s: returned %s", name, resp.Status)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, maxBody))
+}
+
+func hostOf(rawURL string) string {
+	s := strings.TrimPrefix(strings.TrimPrefix(rawURL, "https://"), "http://")
+	if i := strings.IndexByte(s, '/'); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimPrefix(s, "www.")
+}
+
+func truncate(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
+
+// stripTags removes markup from a snippet.
+func stripTags(s string) string {
+	for {
+		open := strings.IndexByte(s, '<')
+		if open < 0 {
+			return s
+		}
+		close := strings.IndexByte(s[open:], '>')
+		if close < 0 {
+			return s
+		}
+		s = s[:open] + s[open+close+1:]
+	}
+}
+
+// parseLooseDate accepts the several formats these APIs use, and gives up
+// quietly rather than inventing a timestamp.
+func parseLooseDate(s string) time.Time {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{
+		time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02 15:04:05",
+		"2006-01-02", "January 2, 2006", "Jan 2, 2006",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC()
+		}
+	}
+	return time.Time{}
 }

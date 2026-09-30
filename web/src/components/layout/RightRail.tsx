@@ -1,6 +1,8 @@
 import { Fundamentals } from "../Fundamentals";
 import { SymbolSmartMoney } from "../SymbolSmartMoney";
 import { Watchlist } from "../Watchlist";
+import { WebHeadlines } from "../WebHeadlines";
+import { tickerOf } from "../../lib/symbol";
 import { Tabs, usePersistedTab } from "../ui/Tabs";
 import { MarketStatus } from "./MarketStatus";
 import { RailCloseButton } from "./RailToggle";
@@ -46,6 +48,12 @@ export function RightRail({
         <div className="min-h-0 flex-1 overflow-y-auto">
           <Fundamentals symbol={symbol} />
           <SymbolSmartMoney symbol={symbol} />
+          <WebHeadlines
+            query={`${tickerOf(symbol)} stock`}
+            title={`${tickerOf(symbol)} on the web`}
+            first={4}
+            className="border-t border-border-subtle px-4 py-4"
+          />
         </div>
       )}
     </div>

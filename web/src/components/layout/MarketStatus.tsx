@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { humanMinutes, sessionState, type Venue } from "../../lib/session";
+import { humanMinutes, sessionState } from "../../lib/session";
 
 /**
  * Whether anything can move right now.
@@ -19,7 +19,7 @@ export function MarketStatus() {
     return () => window.clearInterval(t);
   }, []);
 
-  const s = sessionState("US" as Venue);
+  const s = sessionState();
   return (
     <div className="flex items-center gap-2.5 px-4 py-3">
       <span className={"h-2 w-2 shrink-0 rounded-full " + (s.open ? "bg-semantic-up" : "bg-border-focus")} />

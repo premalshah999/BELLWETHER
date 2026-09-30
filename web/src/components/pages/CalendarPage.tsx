@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { api, type UpcomingCatalyst } from "../../lib/api";
 import { useUrlState } from "../../lib/url";
 import { PageHeader, Segmented, SkeletonRows } from "../ui/controls";
+import { formatDate, MARKET_ZONE } from "../../lib/format";
 
 
 /** The holding period the base rate is measured over. */
@@ -30,10 +31,10 @@ function dayHeading(iso: string | undefined): string {
   if (!iso) return "Unscheduled";
   const key = iso.slice(0, 10);
   const local = (offsetDays: number) =>
-    new Date(Date.now() + offsetDays * 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    new Date(Date.now() + offsetDays * 86_400_000).toLocaleDateString("en-CA", { timeZone: MARKET_ZONE });
   if (key === local(0)) return "Today";
   if (key === local(1)) return "Tomorrow";
-  return new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
+  return formatDate(key, { weekday: "long", month: "short", day: "numeric" });
 }
 
 export function CalendarPage({ onSelect }: { onSelect: (symbol: string) => void }) {

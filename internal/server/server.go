@@ -149,6 +149,9 @@ type Server struct {
 	mux  *chi.Mux
 	// aiLimiter bounds what a loop against the model-backed routes can spend.
 	aiLimiter *rateLimiter
+	// webLimiter bounds open-web searches, which reach other people's
+	// search engines on the caller's behalf.
+	webLimiter *rateLimiter
 	// loginLimiter bounds guessing: ten attempts per caller, refilled over
 	// five minutes.
 	loginLimiter *rateLimiter
@@ -184,6 +187,7 @@ func New(d Deps) *Server {
 		// through a page generates two or three; a loop generates thousands,
 		// and each one costs tokens from a fixed monthly budget.
 		aiLimiter:    newRateLimiter(12, time.Minute, d.Log),
+		webLimiter:   newRateLimiter(30, time.Minute, d.Log),
 		loginLimiter: newRateLimiter(10, 5*time.Minute, d.Log),
 	}
 	// Idle callers are swept so the map does not grow once per address
@@ -193,6 +197,7 @@ func New(d Deps) *Server {
 		defer t.Stop()
 		for range t.C {
 			s.aiLimiter.sweep()
+			s.webLimiter.sweep()
 			s.loginLimiter.sweep()
 		}
 	}()
@@ -365,6 +370,7 @@ func (s *Server) routes() {
 			})
 
 			r.Get("/news", s.handleListNews)
+			r.With(s.webLimiter.middleware).Get("/web/search", s.handleWebSearch)
 
 			r.Get("/symbols/{symbol}/fundamentals", s.handleFundamentals)
 			r.Get("/stream/health", s.handleStreamHealth)

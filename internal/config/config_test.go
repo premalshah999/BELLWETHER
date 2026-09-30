@@ -110,12 +110,6 @@ func TestFeatureGates(t *testing.T) {
 			check: (*Config).LLMConfigured,
 			want:  true,
 		},
-		{
-			name:  "search needs either provider key",
-			env:   map[string]string{"BRAVE_API_KEY": "b"},
-			check: (*Config).SearchConfigured,
-			want:  true,
-		},
 	}
 
 	for _, tc := range tests {

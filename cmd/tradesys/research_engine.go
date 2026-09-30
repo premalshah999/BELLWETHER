@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/tradesys/dashboard/internal/ai"
 	"github.com/tradesys/dashboard/internal/config"
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
@@ -60,6 +61,9 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, archive *postgr
 		// news index, which is where a research answer picks up a company
 		// this app cannot price.
 		&research.GoogleNewsScraper{Client: client},
+		// Bing's news index: a second route to the open web that does not
+		// depend on the SearXNG node.
+		&research.BingNewsScraper{Client: client},
 		// GDELT's sourcecountry takes a country name, not a two-letter
 		// code, as one token with no internal space -- see the comment on
 		// gdelt-us-business in internal/news/catalog.go for what was and
@@ -142,21 +146,6 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, archive *postgr
 				Categories: "news", Language: "en", Pages: 2,
 			},
 		)
-	}
-
-	// Commercial search, when configured. These index independently of the
-	// feed-based scrapers, so what they add is coverage the curated catalog
-	// cannot reach — and two providers agreeing on a fact is corroboration in
-	// a way that two feeds carrying the same wire copy is not.
-	if key := cfg.TavilyAPIKey; key != "" {
-		scrapers = append(scrapers, &research.TavilyScraper{
-			Client: client, APIKey: key, Depth: "basic",
-		})
-	}
-	if key := cfg.BraveAPIKey; key != "" {
-		scrapers = append(scrapers, &research.BraveScraper{
-			Client: client, APIKey: key, Country: "IN", SearchLang: "en", Freshness: "pw",
-		})
 	}
 
 	// Entity resolution runs over every finding, so a research result says
@@ -296,4 +285,17 @@ func analysisDeps(store *postgres.DB, archive *postgres.Archive) research.Analys
 			return ref, nil
 		},
 	}
+}
+
+// webNews adapts the research engine's open-web search to what the AI layer
+// cites in an explanation.
+type webNews struct{ engine *research.Engine }
+
+func (w webNews) News(ctx context.Context, query string, limit int) ([]ai.WebResult, error) {
+	found, _, err := w.engine.Web(ctx, query, "news", limit)
+	out := make([]ai.WebResult, 0, len(found))
+	for _, f := range found {
+		out = append(out, ai.WebResult{Title: f.Title, URL: f.URL, Source: f.Publisher, Snippet: f.Snippet})
+	}
+	return out, err
 }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { humanMinutes, sessionState } from "../../lib/session";
 import type { StreamState } from "../../lib/stream";
+import { useTimeZone, type ZoneChoice } from "../../lib/format";
 import { useTheme, type ThemeChoice } from "../../lib/theme";
 
 /** The bell of the bellwether: the one drawn mark in the interface. */
@@ -77,6 +78,41 @@ export function ThemeSwitch() {
   );
 }
 
+const ZONES: { value: ZoneChoice; title: string }[] = [
+  { value: "market", title: "New York time, the market's own" },
+  { value: "local", title: "Your own time zone" },
+  { value: "utc", title: "Coordinated Universal Time" },
+];
+
+/** Which zone every clock time in the app is shown in. */
+export function ZoneSwitch() {
+  const [zone, setZone] = useTimeZone();
+  const local = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
+    .formatToParts(new Date())
+    .find((p) => p.type === "timeZoneName")?.value;
+  const label = { market: "ET", local: local ?? "Local", utc: "UTC" };
+  return (
+    <div role="radiogroup" aria-label="Time zone" className="flex rounded-md bg-bg-base p-0.5">
+      {ZONES.map((z) => (
+        <button
+          key={z.value}
+          type="button"
+          role="radio"
+          aria-checked={zone === z.value}
+          title={z.title}
+          onClick={() => setZone(z.value)}
+          className={
+            "flex h-7 items-center justify-center rounded px-2 font-num text-[11.5px] font-medium transition-colors " +
+            (zone === z.value ? "bg-bg-panel text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary")
+          }
+        >
+          {label[z.value]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Health, the market clock, and who is signed in.
  *
@@ -102,7 +138,7 @@ export function useSystemStatus(stream: StreamState) {
   );
   const degraded = providers.filter((p) => p.status === "degraded");
   const budget = ai?.budget;
-  const us = sessionState("US");
+  const us = sessionState();
   // Connected is not the same as receiving data: when the market is shut
   // nothing trades, so nothing streams.
   const live = stream.connected && us.open;
@@ -222,6 +258,10 @@ export function NavFooter({ shut, stream }: { shut?: boolean; stream: StreamStat
         >
           <p className="border-b border-border-subtle px-3 py-2 text-meta text-text-secondary">{s.market}</p>
           <StatusDetails stream={stream} />
+          <div className="flex items-center justify-between border-t border-border-subtle px-3 py-2">
+            <span className="text-meta text-text-muted">Times in</span>
+            <ZoneSwitch />
+          </div>
           <div className="flex items-center justify-between border-t border-border-subtle px-3 py-2">
             <span className="text-meta text-text-muted">Theme</span>
             <ThemeSwitch />

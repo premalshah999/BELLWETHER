@@ -3,7 +3,7 @@ import { Bell, CalendarClock, ChevronRight, Radar, RefreshCw, ShieldCheck, Spark
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, type Alert, type MarketEvent, type MorningBrief, type ScanFinding, type UpcomingCatalyst } from "../../lib/api";
-import { formatAgo, formatClock } from "../../lib/format";
+import { formatAgo, formatClock, zoneName } from "../../lib/format";
 import { humanMinutes, sessionState } from "../../lib/session";
 import { signalSentence, signed, toneOf } from "../../lib/signals";
 import { EventDrawer, importanceLabel, typeLabel } from "../EventDrawer";
@@ -82,8 +82,8 @@ export function OverviewPage({ onSelect }: { onSelect: (symbol: string) => void 
     .slice(0, 8);
 
   const loading = alerts.isLoading || scan.isLoading || calendar.isLoading;
-  const us = sessionState("US");
-  const date = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
+  const us = sessionState();
+  const date = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: zoneName() }).format(new Date());
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-bg-base">

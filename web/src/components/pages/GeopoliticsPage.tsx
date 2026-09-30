@@ -185,7 +185,7 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
                       (hits.length ? "shadow-[inset_3px_0_0_var(--brass)]" : "")
                     }
                   >
-                    <time dateTime={at} title={formatDateTime(at)} className="w-12 shrink-0 pt-0.5 font-num text-[12px] text-text-muted max-sm:hidden">
+                    <time dateTime={at} title={formatDateTime(at)} className="w-14 shrink-0 pt-0.5 font-num text-[12px] leading-[1.35] text-text-muted max-sm:hidden">
                       {formatClock(at)}
                     </time>
                     <div className="min-w-0 flex-1">

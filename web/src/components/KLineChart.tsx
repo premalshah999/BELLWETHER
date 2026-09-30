@@ -14,7 +14,7 @@ import {
 } from "klinecharts";
 import type { Candle, Interval } from "../lib/api";
 import { usePalette, type Palette } from "../lib/palette";
-import { timeZoneOf } from "../lib/symbol";
+import { MARKET_ZONE, zoneAbbr, zoneName } from "../lib/format";
 
 /**
  * The price chart.
@@ -77,7 +77,6 @@ export function KLineChart({
   candles,
   symbol,
   interval,
-  timeZone = timeZoneOf(symbol),
   studies = DEFAULT_STUDIES,
   kind = CandleType.CandleSolid,
   tool = null,
@@ -88,8 +87,6 @@ export function KLineChart({
   symbol: string;
   /** Decides whether a bar is labelled with a date or a time. */
   interval: Interval;
-  /** The venue's zone, not the browser's. See the note in the effect. */
-  timeZone?: string;
   /** Studies to draw. Diffed against what is on the chart. */
   studies?: Study[];
   /** Candles, hollow candles, bars, or an area under the close. */
@@ -121,14 +118,15 @@ export function KLineChart({
   // on every price tick.
   useEffect(() => {
     if (!ref.current) return;
+    /*
+     * A daily bar is stamped at the start of the exchange's day, so it is
+     * always read in the exchange's zone: in another one, every daily candle
+     * can be labelled a day early. Intraday bars follow the zone the viewer
+     * chose, and the crosshair names it.
+     */
+    const daily = interval === "1d" || interval === "1wk";
+    const timeZone = daily ? MARKET_ZONE : zoneName();
     const chart = init(ref.current, {
-      /*
-       * The exchange's timezone, never the browser's.
-       *
-       * A daily bar is stamped at the start of the exchange's day. Rendered in
-       * another zone, every daily candle can be labelled a day early; the data
-       * was never wrong, the axis was reading it in the wrong zone.
-       */
       timezone: timeZone,
       customApi: {
         /*
@@ -142,7 +140,6 @@ export function KLineChart({
          */
         formatDate: (_fmt, timestamp, _format, type) => {
           const d = new Date(timestamp);
-          const daily = interval === "1d" || interval === "1wk";
           const date = d.toLocaleDateString("en-US", {
             timeZone,
             day: "2-digit",
@@ -158,7 +155,7 @@ export function KLineChart({
           });
           // The axis has no room for both; the crosshair and tooltip do, and
           // that is where a reader checks which bar they are actually on.
-          return type === FormatDateType.XAxis ? time : `${date} ${time}`;
+          return type === FormatDateType.XAxis ? time : `${date} ${time} ${zoneAbbr(d)}`;
         },
       },
       styles: chartStyles(paletteRef.current),
@@ -176,7 +173,7 @@ export function KLineChart({
     };
     // Rebuilt when the interval or zone changes, because both are baked into
     // the formatter above. Data changes do not rebuild — see the next effect.
-  }, [interval, timeZone]);
+  }, [interval]);
 
   /*
    * Studies, diffed.

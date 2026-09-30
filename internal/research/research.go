@@ -205,40 +205,27 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 	defer cancel()
 	start := time.Now()
 
-	var (
-		mu       sync.Mutex
-		findings []Finding
-		reports  []ScraperReport
-		wg       sync.WaitGroup
-	)
+	// The open-web scrapers go deeper than the fixed publishers: they are the
+	// reach beyond the curated catalogue, and most of what they return can
+	// be read in full.
+	var web, fixed []Scraper
 	for _, sc := range e.scrapers {
-		wg.Add(1)
-		go func(sc Scraper) {
-			defer wg.Done()
-			providerCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
-			defer cancel()
-			var got []Finding
-			var err error
-			select {
-			case e.searchSlots <- struct{}{}:
-				got, err = searchProvider(providerCtx, sc, query, perScraper)
-				<-e.searchSlots
-			case <-providerCtx.Done():
-				err = providerCtx.Err()
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			rep := ScraperReport{Name: sc.Name(), Count: len(got)}
-			if err != nil {
-				rep.Error = err.Error()
-				rep.Count = 0
-			}
-			reportProgress(ctx, "searching", fmt.Sprintf("%s: %d results", rep.Name, rep.Count))
-			reports = append(reports, rep)
-			findings = append(findings, got...)
-		}(sc)
+		if openWeb[sc.Name()] {
+			web = append(web, sc)
+		} else {
+			fixed = append(fixed, sc)
+		}
 	}
+	var (
+		webFindings []Finding
+		webReports  []ScraperReport
+		wg          sync.WaitGroup
+	)
+	wg.Go(func() { webFindings, webReports = e.fanOut(ctx, web, query, max(perScraper, webDepth), 35*time.Second) })
+	findings, reports := e.fanOut(ctx, fixed, query, perScraper, 35*time.Second)
 	wg.Wait()
+	findings, reports = append(findings, webFindings...), append(reports, webReports...)
+	sort.Slice(reports, func(i, j int) bool { return reports[i].Name < reports[j].Name })
 
 	findings = dedupeFindings(findings)
 	symbolSet := map[string]bool{}
@@ -258,7 +245,6 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 	}
 
 	rankFindings(query, findings)
-	sort.Slice(reports, func(i, j int) bool { return reports[i].Name < reports[j].Name })
 
 	symbols := make([]string, 0, len(symbolSet))
 	for s := range symbolSet {
@@ -302,6 +288,105 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 		Universe:     universe,
 		Elapsed:      time.Since(start).Round(time.Millisecond).String(),
 	}, nil
+}
+
+// fanOut runs scrapers in parallel, each under its own deadline, and
+// collects what they return with a report per scraper. One failing or
+// returning nothing degrades the answer rather than failing it.
+func (e *Engine) fanOut(ctx context.Context, scrapers []Scraper, query string, per int, timeout time.Duration) ([]Finding, []ScraperReport) {
+	var (
+		mu       sync.Mutex
+		findings []Finding
+		reports  []ScraperReport
+		wg       sync.WaitGroup
+	)
+	for _, sc := range scrapers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			providerCtx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
+			var got []Finding
+			var err error
+			select {
+			case e.searchSlots <- struct{}{}:
+				got, err = searchProvider(providerCtx, sc, query, per)
+				<-e.searchSlots
+			case <-providerCtx.Done():
+				err = providerCtx.Err()
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			rep := ScraperReport{Name: sc.Name(), Count: len(got)}
+			if err != nil {
+				rep.Error, rep.Count = err.Error(), 0
+			}
+			reportProgress(ctx, "searching", fmt.Sprintf("%s: %d results", rep.Name, rep.Count))
+			reports = append(reports, rep)
+			findings = append(findings, got...)
+		}()
+	}
+	wg.Wait()
+	sort.Slice(reports, func(i, j int) bool { return reports[i].Name < reports[j].Name })
+	return findings, reports
+}
+
+// webScrapers are the scrapers that search the open web rather than a fixed
+// publisher or archive, by the kind of result wanted.
+var webScrapers = map[string][]string{
+	"news": {"searxng_news", "bing_news", "google_news"},
+	"web":  {"searxng_web"},
+}
+
+// openWeb is every open-web scraper, and webDepth how many results a research
+// question asks each of them for.
+var openWeb = map[string]bool{
+	"searxng_news": true, "searxng_web": true, "searxng_archive": true, "bing_news": true, "google_news": true,
+}
+
+const webDepth = 30
+
+// Web searches the open web: recent reporting (kind "news", newest first) or
+// pages of any age (kind "web", most relevant first). It is the quick path a
+// panel uses -- headlines and links, no page reading or measurement.
+func (e *Engine) Web(ctx context.Context, query, kind string, limit int) ([]Finding, []ScraperReport, error) {
+	query = strings.TrimSpace(query)
+	names, ok := webScrapers[kind]
+	if query == "" || !ok {
+		return nil, nil, fmt.Errorf("research: web search needs a query and a kind of news or web")
+	}
+	var scrapers []Scraper
+	for _, sc := range e.scrapers {
+		for _, n := range names {
+			if sc.Name() == n {
+				scrapers = append(scrapers, sc)
+			}
+		}
+	}
+	if len(scrapers) == 0 {
+		return nil, nil, fmt.Errorf("research: no web search provider is configured")
+	}
+	limit = max(1, min(limit, 40))
+	findings, reports := e.fanOut(ctx, scrapers, query, limit, 12*time.Second)
+	findings = dedupeFindings(findings)
+	if kind == "news" {
+		// Newest first; an undated result sorts last rather than being
+		// assumed recent.
+		sort.SliceStable(findings, func(i, j int) bool { return findings[i].PublishedAt.After(findings[j].PublishedAt) })
+	} else {
+		rankFindings(query, findings)
+	}
+	if len(findings) > limit {
+		findings = findings[:limit]
+	}
+	if e.resolve != nil {
+		for i := range findings {
+			if len(findings[i].Symbols) == 0 {
+				findings[i].Symbols = e.resolve(findings[i].Title + ". " + findings[i].Snippet)
+			}
+		}
+	}
+	return findings, reports, nil
 }
 
 // dedupeFindings collapses the same document arriving from several scrapers.

@@ -140,7 +140,16 @@ services:
     image: searxng/searxng:latest
     container_name: tradesys-searxng
 
+    # The signing secret comes from the environment, never from the committed
+    # settings file. When none is set, a random one is generated at start:
+    # nothing here needs it to survive a restart.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - 'export SEARXNG_SECRET="$${SEARXNG_SECRET:-$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d " \n")}"; exec /usr/local/searxng/entrypoint.sh'
+
     environment:
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-}"
       # Used only for internal URL generation; nothing is published.
       SEARXNG_BASE_URL: "http://searxng:8080/"
       # A private instance serving one process needs one worker.

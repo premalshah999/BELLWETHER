@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { money } from "./charts/BarList";
+import { formatDate } from "../lib/format";
 
 /**
  * Who has been trading one stock: open-market insider trades over the past
@@ -44,7 +45,7 @@ export function SymbolSmartMoney({ symbol }: { symbol: string }) {
       {buys.slice(0, 3).map((t) => (
         <p key={t.accession + t.shares} className="mt-2 text-meta text-text-secondary">
           <span className="text-text-primary">{t.owner_name}</span> ({t.role}) bought {money(t.value)} on{" "}
-          {new Date(t.tx_date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}
+          {formatDate(t.tx_date, { month: "short", day: "numeric" })}
         </p>
       ))}
       {moves.slice(0, 4).map((m) => (

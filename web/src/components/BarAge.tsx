@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import type { Candle, Interval } from "../lib/api";
-import type { Venue } from "../lib/session";
 import { sessionState } from "../lib/session";
 
 /** How long one bar of each interval covers, in minutes. */
@@ -24,13 +23,11 @@ export function BarAge({
   bar,
   interval,
   fetchedAt,
-  venue = "US",
 }: {
   bar: Candle | null;
   interval: Interval;
   /** When the request that produced these bars completed. */
   fetchedAt: number;
-  venue?: Venue;
 }) {
   // Ticks so the age keeps counting between fetches; a number that only moves
   // when the data does cannot show that the data has stopped moving.
@@ -50,7 +47,7 @@ export function BarAge({
 
   // Outside market hours the newest bar is supposed to be old, and reporting a
   // seventeen-hour lag overnight would be noise rather than information.
-  if (!sessionState(venue).open && !daily) {
+  if (!sessionState().open && !daily) {
     return (
       <span className="font-mono text-micro text-text-muted" title={label(fetchedAt)}>
         Market closed

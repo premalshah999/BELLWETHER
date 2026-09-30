@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, FileText, History, Plus, RotateCw, Sparkles, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type MarketStats, type ResearchTurn } from "../../lib/api";
-import { formatAgo } from "../../lib/format";
+import { formatAgo, formatDateTime } from "../../lib/format";
 import { usePersisted } from "../../lib/layout";
 import { Drawer, PageHeader, Segmented } from "../ui/controls";
 import { AnalysisPanel } from "../research/AnalysisPanel";
@@ -434,7 +434,7 @@ function Sources({ turn }: { turn: ResearchTurn }) {
                 <span>
                   {source.published_at &&
                   !source.published_at.startsWith("0001")
-                    ? formatAgo(source.published_at)
+                    ? formatDateTime(source.published_at)
                     : "Publication date unknown"}
                 </span>
                 {source.trust === 100 && (

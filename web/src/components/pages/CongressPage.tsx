@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { safeHref, useUrlState } from "../../lib/url";
 import { PageHeader, SkeletonRows } from "../ui/controls";
+import { formatDate } from "../../lib/format";
 
 /**
  * Who in Congress has traded what, from the House Clerk's own STOCK Act
@@ -20,22 +21,6 @@ import { PageHeader, SkeletonRows } from "../ui/controls";
  * than presented the same as one filed on time.
  */
 const STOCK_ACT_DEADLINE_DAYS = 45;
-
-// A DATE column ("2026-03-31") carries no timezone -- reformatting it
-// through the display zone the way a real timestamp is would risk shifting
-// it a day in either direction depending on the operator's offset. Parsed
-// and rendered as plain calendar text instead.
-function formatDateOnly(iso: string | undefined): string {
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return "—";
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 export function CongressPage({ onSelect, embedded }: { onSelect: (symbol: string) => void; embedded?: boolean }) {
   const navigate = useNavigate();
@@ -159,8 +144,8 @@ export function CongressPage({ onSelect, embedded }: { onSelect: (symbol: string
                       </a>
                       <span className="block text-meta text-text-muted">{f.state_district}</span>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-text-secondary">{formatDateOnly(f.filing_date)}</td>
-                    <td className="whitespace-nowrap px-3 py-3 text-text-secondary">{formatDateOnly(f.earliest_transaction_date)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-text-secondary">{formatDate(f.filing_date)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-text-secondary">{formatDate(f.earliest_transaction_date)}</td>
                     <td className="px-3 py-3">
                       {delay == null ? (
                         <span className="text-text-muted">—</span>

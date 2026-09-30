@@ -7,7 +7,7 @@ import { SideNav } from "./components/layout/SideNav";
 import { RightRail } from "./components/layout/RightRail";
 import { OverviewPage } from "./components/pages/OverviewPage";
 import { api } from "./lib/api";
-import { setDisplayTimeZone } from "./lib/format";
+import { useTimeZone } from "./lib/format";
 import { useMedia, useResize, usePersisted } from "./lib/layout";
 import { StreamContext, useMarketStream } from "./lib/useStream";
 import { loaders, preload } from "./lib/routes";
@@ -86,16 +86,9 @@ export function App() {
     idle(() => ["/news", "/charts", "/scanner", "/research"].forEach(preload));
   }, []);
 
-  // Every timestamp in the interface is rendered in the operator's zone, which
-  // the server owns. Set once rather than threaded through every component.
-  const { data: meta } = useQuery({
-    queryKey: ["meta"],
-    queryFn: api.meta,
-    staleTime: Infinity,
-  });
-  useEffect(() => {
-    if (meta?.display_tz) setDisplayTimeZone(meta.display_tz);
-  }, [meta?.display_tz]);
+  // Every clock time is drawn in the zone the viewer chose. Keying the pages
+  // on it redraws them all when the choice changes.
+  const [zone] = useTimeZone();
 
   /*
    * The working-set rail belongs on the two pages that are about one
@@ -168,7 +161,7 @@ export function App() {
               overflow:hidden, so its inner scroll region is sized to the
               content, never overflows, and nothing on the page scrolls at
               all — the content is simply unreachable. */}
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <main key={zone} className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Suspense fallback={<PageLoading />}>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />

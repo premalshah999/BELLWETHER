@@ -190,7 +190,7 @@ function Row({ outlook: o }: { outlook: Outlook }) {
   return (
     <tr className="hover:bg-bg-panel-hover">
       <td className="px-3.5 py-2 font-mono text-meta text-text-muted">
-        {formatDateTime(o.created_at).slice(0, 11)}
+        {formatDateTime(o.created_at)}
       </td>
       <td className="px-3.5 py-2 font-mono text-meta text-text-primary">{o.symbol}</td>
       <td className="px-3.5 py-2 font-mono text-meta text-text-secondary">

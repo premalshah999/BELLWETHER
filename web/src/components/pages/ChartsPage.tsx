@@ -20,7 +20,7 @@ import { api, type Algorithm, type Candle, type Interval, type Node as RuleNode 
 import { formatAgo } from "../../lib/format";
 import { usePersisted, useResize } from "../../lib/layout";
 import { detectPatterns, detectStructure, type Direction } from "../../lib/patterns";
-import { tickerOf, venueOf } from "../../lib/symbol";
+import { tickerOf } from "../../lib/symbol";
 import { CHART_KINDS, DEFAULT_STUDIES, KLineChart, TOOLS, type ChartKind, type Study } from "../KLineChart";
 import { BarAge } from "../BarAge";
 import { Divider } from "../ui/Divider";
@@ -402,7 +402,6 @@ function ChartPane({
             bar={lastBar}
             interval={pane.interval}
             fetchedAt={dataUpdatedAt}
-            venue={venueOf(pane.symbol)}
           />
           <IconBtn title="Fetch the latest bars" on={isFetching} onClick={() => refetch()} icon={RefreshCw} />
           <IconBtn

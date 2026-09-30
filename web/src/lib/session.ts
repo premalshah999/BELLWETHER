@@ -1,95 +1,53 @@
+import { MARKET_ZONE } from "./format";
+
 /**
- * Whether a market is open, and when it next is.
- *
- * The interface previously said "LIVE" at all hours and showed a frozen
- * screen outside them, which is the single most misleading thing it could
- * do: a reader cannot tell a closed market from a broken feed, and both look
- * like nothing changing.
- *
- * Mirrors the server's session model rather than inventing a second one —
- * US regular hours, 09:30–16:00 ET, weekdays. Holidays are not
- * modelled here or on the server; a holiday reads as open-with-no-ticks,
- * which is a smaller error than pretending to know every exchange calendar.
+ * Whether the US market is open, and when it next is. The interface once
+ * said "LIVE" at all hours over a frozen screen, and a reader cannot tell a
+ * closed market from a broken feed. Mirrors the server: regular hours,
+ * 09:30-16:00 ET on weekdays. Holidays are not modelled; one reads as
+ * open-with-no-ticks.
  */
-
-export type Venue = "US";
-
-interface Window {
-  tz: string;
-  open: [number, number];
-  close: [number, number];
-}
-
-const WINDOWS: Record<Venue, Window> = {
-  US: { tz: "America/New_York", open: [9, 30], close: [16, 0] },
-};
+const OPEN = 9 * 60 + 30;
+const CLOSE = 16 * 60;
 
 export interface SessionState {
-  venue: Venue;
   open: boolean;
   /** Minutes until the next open, when closed. */
   opensInMinutes?: number;
   /** Minutes until close, when open. */
   closesInMinutes?: number;
+  /** The New York wall clock, HH:MM. */
   localTime: string;
 }
 
-/** Wall-clock minutes and weekday in a given zone. */
-function parts(tz: string, at: Date) {
-  const f = new Intl.DateTimeFormat("en-GB", {
-    timeZone: tz,
+export function sessionState(at: Date = new Date()): SessionState {
+  const got: Record<string, string> = {};
+  for (const p of new Intl.DateTimeFormat("en-GB", {
+    timeZone: MARKET_ZONE,
     hour: "2-digit",
     minute: "2-digit",
     weekday: "short",
     hour12: false,
-  });
-  const got: Record<string, string> = {};
-  for (const p of f.formatToParts(at)) got[p.type] = p.value;
-  const hour = Number(got.hour);
-  const minute = Number(got.minute);
-  return {
-    minutes: hour * 60 + minute,
-    weekday: got.weekday ?? "",
-    clock: `${got.hour}:${got.minute}`,
-  };
-}
-
-export function sessionState(venue: Venue, at: Date = new Date()): SessionState {
-  const w = WINDOWS[venue];
-  const { minutes, weekday, clock } = parts(w.tz, at);
-  const openAt = w.open[0] * 60 + w.open[1];
-  const closeAt = w.close[0] * 60 + w.close[1];
+  }).formatToParts(at))
+    got[p.type] = p.value;
+  const minutes = Number(got.hour) * 60 + Number(got.minute);
+  const weekday = got.weekday ?? "";
+  const localTime = `${got.hour}:${got.minute}`;
   const weekend = weekday === "Sat" || weekday === "Sun";
 
-  if (!weekend && minutes >= openAt && minutes < closeAt) {
-    return { venue, open: true, closesInMinutes: closeAt - minutes, localTime: clock };
+  if (!weekend && minutes >= OPEN && minutes < CLOSE) {
+    return { open: true, closesInMinutes: CLOSE - minutes, localTime };
   }
-
-  // Minutes until the next open. Past today's close, or on a weekend, that is
-  // the following weekday morning.
-  let wait: number;
-  if (weekend) {
-    const daysToMonday = weekday === "Sat" ? 2 : 1;
-    wait = daysToMonday * 24 * 60 - minutes + openAt;
-  } else if (minutes < openAt) {
-    wait = openAt - minutes;
-  } else {
-    // Friday evening waits until Monday.
-    const days = weekday === "Fri" ? 3 : 1;
-    wait = days * 24 * 60 - minutes + openAt;
-  }
-  return { venue, open: false, opensInMinutes: wait, localTime: clock };
+  // The next open: later today, or the next weekday morning.
+  const days = weekend ? (weekday === "Sat" ? 2 : 1) : minutes < OPEN ? 0 : weekday === "Fri" ? 3 : 1;
+  return { open: false, opensInMinutes: days * 24 * 60 - minutes + OPEN, localTime };
 }
 
-/** "2h 14m", "38m", "3d 1h" — coarse enough to read at a glance. */
+/** "2h 14m", "38m", "3d 1h": coarse enough to read at a glance. */
 export function humanMinutes(total: number): string {
   if (total < 60) return `${total}m`;
   const hours = Math.floor(total / 60);
-  if (hours < 24) {
-    const m = total % 60;
-    return m ? `${hours}h ${m}m` : `${hours}h`;
-  }
+  if (hours < 24) return total % 60 ? `${hours}h ${total % 60}m` : `${hours}h`;
   const days = Math.floor(hours / 24);
-  const h = hours % 24;
-  return h ? `${days}d ${h}h` : `${days}d`;
+  return hours % 24 ? `${days}d ${hours % 24}h` : `${days}d`;
 }

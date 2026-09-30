@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { StockAnalysis } from "../../lib/api";
 import { money } from "../charts/BarList";
+import { formatDate } from "../../lib/format";
 
 function pct(v: number, digits = 1) {
   return `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}%`;
@@ -12,9 +13,7 @@ function words(t: string) {
   const s = t.replace(/_/g, " ").toLowerCase();
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
-function day(d: string) {
-  return new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit", timeZone: "UTC" });
-}
+const day = (d: string) => formatDate(d, { month: "short", day: "numeric", year: "2-digit" });
 
 /**
  * The stock against the S&P 500 over the year, both rebased to 100, with its
@@ -108,7 +107,7 @@ function PriceChart({ a }: { a: StockAnalysis }) {
         ))}
         {months.map((i) => (
           <text key={i} x={x(i)} y={H - 8} textAnchor="middle" className="fill-text-muted text-[10.5px]">
-            {new Date(pts[i]!.d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}
+            {formatDate(pts[i]!.d, { month: "short" })}
           </text>
         ))}
         <line x1={pad.l} x2={W - pad.r} y1={y(100)} y2={y(100)} className="stroke-border-focus" strokeDasharray="3 4" strokeWidth={1} />

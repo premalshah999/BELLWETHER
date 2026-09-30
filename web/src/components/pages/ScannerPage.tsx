@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Radar, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, type ScanFinding } from "../../lib/api";
 import { formatAgo } from "../../lib/format";
 import { signalName, signalSentence, signed, toneOf } from "../../lib/signals";
+import { tickerOf } from "../../lib/symbol";
 import { useUrlState } from "../../lib/url";
 import { PageHeader, Segmented, SkeletonRows } from "../ui/controls";
+import { WebHeadlines } from "../WebHeadlines";
 import { ScreensView } from "./ScreensView";
 
 const VIEWS = ["all", "unexplained", "explained"] as const;
@@ -48,6 +50,7 @@ function Signals({ onSelect }: { onSelect: (symbol: string) => void }) {
   const [view, setView] = useUrlState<View>("view", "all");
   const [sort, setSort] = useState<SortKey>("score");
   const [desc, setDesc] = useState(true);
+  const [webFor, setWebFor] = useState<string | null>(null);
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -199,8 +202,8 @@ function Signals({ onSelect }: { onSelect: (symbol: string) => void }) {
             </thead>
             <tbody>
               {shown.map((f) => (
+                <Fragment key={f.id}>
                 <tr
-                  key={f.id}
                   onClick={() => open(f.symbol)}
                   className="group cursor-pointer border-t border-border-subtle transition-colors hover:bg-bg-panel-hover"
                 >
@@ -220,9 +223,18 @@ function Signals({ onSelect }: { onSelect: (symbol: string) => void }) {
                   <td className="px-3 py-3 text-text-secondary">
                     <span>{signalSentence(f.signals)}</span>
                     {f.explained === false && (
-                      <span className="ml-2 whitespace-nowrap rounded-sm bg-brand-muted px-1.5 py-px text-micro font-medium text-brand">
-                        No explanation
-                      </span>
+                      <button
+                        type="button"
+                        aria-expanded={webFor === f.symbol}
+                        title="Nothing in the archive explains this move. Search the web for it."
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setWebFor(webFor === f.symbol ? null : f.symbol);
+                        }}
+                        className="ml-2 whitespace-nowrap rounded-sm bg-brand-muted px-1.5 py-px text-micro font-medium text-brand hover:underline"
+                      >
+                        No explanation · search the web
+                      </button>
                     )}
                   </td>
                   <td className="px-6 py-3">
@@ -234,6 +246,14 @@ function Signals({ onSelect }: { onSelect: (symbol: string) => void }) {
                     </span>
                   </td>
                 </tr>
+                {webFor === f.symbol && (
+                  <tr className="border-t border-border-subtle bg-bg-field">
+                    <td colSpan={7} className="px-6 py-3">
+                      <WebHeadlines query={`${tickerOf(f.symbol)} stock news`} title={`Why ${f.symbol} may be moving`} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

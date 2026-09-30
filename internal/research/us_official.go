@@ -1,10 +1,12 @@
 package research
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -39,9 +41,9 @@ func (s *SECFullTextScraper) Search(ctx context.Context, query string, limit int
 	if limit <= 0 || limit > 40 {
 		limit = 20
 	}
-	endpoint := "https://efts.sec.gov/LATEST/search-index?q=" + urlQueryEscape(query)
+	endpoint := "https://efts.sec.gov/LATEST/search-index?q=" + url.QueryEscape(query)
 	if s.Forms != "" {
-		endpoint += "&forms=" + urlQueryEscape(s.Forms)
+		endpoint += "&forms=" + url.QueryEscape(s.Forms)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -139,7 +141,7 @@ func (f *FederalRegisterScraper) Search(ctx context.Context, query string, limit
 	}
 	endpoint := fmt.Sprintf(
 		"https://www.federalregister.gov/api/v1/documents.json?conditions%%5Bterm%%5D=%s&per_page=%d&order=relevance",
-		urlQueryEscape(query), limit)
+		url.QueryEscape(query), limit)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -178,7 +180,7 @@ func (f *FederalRegisterScraper) Search(ctx context.Context, query string, limit
 			agency = r.Agencies[0].Name
 		}
 		findings = append(findings, Finding{
-			Title: r.Title, URL: r.HTMLURL, Publisher: firstNonEmpty(agency, "Federal Register"),
+			Title: r.Title, URL: r.HTMLURL, Publisher: cmp.Or(agency, "Federal Register"),
 			Snippet:     truncate(stripTags(r.Excerpts), 400),
 			PublishedAt: parseLooseDate(r.PublicationDate),
 			Scraper:     f.Name(), Trust: f.Trust(),
