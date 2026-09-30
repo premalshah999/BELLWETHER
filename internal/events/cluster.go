@@ -22,13 +22,13 @@ var stopWords = map[string]bool{
 	"this": true, "that": true, "these": true, "those": true, "after": true,
 	"over": true, "into": true, "amid": true, "says": true, "said": true,
 	"up": true, "down": true, "new": true, "more": true, "than": true,
-	"per": true, "cent": true, "crore": true, "lakh": true, "rs": true,
+	"per": true, "cent": true,
 }
 
 // NormalizeTitle reduces a headline to its content words.
 //
-// Publishers restyle the same story constantly — "TCS Wins $1 Billion
-// Contract", "TCS wins $1bn contract", "Tata Consultancy bags $1 billion
+// Publishers restyle the same story constantly — "Oracle Wins $1 Billion
+// Contract", "Oracle wins $1bn contract", "Oracle bags $1 billion
 // deal" — and the differences are punctuation, case and filler. What survives
 // here is the part that actually distinguishes one story from another.
 func NormalizeTitle(s string) string {
@@ -154,7 +154,7 @@ type MatchDecision struct {
 //
 // The rule is conjunctive by design: a candidate must share at least one
 // resolved company AND either an identical title key or a high similarity
-// score. Requiring both is what keeps "Reliance wins order" and "Reliance
+// score. Requiring both is what keeps "Boeing wins order" and "Boeing
 // faces probe" apart on a day when both are true, and what keeps two unrelated
 // companies' identically-worded results announcements from collapsing.
 func FindCluster(title string, symbols []string, typ Type, at time.Time, candidates []Candidate) MatchDecision {

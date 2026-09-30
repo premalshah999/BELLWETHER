@@ -26,12 +26,6 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.AlphaVantageDailyLimit != 25 {
 		t.Errorf("AlphaVantageDailyLimit = %d, want 25", cfg.AlphaVantageDailyLimit)
 	}
-	if cfg.DisplayTZID != "America/New_York" {
-		t.Errorf("DisplayTZID = %q, want America/New_York", cfg.DisplayTZID)
-	}
-	if cfg.DisplayTZ == nil {
-		t.Error("DisplayTZ was not resolved")
-	}
 	// yfinance leads: it has no request budget and the deepest history, so
 	// the budgeted providers stand behind it.
 	want := []string{"yfinance", "twelvedata", "alphavantage"}
@@ -145,7 +139,6 @@ func TestLoadRejectsBadValues(t *testing.T) {
 		{name: "unknown provider", env: map[string]string{"MARKETDATA_ORDER": "yahoo,bloomberg"}},
 		{name: "negative twelvedata limit", env: map[string]string{"TWELVEDATA_DAILY_LIMIT": "-1"}},
 		{name: "empty provider list", env: map[string]string{"MARKETDATA_ORDER": ",,"}},
-		{name: "unknown timezone", env: map[string]string{"DISPLAY_TZ": "Mars/Olympus"}},
 		{name: "negative av limit", env: map[string]string{"ALPHAVANTAGE_DAILY_LIMIT": "-3"}},
 		{name: "negative token budget", env: map[string]string{"LLM_MONTHLY_TOKEN_BUDGET": "-1"}},
 	}

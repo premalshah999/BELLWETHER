@@ -8,7 +8,7 @@ library and speaks the same normalised JSON as the rest.
 It exists for three reasons the hosted APIs do not cover on a free tier:
 
   * depth   — five or more years of daily history, not 100 bars
-  * breadth — NSE and BSE listings, which Twelve Data gates behind a paid plan
+  * breadth — a year of daily bars for the whole universe in one scan
   * cost    — no daily request budget to ration
 
 It binds to loopback inside the compose network and is never exposed publicly.
@@ -161,8 +161,9 @@ def cached_fetch(symbol: str, interval: str, years: float, adjust: bool) -> dict
     return payload
 
 
-# Yahoo's exchange codes, mapped to the canonical suffix the app uses.
-EXCHANGE_SUFFIX = {"NSI": "NSE", "BSE": "BSE"}
+# Yahoo's codes for the US exchanges. Everything else is a listing the app
+# cannot chart, whether Yahoo spells it with a venue suffix or without.
+US_EXCHANGES = {"NYQ", "NMS", "NGM", "NCM", "ASE", "PCX", "BTS"}
 
 # Instrument types worth offering. Yahoo's search mixes in mutual funds,
 # currencies and index codes, which are noise in a stock watchlist.
@@ -181,32 +182,15 @@ def search(query: str, limit: int) -> list[dict]:
         if not raw or kind not in SEARCHABLE_TYPES:
             continue
 
-        # Yahoo spells Indian listings RELIANCE.NS / RELINFRA.BO; the app
-        # spells them RELIANCE.NSE / RELINFRA.BSE.
         exchange = (q.get("exchange") or "").upper()
-        if "." in raw:
-            base, _, suffix = raw.rpartition(".")
-            canonical_suffix = {"NS": "NSE", "BO": "BSE"}.get(suffix.upper())
-            if canonical_suffix is None:
-                # A venue the app has no mapping for; skip rather than
-                # offering something that cannot be charted.
-                continue
-            symbol = f"{base}.{canonical_suffix}"
-        else:
-            # Yahoo carries many non-US venues without a suffix. Only offer
-            # the ones the app can actually resolve.
-            if exchange not in ("NYQ", "NMS", "NGM", "NCM", "ASE", "PCX", "BTS"):
-                continue
-            symbol = raw
-
-        if symbol in seen:
+        if "." in raw or exchange not in US_EXCHANGES or raw in seen:
             continue
-        seen.add(symbol)
+        seen.add(raw)
 
         out.append({
-            "symbol": symbol,
-            "name": q.get("longname") or q.get("shortname") or symbol,
-            "exchange": EXCHANGE_SUFFIX.get(exchange, exchange),
+            "symbol": raw,
+            "name": q.get("longname") or q.get("shortname") or raw,
+            "exchange": exchange,
             "type": kind,
         })
         if len(out) >= limit:
@@ -259,7 +243,7 @@ SCAN_PERIOD = "1y"
 #
 # The statement line items are periodic and carry two dates. period_end is the
 # quarter or year the numbers describe; report_date is when they were first
-# published. Those are six to eight weeks apart for an Indian company, and
+# published. Those are weeks apart, and
 # using the former as if it were the latter is how a backtest comes to "know"
 # June's results in June. Only report_date is knowledge time.
 
@@ -307,9 +291,9 @@ INFO_FIELDS = [
     "ebitda", "totalDebt", "totalCash", "freeCashflow", "operatingCashflow",
     "sharesOutstanding", "floatShares", "beta", "sector", "industry",
     "enterpriseToEbitda", "enterpriseToRevenue", "pegRatio",
-    # The two currencies, which are not always the same one. Infosys reports
-    # its statements in US dollars while its shares trade in rupees, so any
-    # ratio built from both is in mixed units unless this is checked.
+    # The two currencies, which are not always the same one. A foreign
+    # company's ADR trades in dollars while its statements are in its home
+    # currency, so a ratio built from both is in mixed units unless checked.
     "currency", "financialCurrency",
 ]
 
@@ -328,8 +312,8 @@ def _num(v):
 def _report_dates(ticker):
     """Map each period end to the date its results were announced.
 
-    yfinance dates statements by the period they cover. An Indian company
-    reports six to eight weeks after quarter end, so treating the period end as
+    yfinance dates statements by the period they cover. A company reports
+    weeks after quarter end, so treating the period end as
     the moment the numbers existed would let anything reading this table see
     results before they were public.
 

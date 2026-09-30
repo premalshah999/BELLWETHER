@@ -33,7 +33,7 @@ const (
 )
 
 // templates are parsed once at startup. A malformed template is a programming
-// error and panics here rather than failing at 08:30 IST inside a cron job.
+// error and panics here rather than failing at 08:30 inside a cron job.
 var templates = func() map[string]*template.Template {
 	out := map[string]*template.Template{}
 	entries, err := promptFS.ReadDir("prompts")

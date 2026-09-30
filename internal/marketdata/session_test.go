@@ -39,15 +39,10 @@ func TestSessionActive(t *testing.T) {
 	}
 }
 
-func TestSessionCloseAndLocation(t *testing.T) {
+func TestSessionClose(t *testing.T) {
 	// A daily bar stamped at midnight UTC belongs to that day's session.
 	bar := time.Date(2026, 8, 26, 4, 0, 0, 0, time.UTC)
 	if got, _ := ExchangeUS.SessionClose(bar); !got.Equal(et(t, "2026-08-26 16:00")) {
 		t.Errorf("SessionClose = %v, want 16:00 ET that day", got)
-	}
-	for _, e := range []Exchange{ExchangeUS, ExchangeIndex} {
-		if got := e.Location().String(); got != "America/New_York" {
-			t.Errorf("%q location = %s, want America/New_York", e, got)
-		}
 	}
 }

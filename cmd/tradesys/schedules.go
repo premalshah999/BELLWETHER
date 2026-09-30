@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -40,7 +39,7 @@ func startAISchedules(
 	fundamentalsRunner *fundamentals.Runner,
 	newsArchive *postgres.Archive,
 ) *cron.Cron {
-	c := cron.New(cron.WithLocation(cfg.DisplayTZ), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger), cron.Recover(cron.DefaultLogger)))
+	c := cron.New(cron.WithLocation(marketdata.Market), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger), cron.Recover(cron.DefaultLogger)))
 
 	// Fifteen minutes suits every job here except one, so the deadline is a
 	// parameter rather than a constant. A fundamentals pass over 750 companies
@@ -57,22 +56,7 @@ func startAISchedules(
 			log.Error("could not schedule an AI job", "job", name, "cron", spec, "err", err)
 			return
 		}
-		// A spec carrying its own CRON_TZ= prefix (robfig/cron's per-job
-		// override, used by the venue-scoped market scans below) runs in
-		// that zone, not the scheduler's shared DisplayTZ -- logging
-		// DisplayTZ unconditionally here would tell an operator debugging
-		// scan timing the wrong zone for exactly those jobs.
-		tz := cfg.DisplayTZ.String()
-		if rest, ok := strings.CutPrefix(spec, "CRON_TZ="); ok {
-			if zone, _, ok := strings.Cut(rest, " "); ok {
-				tz = zone
-			}
-		} else if rest, ok := strings.CutPrefix(spec, "TZ="); ok {
-			if zone, _, ok := strings.Cut(rest, " "); ok {
-				tz = zone
-			}
-		}
-		log.Info("scheduled", "job", name, "cron", spec, "tz", tz)
+		log.Info("scheduled", "job", name, "cron", spec)
 	}
 
 	add := func(name, spec string, job func(context.Context)) {
@@ -88,8 +72,7 @@ func startAISchedules(
 		}
 	})
 
-	// The market scan, pinned to New York with CRON_TZ so it tracks the
-	// session whatever DISPLAY_TZ is. The close scan is the one to trust: it
+	// The market scan. The close scan is the one to trust: it
 	// sees the full day's volume, where an intraday scan compares a partial
 	// session with complete days and under-reports.
 	if marketScanner != nil {
@@ -98,14 +81,14 @@ func startAISchedules(
 				log.Warn("market scan failed", "err", err)
 			}
 		}
-		add("market scan (us close)", "CRON_TZ=America/New_York 15 16 * * 1-5", scan)
-		add("market scan (us intraday)", "CRON_TZ=America/New_York 15,45 10-15 * * 1-5", scan)
-		add("market scan (us open)", "CRON_TZ=America/New_York 45 9 * * 1-5", scan)
+		add("market scan (us close)", "15 16 * * 1-5", scan)
+		add("market scan (us intraday)", "15,45 10-15 * * 1-5", scan)
+		add("market scan (us open)", "45 9 * * 1-5", scan)
 
 		// The forward calendar, once a day before the open: earnings dates
 		// move rarely. It gets a long window because the refresh walks the
 		// universe one name at a time, which keeps the sidecar's memory flat.
-		addWithin("forward calendar", "CRON_TZ=America/New_York 20 7 * * 1-5",
+		addWithin("forward calendar", "20 7 * * 1-5",
 			90*time.Minute, func(runCtx context.Context) {
 				if _, err := refreshCalendar(runCtx, marketScanner.Client, store, marketScanner.Universe(), log); err != nil {
 					log.Warn("calendar refresh failed", "err", err)
@@ -146,7 +129,7 @@ func startAISchedules(
 	// hour rather than the shared fifteen minutes: the first run on an
 	// existing database has months to move, later runs a day's worth.
 	if newsArchive != nil {
-		addWithin("news rollover", "CRON_TZ=America/New_York 30 2 * * *", time.Hour,
+		addWithin("news rollover", "30 2 * * *", time.Hour,
 			func(runCtx context.Context) {
 				moved, err := newsArchive.Rollover(runCtx, time.Now())
 				if err != nil {
@@ -216,14 +199,14 @@ func startAISchedules(
 	if sm, err := newSmartMoneySyncer(cfg, store, log); err != nil {
 		log.Warn("smart money sync disabled", "err", err)
 	} else if sm != nil {
-		addWithin("insider trades sync", "CRON_TZ=America/New_York */30 6-23 * * 1-5", 25*time.Minute, func(runCtx context.Context) {
+		addWithin("insider trades sync", "*/30 6-23 * * 1-5", 25*time.Minute, func(runCtx context.Context) {
 			if n, err := sm.SyncInsiders(runCtx, 4); err != nil {
 				log.Warn("insider trades sync failed", "err", err)
 			} else if n > 0 {
 				log.Info("insider trades synced", "trades", n)
 			}
 		})
-		addWithin("fund holdings sync", "CRON_TZ=America/New_York 20 7 * * *", time.Hour, func(runCtx context.Context) {
+		addWithin("fund holdings sync", "20 7 * * *", time.Hour, func(runCtx context.Context) {
 			if n, err := sm.SyncFunds(runCtx); err != nil {
 				log.Warn("fund holdings sync failed", "err", err)
 			} else if n > 0 {
@@ -244,7 +227,7 @@ func startAISchedules(
 		// Outlooks are the forecasts the AI track record scores. A few
 		// watchlist names each morning, those longest without one, so every
 		// name is forecast about once a horizon and the record keeps growing.
-		add("outlooks", "CRON_TZ=America/New_York 45 8 * * 1-5", func(runCtx context.Context) {
+		add("outlooks", "45 8 * * 1-5", func(runCtx context.Context) {
 			if n := generateOutlooks(runCtx, svc, store, 4, log); n > 0 {
 				log.Info("outlooks generated", "count", n)
 			}
@@ -252,7 +235,7 @@ func startAISchedules(
 
 		// The morning brief, an hour before the open, in New York time: a
 		// brief is about a trading day, not a wall clock.
-		add("morning brief", "CRON_TZ=America/New_York 30 8 * * 1-5", func(runCtx context.Context) {
+		add("morning brief", "30 8 * * 1-5", func(runCtx context.Context) {
 			if _, err := svc.GenerateMorningBrief(runCtx); err != nil {
 				log.Warn("scheduled morning brief failed", "err", err)
 			}

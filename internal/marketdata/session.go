@@ -28,9 +28,6 @@ const (
 	settlingWindow = 30 * time.Minute
 )
 
-// Location is the timezone session-based indicators bucket by.
-func (e Exchange) Location() *time.Location { return Market }
-
 func sessionAt(t time.Time, minute int) time.Time {
 	local := t.In(Market)
 	return time.Date(local.Year(), local.Month(), local.Day(), minute/60, minute%60, 0, 0, Market)

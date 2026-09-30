@@ -61,7 +61,7 @@ func mustAlgo(t *testing.T, jsonSrc string) *Algorithm {
 
 func evaluate(t *testing.T, jsonSrc string, candles []marketdata.Candle) Result {
 	t.Helper()
-	return NewEvaluator(time.UTC).Evaluate(mustAlgo(t, jsonSrc), testSymbol, candles)
+	return NewEvaluator().Evaluate(mustAlgo(t, jsonSrc), testSymbol, candles)
 }
 
 // ---------------------------------------------------------------------------
@@ -669,7 +669,7 @@ func TestEvaluationIsDeterministic(t *testing.T) {
              "cooldown_hours":1,"notify":{}}`
 
 	a := mustAlgo(t, src)
-	e := NewEvaluator(time.UTC)
+	e := NewEvaluator()
 	first := e.Evaluate(a, testSymbol, candles)
 	for i := 0; i < 20; i++ {
 		got := e.Evaluate(a, testSymbol, candles)
@@ -696,7 +696,7 @@ func TestEvaluatorNeverPanics(t *testing.T) {
 		bars(ramp(400, 100, 0.1)...),
 	}
 
-	e := NewEvaluator(time.UTC)
+	e := NewEvaluator()
 	for _, src := range srcs {
 		a := mustAlgo(t, src)
 		for _, in := range inputs {
@@ -749,7 +749,7 @@ func TestSessionVWAPBucketsByMarketDay(t *testing.T) {
 	}
 	const src = `{"name":"t","symbols":["X"],"interval":"1h",
 		"all":[{"indicator":"session_vwap","op":">","value":180}],"notify":{}}`
-	got := NewEvaluator(time.UTC).Evaluate(mustAlgo(t, src), marketdata.MustParseSymbol("AAPL"), candles)
+	got := NewEvaluator().Evaluate(mustAlgo(t, src), marketdata.MustParseSymbol("AAPL"), candles)
 	if !got.Triggered() {
 		t.Errorf("session_vwap should have reset at ET midnight, giving ~200 > 180; got status=%s reason=%q",
 			got.Status, got.Reason)

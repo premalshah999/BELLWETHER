@@ -96,8 +96,8 @@ export function App() {
    *
    * It used to follow the Scanner and News pages too, where it showed a
    * valuation panel for whichever instrument happened to be selected —
-   * fourteen ratios about RELIANCE while the operator read a scan of 750
-   * other things. Six hundred pixels of an unrelated answer is not context,
+   * fourteen ratios about one company while the operator read a scan of
+   * 1,500 others. Six hundred pixels of an unrelated answer is not context,
    * it is noise, and those pages are better at full width.
    *
    * Navigation is not subject to this: it is on every page, on the left,

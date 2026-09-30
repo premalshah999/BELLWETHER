@@ -100,13 +100,12 @@ func TestSnapshotRatiosArePointers(t *testing.T) {
 }
 
 // TestSanitiseRejectsImpossibleRatios guards against shipping numbers the
-// provider got wrong. Measured on real data, its EV/EBITDA for Indian
-// listings ranged from -141 to 1257 against a median of 17.8 — for Infosys it
-// reported EBITDA about a hundredth of the real figure, giving a multiple of
-// 1011. A reader shown that discounts every other number on the screen too.
+// provider got wrong. Measured on real data, its EV/EBITDA ranged from -141
+// to 1257 against a median of 17.8 — one company's EBITDA was reported at
+// about a hundredth of the real figure, giving a multiple of 1011. A reader shown that discounts every other number on the screen too.
 func TestSanitiseRejectsImpossibleRatios(t *testing.T) {
 	s := &Snapshot{
-		EVToEBITDA:     f(1011.481), // the real Infosys reading
+		EVToEBITDA:     f(1011.481), // a real reading
 		PETrailing:     f(-12),      // a loss-making company has no P/E
 		PriceToBook:    f(4.95),     // plausible, must survive
 		ReturnOnEquity: f(0.32),     // plausible, must survive
@@ -145,19 +144,18 @@ func TestSanitiseLeavesAbsentAbsent(t *testing.T) {
 	}
 }
 
-// TestMixedCurrencyDetected guards the fault that made Infosys look like it
-// generated almost no cash. Its statements are filed in US dollars and its
-// shares trade in rupees, so free cash flow of $3.73bn over a market
-// capitalisation of ₹4.53 lakh crore produced a yield of 0.1% where the real
-// figure is around 5%. Nothing about that number looked wrong.
+// TestMixedCurrencyDetected guards the fault that makes a company look like
+// it generates almost no cash: statements filed in one currency, shares
+// quoted in another, and a free-cash-flow yield of 0.1% where the real figure
+// is around 5%. Nothing about that number looks wrong.
 func TestMixedCurrencyDetected(t *testing.T) {
-	infy := Snapshot{QuoteCurrency: "INR", FinancialCurrency: "USD"}
-	if !infy.MixedCurrency() {
-		t.Error("USD statements against INR quotes must be reported as mixed")
+	adr := Snapshot{QuoteCurrency: "USD", FinancialCurrency: "TWD"}
+	if !adr.MixedCurrency() {
+		t.Error("TWD statements against USD quotes must be reported as mixed")
 	}
 
-	reliance := Snapshot{QuoteCurrency: "INR", FinancialCurrency: "INR"}
-	if reliance.MixedCurrency() {
+	domestic := Snapshot{QuoteCurrency: "USD", FinancialCurrency: "USD"}
+	if domestic.MixedCurrency() {
 		t.Error("matching currencies must not be reported as mixed")
 	}
 
@@ -165,8 +163,8 @@ func TestMixedCurrencyDetected(t *testing.T) {
 	// wherever the provider omitted the field would discard most of the data
 	// over something that is usually present and usually matches.
 	for _, s := range []Snapshot{
-		{QuoteCurrency: "INR"},
-		{FinancialCurrency: "INR"},
+		{QuoteCurrency: "USD"},
+		{FinancialCurrency: "USD"},
 		{},
 	} {
 		if s.MixedCurrency() {
@@ -176,14 +174,14 @@ func TestMixedCurrencyDetected(t *testing.T) {
 }
 
 // TestMixedCurrencyDropsOnlyTheAffectedRatios: the currency mismatch corrupts
-// the enterprise-value multiples, which mix a rupee market value with a dollar
-// statement figure. It does not touch P/E or P/B, whose terms are both in the
+// the enterprise-value multiples, which mix a market value in one currency with a
+// statement figure in another. It does not touch P/E or P/B, whose terms are both in the
 // quote currency, nor margins, whose terms both come from the same filing.
 // Dropping more than necessary would throw away most of what is known about
 // the company.
 func TestMixedCurrencyDropsOnlyTheAffectedRatios(t *testing.T) {
 	s := &Snapshot{
-		QuoteCurrency: "INR", FinancialCurrency: "USD",
+		QuoteCurrency: "USD", FinancialCurrency: "TWD",
 		EVToEBITDA:      f(11.9),
 		EVToRevenue:     f(4.2),
 		PETrailing:      f(14.44),
@@ -208,7 +206,7 @@ func TestMixedCurrencyDropsOnlyTheAffectedRatios(t *testing.T) {
 	}
 
 	// A matching-currency company keeps everything.
-	ok := &Snapshot{QuoteCurrency: "INR", FinancialCurrency: "INR", EVToEBITDA: f(11.9)}
+	ok := &Snapshot{QuoteCurrency: "USD", FinancialCurrency: "USD", EVToEBITDA: f(11.9)}
 	dropMixedCurrencyRatios(ok)
 	if ok.EVToEBITDA == nil {
 		t.Error("dropped a valid ratio for a single-currency company")

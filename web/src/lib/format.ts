@@ -56,7 +56,7 @@ export function zoneName(): string {
   return MARKET_ZONE;
 }
 
-/** The zone's short name at an instant: ET, UTC, or the viewer's own (PDT, IST, GMT+2). */
+/** The zone's short name at an instant: ET, UTC, or the viewer's own (PDT, CEST, GMT+2). */
 export function zoneAbbr(at: Date = new Date()): string {
   if (choice === "market") return "ET";
   if (choice === "utc") return "UTC";

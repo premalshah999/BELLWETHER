@@ -3,7 +3,6 @@ package algo
 import (
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/tradesys/dashboard/internal/indicators"
 	"github.com/tradesys/dashboard/internal/marketdata"
@@ -34,7 +33,7 @@ type indicatorDef struct {
 	// value, used to fetch enough candles and to explain "not enough data".
 	MinBars func(o Operand) int
 	// Compute produces the aligned series.
-	Compute func(candles []marketdata.Candle, o Operand, loc *time.Location) indicators.Series
+	Compute func(candles []marketdata.Candle, o Operand) indicators.Series
 }
 
 // registry is the complete vocabulary of the rule language. Adding an
@@ -51,7 +50,7 @@ var registry = map[string]indicatorDef{
 		Kind:     paramPeriod,
 		Describe: periodLabel("SMA"),
 		MinBars:  func(o Operand) int { return o.Period },
-		Compute: func(candles []marketdata.Candle, o Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, o Operand) indicators.Series {
 			return indicators.SMA(indicators.Closes(candles), o.Period)
 		},
 	},
@@ -59,7 +58,7 @@ var registry = map[string]indicatorDef{
 		Kind:     paramPeriod,
 		Describe: periodLabel("EMA"),
 		MinBars:  func(o Operand) int { return o.Period },
-		Compute: func(candles []marketdata.Candle, o Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, o Operand) indicators.Series {
 			return indicators.EMA(indicators.Closes(candles), o.Period)
 		},
 	},
@@ -69,7 +68,7 @@ var registry = map[string]indicatorDef{
 		Describe:      periodLabel("RSI"),
 		// RSI(n) needs n changes, so n+1 closes.
 		MinBars: func(o Operand) int { return o.Period + 1 },
-		Compute: func(candles []marketdata.Candle, o Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, o Operand) indicators.Series {
 			return indicators.RSI(indicators.Closes(candles), o.Period)
 		},
 	},
@@ -78,7 +77,7 @@ var registry = map[string]indicatorDef{
 		DefaultPeriod: 14,
 		Describe:      periodLabel("ATR"),
 		MinBars:       func(o Operand) int { return o.Period + 1 },
-		Compute: func(candles []marketdata.Candle, o Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, o Operand) indicators.Series {
 			return indicators.ATR(candles, o.Period)
 		},
 	},
@@ -87,7 +86,7 @@ var registry = map[string]indicatorDef{
 		DefaultPeriod: 20,
 		Describe:      periodLabel("VolAvg"),
 		MinBars:       func(o Operand) int { return o.Period },
-		Compute: func(candles []marketdata.Candle, o Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, o Operand) indicators.Series {
 			return indicators.VolAvg(candles, o.Period)
 		},
 	},
@@ -96,7 +95,7 @@ var registry = map[string]indicatorDef{
 		DefaultPeriod: 20,
 		Describe:      periodLabel("VWAP"),
 		MinBars:       func(o Operand) int { return o.Period },
-		Compute: func(candles []marketdata.Candle, o Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, o Operand) indicators.Series {
 			return indicators.RollingVWAP(candles, o.Period)
 		},
 	},
@@ -104,15 +103,15 @@ var registry = map[string]indicatorDef{
 		Kind:     paramNone,
 		Describe: func(o Operand) string { return withShift("SessionVWAP", o) },
 		MinBars:  func(Operand) int { return 1 },
-		Compute: func(candles []marketdata.Candle, _ Operand, loc *time.Location) indicators.Series {
-			return indicators.SessionVWAP(candles, loc)
+		Compute: func(candles []marketdata.Candle, _ Operand) indicators.Series {
+			return indicators.SessionVWAP(candles)
 		},
 	},
 	"macd": {
 		Kind:     paramMACD,
 		Describe: macdLabel("MACD"),
 		MinBars:  func(o Operand) int { return o.Slow + o.Signal },
-		Compute: func(candles []marketdata.Candle, o Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, o Operand) indicators.Series {
 			return indicators.MACD(indicators.Closes(candles), o.Fast, o.Slow, o.Signal).MACD
 		},
 	},
@@ -120,7 +119,7 @@ var registry = map[string]indicatorDef{
 		Kind:     paramMACD,
 		Describe: macdLabel("MACDsig"),
 		MinBars:  func(o Operand) int { return o.Slow + o.Signal },
-		Compute: func(candles []marketdata.Candle, o Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, o Operand) indicators.Series {
 			return indicators.MACD(indicators.Closes(candles), o.Fast, o.Slow, o.Signal).Signal
 		},
 	},
@@ -128,7 +127,7 @@ var registry = map[string]indicatorDef{
 		Kind:     paramMACD,
 		Describe: macdLabel("MACDhist"),
 		MinBars:  func(o Operand) int { return o.Slow + o.Signal },
-		Compute: func(candles []marketdata.Candle, o Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, o Operand) indicators.Series {
 			return indicators.MACD(indicators.Closes(candles), o.Fast, o.Slow, o.Signal).Histogram
 		},
 	},
@@ -137,7 +136,7 @@ var registry = map[string]indicatorDef{
 		DefaultPeriod: indicators.TradingDaysPerYear,
 		Describe:      func(o Operand) string { return withShift(fmt.Sprintf("%dbarHigh", o.Period), o) },
 		MinBars:       func(o Operand) int { return o.Period },
-		Compute: func(candles []marketdata.Candle, o Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, o Operand) indicators.Series {
 			return indicators.RollingMax(indicators.Highs(candles), o.Period)
 		},
 	},
@@ -146,7 +145,7 @@ var registry = map[string]indicatorDef{
 		DefaultPeriod: indicators.TradingDaysPerYear,
 		Describe:      func(o Operand) string { return withShift(fmt.Sprintf("%dbarLow", o.Period), o) },
 		MinBars:       func(o Operand) int { return o.Period },
-		Compute: func(candles []marketdata.Candle, o Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, o Operand) indicators.Series {
 			return indicators.RollingMin(indicators.Lows(candles), o.Period)
 		},
 	},
@@ -157,7 +156,7 @@ func priceField(pick func(marketdata.Candle) float64, label string) indicatorDef
 		Kind:     paramNone,
 		Describe: func(o Operand) string { return withShift(label, o) },
 		MinBars:  func(Operand) int { return 1 },
-		Compute: func(candles []marketdata.Candle, _ Operand, _ *time.Location) indicators.Series {
+		Compute: func(candles []marketdata.Candle, _ Operand) indicators.Series {
 			out := make(indicators.Series, len(candles))
 			for i, c := range candles {
 				out[i] = pick(c)

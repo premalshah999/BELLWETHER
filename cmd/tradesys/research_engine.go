@@ -50,16 +50,13 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, archive *postgr
 
 	scrapers := []research.Scraper{
 		// Our own archive first. It is the only source built for this
-		// domain -- filings resolved to venue-qualified symbols, deduplicated
+		// domain -- filings resolved to symbols, deduplicated
 		// and classified -- and the only one that costs nothing and answers in
 		// milliseconds.
 		&research.LocalScraper{Store: store, Window: 45 * 24 * time.Hour},
 
-		// Discovery, US-scoped. The en-IN pass and GDELT's india pass were
-		// removed with the rest of the Indian layer: a question typed into a
-		// US equities product was being answered partly out of the Indian
-		// news index, which is where a research answer picks up a company
-		// this app cannot price.
+		// Discovery, scoped to the US edition: a foreign news index is where a
+		// research answer picks up a company this app cannot price.
 		&research.GoogleNewsScraper{Client: client},
 		// Bing's news index: a second route to the open web that does not
 		// depend on the SearXNG node.

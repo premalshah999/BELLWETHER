@@ -9,7 +9,7 @@ import (
 
 // archiveOnlyTypes are event types nothing can produce any more.
 //
-// They were reachable through NSE's filing-subject vocabulary, which went with
+// They were reachable through an exchange's filing-subject vocabulary, which went with
 // that exchange's parser. The constants stay because events classified under
 // them are still in the archive and a constant is how those rows are read
 // back; removing one would not tidy anything, it would make old data

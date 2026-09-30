@@ -17,9 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	// Embeds the IANA timezone database in the binary. Without it a minimal
-	// container image cannot resolve DISPLAY_TZ, and every timestamp in the
-	// app is meant to be shown in the operator's zone.
+	// Embeds the IANA timezone database: a minimal container image has none,
+	// and every schedule and session boundary is kept in New York time.
 	_ "time/tzdata"
 
 	"github.com/tradesys/dashboard/internal/ai"
@@ -285,7 +284,7 @@ func run() error {
 	}
 
 	// Alert pipeline.
-	evaluator := algo.NewEvaluator(cfg.DisplayTZ)
+	evaluator := algo.NewEvaluator()
 
 	var telegramOpts []telegram.Option
 	if cfg.TelegramAPIBaseURL != "" {
@@ -467,7 +466,7 @@ func run() error {
 
 	researchEngine := buildResearchEngine(cfg, store, newsArchive, companyMaster, router, log)
 
-	aiService := ai.NewService(llm, router, store, cfg.DisplayTZ,
+	aiService := ai.NewService(llm, router, store,
 		ai.WithServiceLogger(log),
 		ai.WithResearchContext(ctx),
 		ai.WithSearch(webNews{researchEngine}),
@@ -511,7 +510,7 @@ func run() error {
 		}
 	}
 
-	scheduler := alerts.NewScheduler(engine, cfg.DisplayTZ, alerts.WithSchedulerLogger(log))
+	scheduler := alerts.NewScheduler(engine, alerts.WithSchedulerLogger(log))
 	if err := scheduler.Start(ctx); err != nil {
 		return fmt.Errorf("start scheduler: %w", err)
 	}

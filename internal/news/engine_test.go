@@ -74,8 +74,8 @@ func quietLogger() *slog.Logger {
 
 const rssFixture = `<?xml version="1.0"?><rss version="2.0"><channel>
 <title>Test Feed</title>
-<item><title>Reliance Industries wins contract</title><link>https://example.com/a?utm_source=rss&amp;id=1</link><pubDate>Mon, 25 Aug 2026 10:00:00 GMT</pubDate><description>Details here</description></item>
-<item><title>Infosys raises guidance</title><link>https://example.com/b</link><pubDate>Mon, 25 Aug 2026 11:00:00 GMT</pubDate></item>
+<item><title>Exxon Mobil wins contract</title><link>https://example.com/a?utm_source=rss&amp;id=1</link><pubDate>Mon, 25 Aug 2026 10:00:00 GMT</pubDate><description>Details here</description></item>
+<item><title>Intel raises guidance</title><link>https://example.com/b</link><pubDate>Mon, 25 Aug 2026 11:00:00 GMT</pubDate></item>
 </channel></rss>`
 
 func testSource(url string, opts ...func(*Source)) Source {
@@ -390,7 +390,7 @@ func TestEngineHandlesEmptyAndBadBodies(t *testing.T) {
 
 func TestEngineParseGDELT(t *testing.T) {
 	body := `{"articles":[
-	 {"url":"https://example.com/x","title":"Reliance in talks","seendate":"20260825T103000Z","domain":"example.com","language":"English","sourcecountry":"India"},
+	 {"url":"https://example.com/x","title":"Exxon in talks","seendate":"20260825T103000Z","domain":"example.com","language":"English","sourcecountry":"United States"},
 	 {"url":"","title":"no url","seendate":"20260825T103000Z"},
 	 {"url":"https://example.com/y","title":"","seendate":"20260825T103000Z"}
 	]}`

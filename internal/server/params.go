@@ -24,7 +24,6 @@ const maxCandles = 2000
 type metaResponse struct {
 	App        string       `json:"app"`
 	Version    string       `json:"version"`
-	DisplayTZ  string       `json:"display_tz"`
 	Disclaimer string       `json:"disclaimer"`
 	ServerTime time.Time    `json:"server_time"`
 	Features   metaFeatures `json:"features"`

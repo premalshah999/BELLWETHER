@@ -1,8 +1,6 @@
 package indicators
 
 import (
-	"time"
-
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
@@ -16,20 +14,17 @@ func VolAvg(candles []marketdata.Candle, period int) Series {
 }
 
 // SessionVWAP is the volume-weighted average price, reset at the start of each
-// trading session (the calendar date in loc, the exchange's zone). It only
-// makes sense on intraday bars; daily callers want RollingVWAP.
-func SessionVWAP(candles []marketdata.Candle, loc *time.Location) Series {
+// trading session (the calendar date in New York). It only makes sense on
+// intraday bars; daily callers want RollingVWAP.
+func SessionVWAP(candles []marketdata.Candle) Series {
 	out := newSeries(len(candles))
-	if loc == nil {
-		loc = time.UTC
-	}
 
 	var (
 		cumPV, cumVol float64
 		currentDay    string
 	)
 	for i, c := range candles {
-		day := c.Time.In(loc).Format("2006-01-02")
+		day := c.Time.In(marketdata.Market).Format("2006-01-02")
 		if day != currentDay {
 			cumPV, cumVol = 0, 0
 			currentDay = day

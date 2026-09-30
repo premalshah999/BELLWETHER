@@ -214,8 +214,7 @@ func (d *DB) ListOutlooks(ctx context.Context, symbol string, limit int) ([]ai.O
 //
 // The horizon is in trading days, so it is stretched by seven fifths to reach
 // a calendar date. Postgres does that arithmetic in interval terms rather than
-// in seconds, which keeps it correct across a daylight-saving boundary — not
-// something India observes, but the global feeds this system reads do.
+// in seconds, which keeps it correct across a daylight-saving boundary.
 func (d *DB) DueOutlooks(ctx context.Context, before time.Time) ([]ai.Outlook, error) {
 	rows, err := d.db.QueryContext(ctx, `
 SELECT `+outlookColumns+` FROM outlooks

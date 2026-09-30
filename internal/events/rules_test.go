@@ -3,10 +3,7 @@ package events
 import "testing"
 
 func TestClassifyHeadline(t *testing.T) {
-	// One case per event type the keyword pass can actually produce, with US
-	// fixtures. These were Indian ("L&T bags Rs 4,200 crore metro contract",
-	// "SEBI bars Karvy", "RBI holds repo rate") which no longer describes
-	// anything this product reads, and covered 13 of the 29 reachable types.
+	// One case per event type the keyword pass can actually produce.
 	cases := []struct {
 		name     string
 		headline string
@@ -77,7 +74,7 @@ func TestWordBoundariesPreventFalsePositives(t *testing.T) {
 // TestUnmatchedStaysUnclassified: a confident wrong label is worse than none.
 func TestUnmatchedStaysUnclassified(t *testing.T) {
 	for _, headline := range []string{
-		"Rupee leads Asian currencies higher",
+		"Yen leads Asian currencies higher",
 		"Markets end flat in a listless session",
 		"A profile of the country's oldest textile mill",
 	} {
@@ -120,10 +117,10 @@ func TestMeasuredKeywordGaps(t *testing.T) {
 		headline string
 		want     Type
 	}{
-		{"Ircon fined ₹9.66 lakh each by NSE, BSE for board non-compliance", TypeRegulatoryAction},
+		{"Broker fined $1.2 million by FINRA for supervisory lapses", TypeRegulatoryAction},
 		{"Company penalised for disclosure lapse", TypeRegulatoryAction},
 		{"Emerson Lands 13-Year Equinor Deal to Optimize Operations", TypeOrderWin},
-		{"Company receives order worth Rs 500 crore", TypeOrderWin},
+		{"Company receives order worth $500 million", TypeOrderWin},
 	}
 	for _, tc := range cases {
 		got, matched := ClassifyHeadline(tc.headline, "")
@@ -171,10 +168,10 @@ func TestNotReadableHere(t *testing.T) {
 	}{
 		{"आईसीएटी ने 15-मीटर लंबी मल्टी-एक्सल स्लीपर बस के लिए पहला अनुपालन प्रमाण-पत्र", true,
 			"a wholly Devanagari headline, which topped an English feed at importance 6"},
-		{"Reliance Industries posts record quarterly profit", false, "plain English"},
-		{"HUL Q1 net profit rises 4% to ₹2,472 crore", false, "a rupee sign does not make it unreadable"},
-		{"Tata Motors' ₹18,000 crore capex plan for FY27", false, "currency and digits carry no script"},
-		{"Adani Ports (अदाणी पोर्ट्स) wins Colombo terminal deal", false,
+		{"Caterpillar posts record quarterly profit", false, "plain English"},
+		{"Unilever Q1 net profit rises 4% to €2.47 billion", false, "a currency sign does not make it unreadable"},
+		{"Toyota's ¥1.8 trillion capex plan for FY27", false, "currency and digits carry no script"},
+		{"Toyota (トヨタ) wins a fleet contract in Ohio", false,
 			"a parenthetical in another script inside an English headline"},
 		{"", false, "nothing to judge"},
 		{"2026-08-26 15:30", false, "digits and punctuation alone are not another script"},

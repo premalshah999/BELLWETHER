@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
 )
 
@@ -108,13 +109,13 @@ func (s *Service) Debrief(ctx context.Context, store DebriefStore, symbol, compa
 		if !e.PublishedAt.IsZero() {
 			when = e.PublishedAt
 		}
-		v.When = when.In(s.loc).Format("2 Jan 15:04")
+		v.When = when.In(marketdata.Market).Format("2 Jan 15:04")
 		if e.Importance != nil {
 			v.Importance = *e.Importance
 		}
 		// The figures a filing actually stated are the whole point of having
 		// extracted them: a debrief that says "declared a dividend" when the
-		// filing said "₹3.50 per share, record date 18 September" has thrown
+		// filing said "$0.35 per share, record date 18 September" has thrown
 		// away the useful part.
 		if facts, err := store.EventFacts(ctx, e.ID); err == nil && len(facts) > 0 {
 			v.Facts = formatFacts(facts)

@@ -62,7 +62,7 @@ func TestSend(t *testing.T) {
 	c := New("bot-token", "12345", WithBaseURL(api.URL))
 
 	err := c.Send(context.Background(), alerts.Message{
-		Title: "[ALGO] Momentum watch — RELIANCE",
+		Title: "[ALGO] Momentum watch — XOM",
 		Body:  "RSI(14)=32.10 < 35\nAI: context here",
 	})
 	if err != nil {
@@ -76,7 +76,7 @@ func TestSend(t *testing.T) {
 	if got.ChatID != "12345" {
 		t.Errorf("chat_id = %q", got.ChatID)
 	}
-	if !strings.HasPrefix(got.Text, "[ALGO] Momentum watch — RELIANCE") {
+	if !strings.HasPrefix(got.Text, "[ALGO] Momentum watch — XOM") {
 		t.Errorf("text does not lead with the title:\n%s", got.Text)
 	}
 	if !strings.Contains(got.Text, "RSI(14)=32.10") {
@@ -193,7 +193,7 @@ func TestRenderIsPlainText(t *testing.T) {
 	// No markdown: an indicator label like MACD(12,26,9) or a value with an
 	// underscore would otherwise be mangled or rejected as bad entities.
 	msg := alerts.Message{
-		Title: "[ALGO] Test_Algo — RELIANCE",
+		Title: "[ALGO] Test_Algo — XOM",
 		Body:  "MACD(12,26,9)=1.5 > *signal* _underscored_ [bracket](x)",
 	}
 	got := Render(msg)

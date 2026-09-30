@@ -36,9 +36,8 @@ func startIngestion(ctx context.Context, store *postgres.DB, attention *news.Tra
 	// thirty-second filings feed would double its latency.
 	go engine.Run(ctx, 10*time.Second)
 
-	// Follow the watchlist. Without this the catalog is broad-market only:
-	// against a real archive, 15 of 4,308 collected items mentioned Reliance
-	// and most were mutual funds sharing the name. A watchlist is a statement
+	// Follow the watchlist. Without this the catalog is broad-market only,
+	// and few of its items concern any one holding. A watchlist is a statement
 	// about which companies matter, so each gets its own query.
 	syncWatchlistSources(ctx, registry, store, master, marketScanner, log)
 	go func() {

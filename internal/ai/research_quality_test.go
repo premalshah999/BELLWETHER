@@ -12,7 +12,7 @@ import (
 
 func TestResearchGatesEveryGeneratedClaimOnSuppliedEvidence(t *testing.T) {
 	srv := newFakeLLM(t, `{"summary":"Supported summary","summary_sources":[1],"sections":[{"heading":"Unsupported","body":"Invented section","sources":[2]}],"findings":[{"claim":"Valid claim","sources":[1,1,2,99]},{"claim":"Headline inference","sources":[2]}],"companies":[{"symbol":"MADEUP","sources":[2]}],"gaps":[]}`)
-	svc := NewService(newClient(t, srv, newMemBudget(), 100000), nil, nil, time.UTC)
+	svc := NewService(newClient(t, srv, newMemBudget(), 100000), nil, nil)
 	turn := &research.Turn{Question: "revenue"}
 	result := research.Result{Findings: []research.Finding{
 		{Title: "Report", URL: "https://filing.example/report", Body: strings.Repeat("Revenue grew. ", 100), Words: 200},
@@ -36,7 +36,7 @@ func TestResearchGatesEveryGeneratedClaimOnSuppliedEvidence(t *testing.T) {
 
 func TestResearchSkipsModelWhenOnlyHeadlinesExist(t *testing.T) {
 	srv := newFakeLLM(t, `{}`)
-	svc := NewService(newClient(t, srv, newMemBudget(), 100000), nil, nil, time.UTC)
+	svc := NewService(newClient(t, srv, newMemBudget(), 100000), nil, nil)
 	err := svc.synthesise(context.Background(), research.Conversation{}, &research.Turn{}, research.Result{Findings: []research.Finding{{Title: "Only a headline"}}})
 	if err == nil {
 		t.Fatal("accepted headline-only evidence")
@@ -64,7 +64,7 @@ func TestCompletionBudgetIncludesRequestedOutput(t *testing.T) {
 }
 
 func TestResearchCapacityRefusesBeforePersistence(t *testing.T) {
-	svc := NewService(nil, nil, nil, time.UTC)
+	svc := NewService(nil, nil, nil)
 	svc.researchJobs = 2
 	_, _, err := svc.AskWithMode(context.Background(), research.NewEngine(nil), nil, 0, "Question", 12, true)
 	if !errors.Is(err, ErrResearchBusy) {
@@ -105,7 +105,7 @@ func (researchTestScraper) Search(context.Context, string, int) ([]research.Find
 
 func TestEvidenceOnlyCompletesAndDoesNotSpendOnFollowupRewrite(t *testing.T) {
 	srv := newFakeLLM(t, `{}`)
-	svc := NewService(newClient(t, srv, newMemBudget(), 100000), nil, nil, time.UTC)
+	svc := NewService(newClient(t, srv, newMemBudget(), 100000), nil, nil)
 	store := &researchTestStore{completed: make(chan research.Turn, 1), failed: make(chan string, 1)}
 	queued, _, err := svc.AskWithMode(context.Background(), research.NewEngine([]research.Scraper{researchTestScraper{}}), store, 1, "What about revenue?", 12, true)
 	if err != nil {

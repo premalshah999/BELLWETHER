@@ -58,7 +58,6 @@ type Service struct {
 	alerts    AlertSource
 	scores    ScoreStore
 	store     OutputStore
-	loc       *time.Location
 	log       *slog.Logger
 	now       func() time.Time
 
@@ -99,16 +98,12 @@ func WithResearchContext(ctx context.Context) ServiceOption {
 }
 
 // NewService builds the AI feature layer.
-func NewService(client *Client, market MarketSource, store OutputStore, loc *time.Location, opts ...ServiceOption) *Service {
-	if loc == nil {
-		loc = time.UTC
-	}
+func NewService(client *Client, market MarketSource, store OutputStore, opts ...ServiceOption) *Service {
 	s := &Service{
 		researchActive: map[int64]bool{}, researchContext: context.Background(),
 		client: client,
 		market: market,
 		store:  store,
-		loc:    loc,
 		log:    slog.Default(),
 		now:    func() time.Time { return time.Now().UTC() },
 	}

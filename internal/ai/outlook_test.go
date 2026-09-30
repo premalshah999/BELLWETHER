@@ -349,7 +349,7 @@ func (s stubMarket) Quote(context.Context, marketdata.Symbol) (marketdata.QuoteR
 }
 
 func newCalibService(store OutputStore, market MarketSource, now time.Time) *Service {
-	return NewService(nil, market, store, time.UTC,
+	return NewService(nil, market, store,
 		WithServiceLogger(quietLogger()),
 		WithServiceClock(func() time.Time { return now }))
 }

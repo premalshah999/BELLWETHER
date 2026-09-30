@@ -79,9 +79,9 @@ func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only symbols that parse: the archive still holds events on retired
-	// Indian listings, which the parser refuses and which would otherwise
-	// quietly change the numbers.
+	// Only symbols that parse: the archive still holds events on listings
+	// the app no longer covers, which would otherwise quietly change the
+	// numbers.
 	us := pairs[:0]
 	for _, p := range pairs {
 		if _, err := marketdata.ParseSymbol(p.Symbol); err == nil {

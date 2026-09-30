@@ -262,8 +262,8 @@ func (s scanSeries) candles() []marketdata.Candle {
 
 // Scan fetches a universe and returns what is behaving abnormally.
 //
-// symbols are canonical, venue-qualified instruments (RELIANCE.NSE, AAPL).
-// The vendor suffix each venue's price source actually expects is translated
+// symbols are canonical (AAPL, GSPC.INDEX). The spelling the price source
+// expects is translated
 // here so no caller has to know about it, and every Metrics that comes back
 // is re-tagged with the same canonical form it was requested under.
 func (c *Client) Scan(ctx context.Context, symbols []marketdata.Symbol, maxFindings int) (Result, error) {
@@ -342,8 +342,8 @@ func (c *Client) Scan(ctx context.Context, symbols []marketdata.Symbol, maxFindi
 		canonical, ok := canonicalOf[vendorSym]
 		if !ok {
 			// The sidecar echoed a symbol we never asked for. Silently
-			// mapping it to a guessed venue would risk writing a US metric
-			// row under an NSE symbol or vice versa, so it is dropped.
+			// mapping it to a guess would risk writing one instrument's
+			// metrics under another's symbol, so it is dropped.
 			continue
 		}
 		m.Symbol = canonical

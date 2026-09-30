@@ -387,13 +387,9 @@ func TestATRIsNeverNegative(t *testing.T) {
 }
 
 func TestSessionVWAP(t *testing.T) {
-	ist, err := time.LoadLocation("Asia/Kolkata")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Two IST sessions of two bars each. 04:00Z is 09:30 IST; 05:00Z the same
-	// day; then the same times the following day.
-	day1 := time.Date(2026, 3, 2, 4, 0, 0, 0, time.UTC)
+	// Two New York sessions of two bars each: 14:30Z is 09:30 ET, 15:30Z the
+	// same day; then the same times the following day.
+	day1 := time.Date(2026, 3, 2, 14, 30, 0, 0, time.UTC)
 	mk := func(at time.Time, price, vol float64) marketdata.Candle {
 		return marketdata.Candle{Time: at, Open: price, High: price, Low: price, Close: price, Volume: vol}
 	}
@@ -404,7 +400,7 @@ func TestSessionVWAP(t *testing.T) {
 		mk(day1.Add(25*time.Hour), 220, 100),
 	}
 
-	got := SessionVWAP(candles, ist)
+	got := SessionVWAP(candles)
 
 	closeTo(t, got[0], 100, "session 1 bar 1")
 	// (100*100 + 110*300) / 400 = 107.5
@@ -521,7 +517,7 @@ func TestEmptyInput(t *testing.T) {
 	if len(VolAvg(nil, 5)) != 0 {
 		t.Error("VolAvg(nil)")
 	}
-	if len(SessionVWAP(nil, time.UTC)) != 0 {
+	if len(SessionVWAP(nil)) != 0 {
 		t.Error("SessionVWAP(nil)")
 	}
 	res := MACD(nil, 12, 26, 9)

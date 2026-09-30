@@ -104,9 +104,7 @@ func displayName(ticker, company string, attention bool) string {
 
 // WatchlistSources builds a source per watched instrument.
 //
-// Duplicate tickers collapse: the same company held on two exchanges is one
-// company as far as news is concerned, and polling twice would double the
-// traffic to learn the same thing. Where a ticker arrives both as a watchlist
+// Duplicate tickers collapse. Where a ticker arrives both as a watchlist
 // entry and as a scanner flag, the flag wins — the tighter query is the more
 // useful of the two, and the operator following it still gets the news.
 func WatchlistSources(items []Watched) []Source {
@@ -117,10 +115,8 @@ func WatchlistSources(items []Watched) []Source {
 		if w.Ticker == "" {
 			continue
 		}
-		// Keyed by ticker and venue together: the same string can be two
-		// different instruments (INFY.NSE vs the NYSE-listed INFY), and
-		// collapsing them into one source would silently follow the wrong
-		// one whichever happened to sort first.
+		// Keyed by ticker and venue together: a stock and an index can share
+		// a ticker.
 		key := w.Ticker + "." + string(w.Venue)
 		if at, dup := seen[key]; dup {
 			if w.Attention && !out[at].Attention() {

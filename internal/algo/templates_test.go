@@ -3,7 +3,6 @@ package algo
 import (
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
@@ -81,7 +80,7 @@ func TestTemplatesEvaluateWithoutError(t *testing.T) {
 		volumes[i] = 1000 + float64((i*23)%700)
 	}
 
-	e := NewEvaluator(time.UTC)
+	e := NewEvaluator()
 	sym := marketdata.MustParseSymbol("XOM")
 
 	for _, tpl := range Templates() {
@@ -122,7 +121,7 @@ func TestBreakoutTemplateCanActuallyTrigger(t *testing.T) {
 	closes[299] = 150
 	volumes[299] = 5000
 
-	res := NewEvaluator(time.UTC).Evaluate(tpl.Algorithm,
+	res := NewEvaluator().Evaluate(tpl.Algorithm,
 		marketdata.MustParseSymbol("AAPL"), barsWithVolume(closes, volumes))
 
 	if res.Status != StatusTriggered {
@@ -147,7 +146,7 @@ func TestGoldenCrossTemplateFiresOnceOnTheCross(t *testing.T) {
 		volumes[i] = 1000
 	}
 
-	e := NewEvaluator(time.UTC)
+	e := NewEvaluator()
 	sym := marketdata.MustParseSymbol("AAPL")
 
 	fires := 0

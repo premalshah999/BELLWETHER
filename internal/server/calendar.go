@@ -42,8 +42,8 @@ func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Symbols are canonicalised before they reach SQL, so a caller passing
-	// "aapl" or "reliance.nse" matches the same rows the rest of the app
-	// stores under AAPL and RELIANCE.NSE.
+	// "aapl" or "brk.b" matches the rows the rest of the app stores under
+	// AAPL and BRK-B.
 	var symbols []string
 	if raw := strings.TrimSpace(q.Get("symbols")); raw != "" {
 		for _, part := range strings.Split(raw, ",") {

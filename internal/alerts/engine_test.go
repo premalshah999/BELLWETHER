@@ -258,7 +258,7 @@ func newHarness(t *testing.T, algos ...*algo.Algorithm) *harness {
 	}
 	h.engine = NewEngine(
 		h.algorithms, h.alerts, h.candles,
-		algo.NewEvaluator(time.UTC),
+		algo.NewEvaluator(),
 		[]Notifier{h.telegram},
 		WithLogger(quiet()),
 		WithClock(func() time.Time { return h.now }),
@@ -600,7 +600,7 @@ func TestAIContextAttached(t *testing.T) {
 	a.Notify.AIContext = true
 	h := newHarness(t, a)
 	h.engine = NewEngine(h.algorithms, h.alerts, h.candles,
-		algo.NewEvaluator(time.UTC), []Notifier{h.telegram},
+		algo.NewEvaluator(), []Notifier{h.telegram},
 		WithLogger(quiet()), WithClock(func() time.Time { return h.now }),
 		WithAIContext(stubAI{text: "Three sentences of context.", status: "ok"}))
 
@@ -659,7 +659,7 @@ func TestAIContextDegradesButStillFires(t *testing.T) {
 				opts = append(opts, WithAIContext(tc.provider))
 			}
 			h.engine = NewEngine(h.algorithms, h.alerts, h.candles,
-				algo.NewEvaluator(time.UTC), []Notifier{h.telegram}, opts...)
+				algo.NewEvaluator(), []Notifier{h.telegram}, opts...)
 
 			if _, err := h.engine.RunInterval(context.Background(), marketdata.Interval1d); err != nil {
 				t.Fatal(err)
@@ -685,7 +685,7 @@ func TestAIContextDegradesButStillFires(t *testing.T) {
 func TestNoAIContextWhenNotRequested(t *testing.T) {
 	h := newHarness(t, alwaysFires(1)) // AIContext false
 	h.engine = NewEngine(h.algorithms, h.alerts, h.candles,
-		algo.NewEvaluator(time.UTC), []Notifier{h.telegram},
+		algo.NewEvaluator(), []Notifier{h.telegram},
 		WithLogger(quiet()), WithClock(func() time.Time { return h.now }),
 		WithAIContext(stubAI{text: "should not appear", status: "ok"}))
 
@@ -706,7 +706,7 @@ func TestRenderMessageMatchesTheSpecShape(t *testing.T) {
 		AlgorithmName: "Momentum watch",
 		Symbol:        "XOM",
 		Summary:       "RSI(14)=32.10 < 35, close=2431.00 > SMA(200)=2398.00",
-		AIContext:     "Reliance fell with the broader index today.",
+		AIContext:     "Exxon fell with the broader index today.",
 	}
 	msg := RenderMessage(a)
 
