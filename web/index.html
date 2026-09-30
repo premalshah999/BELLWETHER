@@ -2,20 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="description" content="TradeSys — market analysis and alerting for Indian and US equities." />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f4f6" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1317" />
+    <meta name="description" content="Bellwether — market intelligence for US equities: filings, policy and news, tied to your holdings, with the evidence attached." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23d4ab52'/%3E%3Cpath d='M16 7.5c-3.8 0-6.2 2.9-6.2 6.7v4.6l-2 3.2h16.4l-2-3.2v-4.6c0-3.8-2.4-6.7-6.2-6.7z' fill='%2316130b'/%3E%3Ccircle cx='16' cy='24.8' r='1.9' fill='%2316130b'/%3E%3C/svg%3E" />
     <title>Bellwether</title>
     <script>
-      // Applied before first paint so a dark-theme user never sees a white flash.
+      // Applied before first paint. An explicit choice is stamped on <html>;
+      // with none, the stylesheet follows the operating system.
       try {
-        var stored = localStorage.getItem("tradesys.theme");
-        var dark = stored === "dark" ||
-          (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches);
-        if (dark) {
-          document.documentElement.setAttribute("data-theme", "dark");
-          document.documentElement.style.colorScheme = "dark";
-        }
+        var t = localStorage.getItem("bellwether.theme");
+        if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
       } catch (e) {}
     </script>
   </head>

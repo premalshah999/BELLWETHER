@@ -129,17 +129,19 @@ try {
 
   for (const route of routes) {
     await page.goto((process.env.BELLWETHER_UI_URL || "http://127.0.0.1:5174") + route);
-    await page.waitForTimeout(120);
+    // Waits for content rather than a fixed delay: a cold dev server can
+    // take longer than any fixed pause to serve a page's first chunk.
+    await page.waitForFunction(() => document.body.innerText.trim().length > 0, null, { timeout: 15000 }).catch(() => {});
     assert.ok((await page.locator("body").innerText()).trim().length > 0, `${route} rendered no text`);
   }
 
   await page.goto((process.env.BELLWETHER_UI_URL || "http://127.0.0.1:5174") + "/dashboard");
-  await page.getByRole("heading", { name: "Your market, distilled" }).waitFor();
+  await page.getByRole("heading", { name: "Needs a look" }).waitFor();
   await page.screenshot({ path: "/tmp/bellwether-overview-desktop.png", fullPage: true });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
-  await page.getByRole("heading", { name: "Your market, distilled" }).waitFor();
+  await page.getByRole("heading", { name: "Needs a look" }).waitFor();
   await page.screenshot({ path: "/tmp/bellwether-overview-mobile.png", fullPage: true });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.deepEqual(errors, []);

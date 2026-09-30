@@ -116,9 +116,9 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
             }}
             title={s.last_run_at ? `Last run ${formatAgo(s.last_run_at)}` : "Never run"}
             className={
-              "border px-2 py-0.5 font-mono text-meta transition-colors " +
+              "h-8 rounded-md border px-3 text-meta font-medium transition-colors " +
               (editing?.id === s.id
-                ? "border-brand bg-brand-muted text-brand"
+                ? "border-brand/50 bg-brand-muted text-text-primary"
                 : "border-border-subtle text-text-secondary hover:border-border-focus hover:text-text-primary")
             }
           >
@@ -132,9 +132,9 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
             setDef(BLANK);
             setError(null);
           }}
-          className="flex items-center gap-1 px-2 py-0.5 font-mono text-meta text-text-muted transition-colors hover:text-brand"
+          className="action-ghost"
         >
-          <Plus size={10} /> new
+          <Plus size={14} /> New screen
         </button>
         {editing && (
           <button
@@ -151,7 +151,7 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
       {/* The builder. */}
       <div className="border-b border-border-subtle px-3.5 py-3">
         <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+          <span className="text-meta font-medium text-text-secondary first-letter:uppercase">
             match
           </span>
           <div className="flex border border-border-subtle">
@@ -161,7 +161,7 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
                 type="button"
                 onClick={() => setDef((d) => ({ ...d, match: m }))}
                 className={
-                  "border-r border-border-subtle px-2 py-0.5 font-mono text-meta last:border-r-0 " +
+                  "h-8 border-r border-border-subtle px-3 text-meta font-medium last:border-r-0 " +
                   (def.match === m
                     ? "bg-brand-muted text-brand"
                     : "text-text-muted hover:text-text-primary")
@@ -172,12 +172,12 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
             ))}
           </div>
 
-          <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+          <span className="text-meta font-medium text-text-secondary first-letter:uppercase">
             within
           </span>
           <div className="flex flex-wrap gap-1">
             <ListChip
-              label="all 750"
+              label="S&P 1500"
               on={!def.watchlist_ids || def.watchlist_ids.length === 0}
               onClick={() => setDef((d) => ({ ...d, watchlist_ids: [] }))}
             />
@@ -209,7 +209,7 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
               <select
                 value={c.field}
                 onChange={(e) => patch(i, { field: e.target.value })}
-                className="border border-border-subtle bg-bg-base px-1.5 py-1 font-mono text-meta text-text-primary outline-none focus:border-brand"
+                className="h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 font-mono text-meta text-text-primary outline-none focus:border-brand"
               >
                 {fields.map((f) => (
                   <option key={f.field} value={f.field}>
@@ -220,7 +220,7 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
               <select
                 value={c.op}
                 onChange={(e) => patch(i, { op: e.target.value })}
-                className="border border-border-subtle bg-bg-base px-1.5 py-1 font-mono text-meta text-text-primary outline-none focus:border-brand"
+                className="h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 font-mono text-meta text-text-primary outline-none focus:border-brand"
               >
                 {ops.map((o) => (
                   <option key={o.op} value={o.op}>
@@ -233,7 +233,7 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
                 step="any"
                 value={c.value}
                 onChange={(e) => patch(i, { value: Number(e.target.value) })}
-                className="w-24 border border-border-subtle bg-bg-base px-1.5 py-1 text-right font-mono text-meta text-text-primary outline-none focus:border-brand"
+                className="w-24 h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 text-right font-mono text-meta text-text-primary outline-none focus:border-brand"
               />
               <span className="w-16 font-mono text-meta text-text-muted">{unit(c.field)}</span>
               {def.conditions.length > 1 && (
@@ -264,18 +264,18 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
                 conditions: [...d.conditions, { field: "return_z", op: ">=", value: 2 }],
               }))
             }
-            className="flex items-center gap-1 font-mono text-meta text-text-muted transition-colors hover:text-brand disabled:opacity-40"
+            className="action-ghost disabled:opacity-40"
           >
-            <Plus size={10} /> condition
+            <Plus size={14} /> Add condition
           </button>
 
-          <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+          <span className="text-meta font-medium text-text-secondary first-letter:uppercase">
             sort
           </span>
           <select
             value={def.sort_by}
             onChange={(e) => setDef((d) => ({ ...d, sort_by: e.target.value }))}
-            className="border border-border-subtle bg-bg-base px-1.5 py-0.5 font-mono text-meta text-text-secondary outline-none focus:border-brand"
+            className="h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 font-mono text-meta text-text-secondary outline-none focus:border-brand"
           >
             {fields.map((f) => (
               <option key={f.field} value={f.field}>
@@ -291,7 +291,7 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
             {def.sort_desc ? "high → low" : "low → high"}
           </button>
 
-          <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+          <span className="text-meta font-medium text-text-secondary first-letter:uppercase">
             top
           </span>
           <input
@@ -300,7 +300,7 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
             max={750}
             value={def.limit}
             onChange={(e) => setDef((d) => ({ ...d, limit: Number(e.target.value) }))}
-            className="w-16 border border-border-subtle bg-bg-base px-1.5 py-0.5 text-right font-mono text-meta outline-none focus:border-brand"
+            className="w-16 h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 text-right font-mono text-meta outline-none focus:border-brand"
           />
 
           <div className="ml-auto flex items-center gap-2">
@@ -321,10 +321,10 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
               type="button"
               onClick={() => (editing || naming ? save.mutate() : setNaming(true))}
               disabled={save.isPending || (naming && !name.trim())}
-              className="flex items-center gap-1 border border-border-subtle px-2 py-0.5 font-mono text-micro uppercase tracking-wider text-text-secondary transition-colors hover:border-brand hover:text-brand disabled:opacity-40"
+              className="action-secondary disabled:opacity-40"
             >
-              <Save size={10} />
-              {editing ? `save ${editing.name}` : "save"}
+              <Save size={14} />
+              {editing ? `Save ${editing.name}` : "Save screen"}
             </button>
           </div>
         </div>
@@ -423,9 +423,9 @@ function ListChip({ label, on, onClick }: { label: string; on: boolean; onClick:
       type="button"
       onClick={onClick}
       className={
-        "border px-2 py-0.5 font-mono text-meta transition-colors " +
+        "h-8 rounded-md border px-3 text-meta font-medium transition-colors " +
         (on
-          ? "border-brand bg-brand-muted text-brand"
+          ? "border-brand/50 bg-brand-muted text-text-primary"
           : "border-border-subtle text-text-muted hover:text-text-primary")
       }
     >
@@ -459,7 +459,7 @@ function Th({
 }) {
   return (
     <th
-      className={`px-2 py-1.5 font-mono text-micro font-medium uppercase tracking-[0.12em] text-text-muted ${
+      className={`px-2 py-1.5 font-mono text-meta font-medium first-letter:uppercase text-text-muted ${
         right ? "text-right" : "text-left"
       } ${className}`}
     >

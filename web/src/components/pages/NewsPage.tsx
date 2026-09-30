@@ -1,324 +1,328 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Newspaper, Search, Sparkles, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Newspaper, Search, ShieldCheck, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, type EventQuery, type MarketEvent } from "../../lib/api";
-import { formatAgo } from "../../lib/format";
-import { Empty } from "../ui/Empty";
-import { Panel } from "../ui/Panel";
-import { EventSource } from "../EventSource";
-import { Pill } from "../ui/Pill";
+import { dayOf, formatClock, formatDateTime, formatDay } from "../../lib/format";
+import { useUrlList, useUrlState } from "../../lib/url";
+import { EventDrawer, importanceLabel, typeLabel } from "../EventDrawer";
+import { MultiSelect, PageHeader, Segmented, Select, SkeletonRows, Switch } from "../ui/controls";
 
 const WINDOWS = [
-  { label: "6h", hours: 6 },
-  { label: "24h", hours: 24 },
-  { label: "3d", hours: 72 },
-  { label: "7d", hours: 168 },
-  { label: "30d", hours: 720 },
-];
+  { value: "6h", label: "6h", hours: 6, words: "6 hours" },
+  { value: "24h", label: "24h", hours: 24, words: "24 hours" },
+  { value: "3d", label: "3d", hours: 72, words: "3 days" },
+  { value: "7d", label: "7d", hours: 168, words: "7 days" },
+  { value: "30d", label: "30d", hours: 720, words: "30 days" },
+] as const;
+
 const LEVELS = [
-  { label: "all", min: 0 },
-  { label: "4+", min: 4 },
-  { label: "6+", min: 6 },
-  { label: "8+", min: 8 },
-];
-/**
- * How many items one page of the feed holds.
- *
- * 500, which is also the server's ceiling (see ListEvents in
- * internal/storage/postgres/events_read.go) -- so one page is the most the
- * API will return and "load more" genuinely fetches beyond it rather than
- * walking up to a limit the backend would have allowed all along.
- */
-const PAGE = 500;
+  { value: "any", label: "Any importance", min: 0 },
+  { value: "notable", label: "Notable and up", min: 4 },
+  { value: "significant", label: "Significant and up", min: 6 },
+  { value: "major", label: "Major only", min: 8 },
+] as const;
 
 const UNIVERSES = [
-  { label: "index", value: "index" as const },
-  { label: "all listed", value: "all" as const },
-];
+  { value: "index", label: "S&P 1500 companies" },
+  { value: "all", label: "Every listed company" },
+] as const;
 
-/**
- * A short note on what one item means.
- *
- * Asked for rather than generated on arrival. The feed takes several thousand
- * items a day and the overwhelming majority are procedural filings; briefing
- * all of them would spend a month's model budget explaining shareholding
- * patterns. Once written it is kept, so it appears immediately for everyone
- * afterwards.
- */
-function Brief({ event }: { event: MarketEvent }) {
-  const qc = useQueryClient();
-  const [text, setText] = useState(event.brief ?? "");
+const ORDERS = [
+  { value: "published", label: "Newest published" },
+  { value: "arrival", label: "Newest found" },
+] as const;
 
-  const write = useMutation({
-    mutationFn: () => api.briefEvent(event.id),
-    onSuccess: (r) => {
-      setText(r.brief);
-      qc.invalidateQueries({ queryKey: ["events"] });
-    },
-  });
-
-  if (text) {
-    return (
-      <p className="mt-1 w-full text-ui leading-relaxed text-text-secondary">
-        <Sparkles size={11} className="mr-1.5 inline text-brand" />
-        {text}
-      </p>
-    );
-  }
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => write.mutate()}
-        disabled={write.isPending}
-        className="flex items-center gap-1 font-mono text-meta text-text-muted transition-colors hover:text-brand disabled:opacity-50"
-      >
-        <Sparkles size={10} />
-        {write.isPending ? "writing…" : "brief"}
-      </button>
-      {write.isError && (
-        <span className="text-meta text-semantic-down">
-          {(write.error as Error).message}
-        </span>
-      )}
-    </>
-  );
-}
+/** The server's ceiling for one request; "Show more" asks beyond it. */
+const PAGE = 500;
 
 export function NewsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
-  const [search, setSearch] = useState("");
-  const [submitted, setSubmitted] = useState("");
-  const [win, setWin] = useState(1);
-  const [level, setLevel] = useState(1);
-  const [universe, setUniverse] = useState(0);
-  const [officialOnly, setOfficialOnly] = useState(false);
-  const [order, setOrder] = useState<"published" | "arrival">("published");
-  const [types, setTypes] = useState<string[]>([]);
-  // The feed was capped at a flat 300 with no way past it, so an archive of
-  // two and a half million items ended at whatever the three-hundredth was.
-  // It grows on request instead.
+  const navigate = useNavigate();
+  const [win, setWin] = useUrlState<(typeof WINDOWS)[number]["value"]>("window", "24h");
+  const [level, setLevel] = useUrlState<(typeof LEVELS)[number]["value"]>("importance", "notable");
+  const [universe, setUniverse] = useUrlState<(typeof UNIVERSES)[number]["value"]>("universe", "index");
+  const [order, setOrder] = useUrlState<(typeof ORDERS)[number]["value"]>("order", "published");
+  const [official, setOfficial] = useUrlState<"" | "1">("official", "");
+  const [types, setTypes] = useUrlList("types");
+  const [q, setQ] = useUrlState("q", "");
+  const [openId, setOpenId] = useUrlState("event", "");
+  const [draft, setDraft] = useState(q);
   const [limit, setLimit] = useState(PAGE);
+  const [cursor, setCursor] = useState(-1);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
-  const catalogue = useQuery({ queryKey: ["event-types"], queryFn: api.eventTypes });
+  useEffect(() => setDraft(q), [q]);
 
+  const catalogue = useQuery({ queryKey: ["event-types"], queryFn: api.eventTypes, staleTime: Infinity });
+  const typeOptions = useMemo(
+    () =>
+      (catalogue.data?.types ?? [])
+        .map((t) => ({ value: t.type, label: typeLabel(t.type) }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [catalogue.data],
+  );
+
+  const window_ = WINDOWS.find((w) => w.value === win) ?? WINDOWS[1];
   const query = useMemo<EventQuery>(
     () => ({
-      q: submitted || undefined,
-      hours: WINDOWS[win]!.hours,
-      minImportance: LEVELS[level]!.min || undefined,
-      official: officialOnly || undefined,
-      universe: UNIVERSES[universe]!.value,
+      q: q || undefined,
+      hours: window_.hours,
+      minImportance: LEVELS.find((l) => l.value === level)?.min || undefined,
+      official: official === "1" || undefined,
+      universe,
       type: types.length ? types.join(",") : undefined,
       order,
       limit,
     }),
-    [submitted, win, level, officialOnly, universe, types, order, limit],
+    [q, window_, level, official, universe, types, order, limit],
   );
 
-  const { data } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: ["events", query],
     queryFn: () => api.events(query),
     refetchInterval: 60_000,
     placeholderData: (p) => p,
   });
-
   const events = data?.events ?? [];
 
-  return (
-    <Panel
-      title={`Feed · ${events.length}`}
-      scroll
-      className="min-w-0 flex-1"
-      action={
-        <div className="flex items-center gap-2">
-          <Seg options={UNIVERSES.map((u) => u.label)} value={universe} onChange={setUniverse} />
-          <Seg options={WINDOWS.map((w) => w.label)} value={win} onChange={setWin} />
-          <Seg options={LEVELS.map((l) => l.label)} value={level} onChange={setLevel} />
-          <button
-            type="button"
-            onClick={() => setOfficialOnly((v) => !v)}
-            className={
-              "border px-1.5 py-0.5 font-mono text-meta " +
-              (officialOnly
-                ? "border-brand bg-brand-muted text-brand"
-                : "border-border-subtle text-text-muted hover:text-text-primary")
-            }
-          >
-            official
-          </button>
-          <button
-            type="button"
-            onClick={() => setOrder(order === "published" ? "arrival" : "published")}
-            title={
-              order === "published"
-                ? "Sorted by when the publisher dated each item."
-                : "Sorted by when we found each item — an audit of ingestion, not a reading order."
-            }
-            className="border border-border-subtle px-1.5 py-0.5 font-mono text-meta text-text-muted transition-colors hover:text-text-primary"
-          >
-            {order === "published" ? "by published" : "by arrival"}
-          </button>
-        </div>
+  const open = useCallback((id: number) => setOpenId(String(id)), [setOpenId]);
+  const toChart = useCallback(
+    (symbol: string) => {
+      onSelect(symbol);
+      navigate("/charts");
+    },
+    [onSelect, navigate],
+  );
+
+  // j / k to move, Enter to open, / to search. A feed read every morning
+  // should not need the mouse.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (openId || t.closest("input, textarea, select, [role=dialog]") || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === "j" || e.key === "k") {
+        e.preventDefault();
+        setCursor((c) => {
+          const n = Math.max(0, Math.min(events.length - 1, c + (e.key === "j" ? 1 : -1)));
+          listRef.current?.querySelector<HTMLElement>(`[data-row="${n}"] [data-open]`)?.focus();
+          return n;
+        });
       }
-    >
-      {/* Type filter. Fifty-three kinds of event share this feed, and an
-          operator looking for results or ratings actions had no way to say
-          so. */}
-      <div className="flex flex-wrap items-center gap-1 border-b border-border-subtle px-3 py-2">
-        <button
-          type="button"
-          onClick={() => setTypes([])}
-          className={
-            "border px-1.5 py-0.5 font-mono text-meta transition-colors " +
-            (types.length === 0
-              ? "border-brand bg-brand-muted text-brand"
-              : "border-border-subtle text-text-muted hover:text-text-primary")
-          }
-        >
-          every type
-        </button>
-        {(catalogue.data?.types ?? []).map((t) => {
-          const on = types.includes(t.type);
-          return (
-            <button
-              key={t.type}
-              type="button"
-              onClick={() =>
-                setTypes(on ? types.filter((x) => x !== t.type) : [...types, t.type])
-              }
-              className={
-                "border px-1.5 py-0.5 font-mono text-meta transition-colors " +
-                (on
-                  ? "border-brand bg-brand-muted text-brand"
-                  : "border-border-subtle text-text-muted hover:text-text-primary")
-              }
-            >
-              {(t.label || t.type).toLowerCase().replace(/_/g, " ")}
-            </button>
-          );
-        })}
-      </div>
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [events.length, openId]);
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          setSubmitted(search.trim());
-        }}
-        className="relative border-b border-border-subtle"
-      >
-        <Search size={12} className="pointer-events-none absolute left-3 top-2.5 text-text-muted" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="search headlines and summaries…"
-          className="w-full bg-transparent py-2 pl-8 pr-8 text-ui outline-none placeholder:text-text-muted"
-        />
-        {(search || submitted) && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearch("");
-              setSubmitted("");
+  const filtered = types.length > 0 || official === "1" || level !== "notable" || universe !== "index" || !!q;
+  const clear = () => {
+    setTypes([]);
+    setOfficial("");
+    setLevel("notable");
+    setUniverse("index");
+    setQ("");
+  };
+
+  const seed = openId ? events.find((e) => String(e.id) === openId) : undefined;
+
+  let lastDay = "";
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+      <PageHeader
+        title="News"
+        subtitle={
+          isLoading
+            ? "Loading the feed…"
+            : `${events.length.toLocaleString()}${events.length >= limit ? "+" : ""} ${events.length === 1 ? "event" : "events"} in the last ${window_.words}${official === "1" ? ", official sources only" : ""}.`
+        }
+        actions={
+          <form
+            role="search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setQ(draft.trim());
             }}
-            className="absolute right-3 top-2.5 text-text-muted hover:text-text-primary"
+            className="relative w-full sm:w-72"
           >
-            <X size={12} />
-          </button>
-        )}
-      </form>
-
-      {events.length === 0 ? (
-        <Empty
-          icon={Newspaper}
-          title="Nothing matches."
-          hint="Widen the window, lower the importance floor, or switch the universe to all listed companies."
-        />
-      ) : (
-        <ul className="divide-y divide-border-subtle">
-          {events.map((e) => (
-            <li key={e.id} className="px-4 py-3 hover:bg-bg-panel-hover">
-              <a
-                href={e.primary_url || undefined}
-                target="_blank"
-                rel="noreferrer noopener"
-                className={
-                  "block text-ui leading-relaxed " +
-                  (e.primary_url ? "text-text-primary hover:text-brand" : "cursor-default")
-                }
-              >
-                {e.headline}
-              </a>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="font-mono text-meta text-text-muted">
-                  {/* "seen" where the timestamp is an aggregator's surfacing
-                      time rather than a publication time. */}
-                  {e.timestamp_trust === "observed" ? "seen " : ""}
-                  {formatAgo(e.published_at || e.discovered_at)}
-                </span>
-                <EventSource event={e} />
-                {(e.entities ?? []).slice(0, 3).map((en) => (
-                  <button
-                    key={en.symbol}
-                    type="button"
-                    onClick={() => onSelect(en.symbol)}
-                    className="font-mono text-meta text-text-secondary hover:text-brand"
-                  >
-                    {en.symbol}
-                  </button>
-                ))}
-                {e.event_type && e.event_type !== "UNCLASSIFIED" && (
-                  <Pill tone="muted">{e.event_type.replace(/_/g, " ").toLowerCase()}</Pill>
-                )}
-                {e.official && <Pill tone="brand">official</Pill>}
-                {(e.importance ?? 0) >= 7 && <Pill tone="down">high</Pill>}
-                <Brief event={e} />
-              </div>
-            </li>
-          ))}
-          {/* The feed ends where the request ended, not where the archive
-              does. Saying so, and offering the next page, is the difference
-              between "that is all there is" and "that is all I asked for". */}
-          {events.length >= limit && (
-            <li className="px-4 py-3">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+            <input
+              ref={searchRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Search headlines…"
+              aria-label="Search headlines"
+              className="h-9 w-full rounded-md border border-border-subtle bg-bg-base pl-9 pr-9 text-ui outline-none transition-colors placeholder:text-text-muted hover:border-border-focus focus:border-brand"
+            />
+            {draft ? (
               <button
                 type="button"
-                onClick={() => setLimit((n) => n + PAGE)}
-                className="font-mono text-meta text-text-muted transition-colors hover:text-brand"
+                aria-label="Clear search"
+                onClick={() => {
+                  setDraft("");
+                  setQ("");
+                }}
+                className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-text-muted hover:text-text-primary"
               >
-                load {PAGE} more · showing {events.length}
+                <X size={14} />
               </button>
-            </li>
-          )}
-        </ul>
-      )}
-    </Panel>
+            ) : (
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-border-subtle px-1.5 text-micro text-text-muted max-sm:hidden">
+                /
+              </kbd>
+            )}
+          </form>
+        }
+      >
+        <Segmented label="Time window" options={WINDOWS} value={win} onChange={setWin} />
+        <Select label="Importance" value={level} onChange={setLevel} options={LEVELS} />
+        <MultiSelect label="Type" allLabel="All types" options={typeOptions} value={types} onChange={setTypes} />
+        <Select label="Companies" value={universe} onChange={setUniverse} options={UNIVERSES} />
+        <Switch
+          checked={official === "1"}
+          onChange={(v) => setOfficial(v ? "1" : "")}
+          label={
+            <span className="inline-flex items-center gap-1">
+              <ShieldCheck size={14} className="text-brand" /> Official only
+            </span>
+          }
+        />
+        <span className="flex-1 max-md:hidden" />
+        <Select label="Order" value={order} onChange={setOrder} options={ORDERS} />
+        {isFetching && !isLoading && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-brand" title="Refreshing" />}
+      </PageHeader>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {isLoading ? (
+          <SkeletonRows count={9} height={60} />
+        ) : events.length === 0 ? (
+          <div className="flex max-w-md flex-col items-start gap-3 px-6 py-12">
+            <Newspaper size={22} className="text-text-muted" />
+            <p className="font-reading text-display text-text-primary">Nothing matches these filters.</p>
+            <p className="text-ui text-text-secondary">
+              Try a longer time window, a lower importance, or every listed company rather than the S&P 1500.
+            </p>
+            {filtered && (
+              <button type="button" onClick={clear} className="action-secondary mt-1">
+                Clear filters
+              </button>
+            )}
+          </div>
+        ) : (
+          <ul ref={listRef} className="pb-8">
+            {events.map((e, i) => {
+              const at = e.published_at || e.discovered_at;
+              const day = dayOf(at);
+              const header = day !== lastDay;
+              lastDay = day;
+              return (
+                <li key={e.id} data-row={i}>
+                  {header && (
+                    <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-bg-panel/95 px-5 py-2 text-meta font-semibold text-text-secondary backdrop-blur md:px-6">
+                      {formatDay(at)}
+                    </h2>
+                  )}
+                  <EventRow e={e} active={cursor === i || String(e.id) === openId} onOpen={open} onSymbol={toChart} />
+                </li>
+              );
+            })}
+            {events.length >= limit && (
+              <li className="px-6 py-5">
+                <button type="button" onClick={() => setLimit((n) => n + PAGE)} className="action-secondary">
+                  Show {PAGE} more
+                </button>
+              </li>
+            )}
+          </ul>
+        )}
+      </div>
+
+      <EventDrawer
+        id={openId ? Number(openId) : null}
+        seed={seed}
+        onClose={() => setOpenId("")}
+        onSymbol={(s) => {
+          setOpenId("");
+          toChart(s);
+        }}
+      />
+    </div>
   );
 }
 
-function Seg({
-  options,
-  value,
-  onChange,
+function EventRow({
+  e,
+  active,
+  onOpen,
+  onSymbol,
 }: {
-  options: string[];
-  value: number;
-  onChange: (i: number) => void;
+  e: MarketEvent;
+  active: boolean;
+  onOpen: (id: number) => void;
+  onSymbol: (symbol: string) => void;
 }) {
+  const at = e.published_at || e.discovered_at;
+  const others = Math.max(0, (e.source_count ?? 1) - 1);
+  const tickers = (e.entities ?? []).filter((en) => en.relationship !== "sector").slice(0, 4);
+  const major = importanceLabel(e.importance);
   return (
-    <div className="flex border border-border-subtle">
-      {options.map((label, i) => (
+    <div
+      className={
+        "group relative flex gap-4 border-b border-border-subtle px-5 py-3.5 transition-colors [contain-intrinsic-size:auto_76px] [content-visibility:auto] hover:bg-bg-panel-hover md:px-6 " +
+        (active ? "bg-bg-panel-hover" : "")
+      }
+    >
+      <time
+        dateTime={at}
+        title={formatDateTime(at)}
+        className="w-11 shrink-0 pt-0.5 text-meta text-text-muted max-sm:hidden"
+      >
+        {formatClock(at)}
+      </time>
+      <div className="min-w-0 flex-1">
         <button
-          key={label}
           type="button"
-          onClick={() => onChange(i)}
-          className={
-            "border-r border-border-subtle px-1.5 py-0.5 font-mono text-meta last:border-r-0 " +
-            (i === value ? "bg-brand-muted text-brand" : "text-text-muted hover:text-text-primary")
-          }
+          data-open
+          onClick={() => onOpen(e.id)}
+          className="text-left font-reading text-emphasis font-medium leading-snug text-text-primary outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-brand"
         >
-          {label}
+          {e.headline}
         </button>
-      ))}
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-text-muted">
+          <span className="inline-flex items-center gap-1 text-text-secondary">
+            {e.official && <ShieldCheck size={13} className="text-brand" aria-label="Official source" />}
+            <span className="font-medium">{e.source || "Unknown source"}</span>
+            {others > 0 && <span className="text-text-muted" title={`${others + 1} independent sources`}>+{others}</span>}
+          </span>
+          {tickers.length > 0 && (
+            <span className="relative z-10 inline-flex gap-1.5">
+              {tickers.map((en) => (
+                <button
+                  key={en.symbol}
+                  type="button"
+                  onClick={() => onSymbol(en.symbol)}
+                  title={`Open ${en.symbol} on the chart`}
+                  className="rounded px-1 font-semibold text-text-primary transition-colors hover:bg-brand-muted hover:text-brand"
+                >
+                  {en.symbol}
+                </button>
+              ))}
+            </span>
+          )}
+          {e.event_type && e.event_type !== "UNCLASSIFIED" && <span>{typeLabel(e.event_type)}</span>}
+          {major && (major === "Major" || major === "Significant") && (
+            <span className="rounded-sm bg-brand-muted px-1.5 font-medium text-brand">{major}</span>
+          )}
+          {e.brief && (
+            <span className="inline-flex items-center gap-1 text-brand" title="Has an AI brief">
+              <Sparkles size={12} /> Brief
+            </span>
+          )}
+          <span className="sm:hidden">{formatClock(at)}</span>
+        </p>
+      </div>
     </div>
   );
 }

@@ -181,7 +181,7 @@ export function DashboardPage({ symbol }: { symbol: string }) {
           unknown amount of identity is the wrong home for a fixed set of
           controls. */}
       <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 py-1.5 border-b border-border-subtle bg-bg-panel px-4">
-        <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+        <span className="font-mono text-micro text-text-muted">
           range
         </span>
         <Segments
@@ -189,7 +189,7 @@ export function DashboardPage({ symbol }: { symbol: string }) {
           value={range}
           onChange={setRange}
         />
-        <span className="ml-2 font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+        <span className="ml-2 font-mono text-micro text-text-muted">
           interval
         </span>
         <Segments
@@ -283,7 +283,7 @@ function PriceAge({ asOf }: { asOf: string }) {
 function Stat({ label, value, digits = 2 }: { label: string; value?: number; digits?: number }) {
   return (
     <div className="flex items-baseline gap-1">
-      <dt className="font-mono text-micro uppercase tracking-wider text-text-muted">{label}</dt>
+      <dt className="font-mono text-micro text-text-muted">{label}</dt>
       <dd className="font-mono text-meta text-text-secondary">
         {value == null ? "—" : value.toLocaleString(undefined, { maximumFractionDigits: digits })}
       </dd>
@@ -392,7 +392,7 @@ function ScannerContext({ symbol }: { symbol: string }) {
 
   return (
     <div className="px-4 py-3">
-      <p className="font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
+      <p className="font-mono text-micro text-text-muted">
         scanner history · {tickerOf(symbol)}
       </p>
       <ul className="mt-2 space-y-1.5">
@@ -487,7 +487,7 @@ function ExplainPane({ symbol }: { symbol: string }) {
           </p>
           {(debrief.data.sections ?? []).map((sec, i) => (
             <div key={i} className="mt-2.5">
-              <p className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+              <p className="font-mono text-micro text-text-muted">
                 {sec.title}
               </p>
               <p className="mt-0.5 text-ui leading-relaxed text-text-secondary">{sec.body}</p>
@@ -495,7 +495,7 @@ function ExplainPane({ symbol }: { symbol: string }) {
           ))}
           {!!debrief.data.blind_spots?.length && (
             <div className="mt-2.5 border-t border-border-subtle pt-2">
-              <p className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+              <p className="font-mono text-micro text-text-muted">
                 not covered
               </p>
               <ul className="mt-0.5 space-y-0.5">

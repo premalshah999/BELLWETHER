@@ -1,176 +1,389 @@
-@import "@fontsource/inter/400.css";
-@import "@fontsource/inter/500.css";
-@import "@fontsource/inter/600.css";
-@import "@fontsource/jetbrains-mono/400.css";
-@import "@fontsource/jetbrains-mono/500.css";
-@import "@fontsource/jetbrains-mono/600.css";
+@import "@fontsource-variable/public-sans/wght.css";
+@import "@fontsource-variable/source-serif-4/standard.css";
 @import "tailwindcss";
 
 /*
- * A terminal, not a website.
+ * Bellwether's visual language comes from the documents it reads.
  *
- * The rules below are constraints rather than decoration. Density is the
- * point: an operator scanning for a number should never have to scroll past
- * ornament to reach it, so there are no nested cards, no drop shadows, no
- * gradients, and exactly one border weight. Panels meet at a 1px line and
- * separate by that line alone.
+ * Its argument is provenance: an SEC filing, a Federal Register notice, a
+ * disclosure with a date on it. So the interface borrows from American public
+ * print rather than from a hacker's terminal — Public Sans, the typeface the
+ * US government designed for its own services, for everything you operate;
+ * Source Serif for the things you read, the headlines and the briefs; and one
+ * brass accent, the bell of the bellwether, kept for the few things that are
+ * genuinely primary: where you are, what to press, and what is official.
+ *
+ * Green and red belong to price alone. Nothing decorative may use them.
+ *
+ * Every colour is a token defined once per theme below. Components use the
+ * tokens and never a literal, so both themes stay whole.
  */
-@theme {
-  --color-brand: #00e5ff;
-  --color-brand-muted: rgba(0, 229, 255, 0.15);
 
-  --color-bg-base: #0a0a0a;
-  --color-bg-panel: #111111;
-  --color-bg-panel-hover: #1a1a1a;
+:root {
+  /* Light: cool paper, not cream. */
+  --ground: #f3f4f6;
+  --surface: #ffffff;
+  --surface-hover: #f1f3f5;
+  --raised: #ffffff;
+  --line: #e2e5e9;
+  --line-strong: #c9cfd6;
+  --ink: #14181d;
+  --ink-2: #4a545f;
+  --ink-3: #737e89;
+  --brass: #8a6614;
+  --brass-soft: rgba(138, 102, 20, 0.1);
+  --brass-ink: #ffffff;
+  --up: #16804f;
+  --up-soft: rgba(22, 128, 79, 0.1);
+  --down: #c23b32;
+  --down-soft: rgba(194, 59, 50, 0.09);
+  --info: #2f5f9e;
+  --info-soft: rgba(47, 95, 158, 0.09);
+  --shadow: 0 1px 2px rgba(20, 24, 29, 0.06), 0 8px 24px rgba(20, 24, 29, 0.08);
+  --scrim: rgba(20, 24, 29, 0.28);
+  color-scheme: light;
+}
 
-  --color-border-subtle: #222222;
-  --color-border-focus: #333333;
-
-  --color-text-primary: #f5f5f5;
-  --color-text-secondary: #a3a3a3;
-  --color-text-muted: #737373;
-
-  --color-semantic-up: #4ade80;
-  --color-semantic-down: #f87171;
-
-  --font-sans: "Inter", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-
-  /*
-   * A type scale, six steps, and nothing between them.
-   *
-   * The interface had grown eleven distinct sizes — 9, 9.5, 10, 10.5, 11,
-   * 11.5, 12, 12.5, 13 — which is not a scale, it is an accumulation. Sizes
-   * that close together cannot express hierarchy: 10px next to 10.5px reads
-   * as a mistake rather than a distinction, and a screen full of near-misses
-   * is exactly what makes an interface feel assembled instead of designed.
-   *
-   * Each step here has one job, and a component picks the job rather than a
-   * number.
-   */
-  --text-micro: 10px;      /* uppercase labels and eyebrows, nothing else */
-  --text-micro--line-height: 1.4;
-  --text-meta: 11.5px;     /* timestamps, units, secondary detail */
-  --text-meta--line-height: 1.45;
-  --text-ui: 13px;         /* the workhorse: rows, cells, controls, prose */
-  --text-ui--line-height: 1.5;
-  --text-emphasis: 15px;   /* the one number in a panel that matters */
-  --text-emphasis--line-height: 1.35;
-  --text-display: 20px;    /* a price */
-  --text-display--line-height: 1.15;
-  --text-hero: 30px;       /* a headline figure */
-  --text-hero--line-height: 1.05;
+/* Dark: slate, not black — a black ground with one bright accent is the
+   house style of every generated dashboard. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0f1317;
+    --surface: #141a1f;
+    --surface-hover: #1a2128;
+    --raised: #1b2229;
+    --line: #232b33;
+    --line-strong: #34404b;
+    --ink: #e6e9ec;
+    --ink-2: #a2acb6;
+    --ink-3: #6e7a86;
+    --brass: #d4ab52;
+    --brass-soft: rgba(212, 171, 82, 0.13);
+    --brass-ink: #16130b;
+    --up: #45bd84;
+    --up-soft: rgba(69, 189, 132, 0.12);
+    --down: #ec6a60;
+    --down-soft: rgba(236, 106, 96, 0.12);
+    --info: #7ea6dc;
+    --info-soft: rgba(126, 166, 220, 0.12);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.35);
+    --scrim: rgba(5, 8, 10, 0.55);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0f1317;
+  --surface: #141a1f;
+  --surface-hover: #1a2128;
+  --raised: #1b2229;
+  --line: #232b33;
+  --line-strong: #34404b;
+  --ink: #e6e9ec;
+  --ink-2: #a2acb6;
+  --ink-3: #6e7a86;
+  --brass: #d4ab52;
+  --brass-soft: rgba(212, 171, 82, 0.13);
+  --brass-ink: #16130b;
+  --up: #45bd84;
+  --up-soft: rgba(69, 189, 132, 0.12);
+  --down: #ec6a60;
+  --down-soft: rgba(236, 106, 96, 0.12);
+  --info: #7ea6dc;
+  --info-soft: rgba(126, 166, 220, 0.12);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.35);
+  --scrim: rgba(5, 8, 10, 0.55);
+  color-scheme: dark;
 }
 
 /*
- * Tabular figures everywhere.
- *
- * Proportional digits make a column of prices ripple as it updates, because
- * a 1 is narrower than an 8. On a screen where numbers change every few
- * seconds that movement is the first thing the eye follows, and it is never
- * the thing worth following.
+ * Utility names are kept from the first design so every page picks up the
+ * new palette at once; their values now come from the tokens above.
  */
-* {
-  font-variant-numeric: tabular-nums;
+@theme {
+  --color-brand: var(--brass);
+  --color-brand-muted: var(--brass-soft);
+  --color-brand-ink: var(--brass-ink);
+
+  --color-bg-base: var(--ground);
+  --color-bg-panel: var(--surface);
+  --color-bg-panel-hover: var(--surface-hover);
+  --color-bg-raised: var(--raised);
+
+  --color-border-subtle: var(--line);
+  --color-border-focus: var(--line-strong);
+
+  --color-text-primary: var(--ink);
+  --color-text-secondary: var(--ink-2);
+  --color-text-muted: var(--ink-3);
+
+  --color-semantic-up: var(--up);
+  --color-semantic-up-soft: var(--up-soft);
+  --color-semantic-down: var(--down);
+  --color-semantic-down-soft: var(--down-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --font-sans: "Public Sans Variable", "Public Sans", system-ui, sans-serif;
+  --font-serif: "Source Serif 4 Variable", "Source Serif 4", Georgia, serif;
+  /* "mono" was the terminal face for every label and number. Figures now
+     line up through tabular numerals in the interface face instead, and a
+     true monospace is kept for code alone. */
+  --font-mono: var(--font-sans);
+  --font-code: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+
+  /* One scale. A component picks the job, not a number. */
+  --text-micro: 11px;      /* the smallest honest label */
+  --text-micro--line-height: 1.4;
+  --text-meta: 12px;       /* timestamps, units, secondary detail */
+  --text-meta--line-height: 1.45;
+  --text-ui: 13.5px;       /* rows, cells, controls */
+  --text-ui--line-height: 1.5;
+  --text-emphasis: 15px;   /* a headline in a list, the number that matters */
+  --text-emphasis--line-height: 1.4;
+  --text-display: 22px;    /* a price, a section figure */
+  --text-display--line-height: 1.2;
+  --text-title: 26px;      /* a page title */
+  --text-title--line-height: 1.15;
+  --text-hero: 34px;       /* the one headline figure on a page */
+  --text-hero--line-height: 1.05;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --shadow-pop: var(--shadow);
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-html,
-body,
-#root {
-  height: 100%;
+/*
+ * Element defaults live in the base layer, beneath the utilities. Outside a
+ * layer they would beat every class: `button { color: inherit }` would
+ * silently override a button's own text colour everywhere.
+ */
+@layer base {
+  /* Tabular figures everywhere: a column of prices must not ripple as it
+     updates because a 1 is narrower than an 8. */
+  * {
+    font-variant-numeric: tabular-nums;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    -webkit-tap-highlight-color: transparent;
+    /* The shell owns every scroll region; the document itself never scrolls. */
+    overflow: hidden;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  button,
+  a,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+
+  code,
+  kbd,
+  pre,
+  textarea.font-code {
+    font-family: var(--font-code);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brass);
+    outline-offset: 1px;
+    border-radius: 3px;
+  }
+
+  ::selection {
+    background: var(--brass-soft);
+    color: var(--ink);
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+  select {
+    background-color: var(--surface);
+    color: var(--ink);
+  }
+  select option {
+    background: var(--raised);
+    color: var(--ink);
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink-3);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
-body {
-  margin: 0;
-  background: var(--color-bg-base);
-  color: var(--color-text-primary);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  /* The shell owns every scroll region; the document itself never scrolls. */
-  overflow: hidden;
-}
-
-/* Thin, unobtrusive scrollbars. A scrollbar is a status indicator here, not
-   a control — the wheel and the trackpad are the control. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-focus) transparent;
-}
-*::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-*::-webkit-scrollbar-thumb {
-  background: var(--color-border-focus);
-  border-radius: 0;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: #444;
-}
-*::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/* Focus is shown with the brand colour rather than a browser default that
-   would not survive the dark theme. */
-:focus-visible {
-  outline: 1px solid var(--color-brand);
-  outline-offset: -1px;
-}
-
-::selection {
-  background: var(--color-brand-muted);
-  color: var(--color-text-primary);
-}
-
-/* Native controls default to a light palette; these keep them legible. */
-input,
-select,
-textarea,
-button {
-  font: inherit;
-  color: inherit;
-}
-select option {
-  background: var(--color-bg-panel);
-  color: var(--color-text-primary);
-}
-
+/* Primary: the one filled control on a screen. */
 @utility action-primary {
   display: inline-flex;
-  min-height: 2rem;
+  min-height: 2.25rem;
   align-items: center;
   justify-content: center;
-  gap: 0.375rem;
-  border: 1px solid var(--color-brand);
-  background: var(--color-brand-muted);
-  padding-inline: 0.75rem;
-  color: var(--color-brand);
-  font-family: var(--font-mono);
-  font-size: var(--text-meta);
-  transition: background-color 150ms ease;
-  &:hover { background: rgba(0, 229, 255, 0.22); }
+  gap: 0.4rem;
+  border-radius: var(--radius-md);
+  background: var(--brass);
+  padding-inline: 0.9rem;
+  color: var(--brass-ink);
+  font-size: var(--text-ui);
+  font-weight: 600;
+  transition: filter 140ms ease, transform 140ms ease;
+  &:hover {
+    filter: brightness(1.08);
+  }
+  &:active {
+    transform: translateY(1px);
+  }
+  &:disabled {
+    opacity: 0.5;
+    filter: none;
+  }
 }
 
 @utility action-secondary {
   display: inline-flex;
-  min-height: 2rem;
+  min-height: 2.25rem;
   align-items: center;
   justify-content: center;
-  gap: 0.375rem;
-  border: 1px solid var(--color-border-focus);
-  padding-inline: 0.75rem;
-  color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--text-meta);
-  transition: color 150ms ease, border-color 150ms ease;
+  gap: 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding-inline: 0.85rem;
+  color: var(--ink);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  transition: background-color 140ms ease, border-color 140ms ease;
   &:hover {
-    border-color: var(--color-brand);
-    color: var(--color-brand);
+    background: var(--surface-hover);
+    border-color: var(--ink-3);
   }
+}
+
+/* A quiet control: text that is plainly pressable. */
+@utility action-ghost {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: var(--radius-md);
+  padding-inline: 0.6rem;
+  color: var(--ink-2);
+  font-size: var(--text-ui);
+  transition: background-color 140ms ease, color 140ms ease;
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--ink);
+  }
+}
+
+/* Where a headline is read rather than scanned. */
+@utility font-reading {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  letter-spacing: -0.005em;
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes rise-in {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: -200px 0;
+  }
+  to {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+@utility skeleton {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface-hover) 0, var(--line) 50%, var(--surface-hover) 100%);
+  background-size: 200px 100%;
+  background-repeat: no-repeat;
+  background-color: var(--surface-hover);
+  animation: shimmer 1.3s linear infinite;
 }

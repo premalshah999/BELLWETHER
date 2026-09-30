@@ -113,7 +113,7 @@ export function Fundamentals({ symbol, onHide }: { symbol: string; onHide?: () =
 
       {peers && (
         <div className="px-3 py-2">
-          <p className="mb-2 font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
+          <p className="mb-2 font-mono text-micro text-text-muted">
             against {peers.peer_count} listed peers in {peers.industry}
           </p>
           <div className="space-y-0.5">
@@ -128,7 +128,7 @@ export function Fundamentals({ symbol, onHide }: { symbol: string; onHide?: () =
 
       {!!data.trends?.length && (
         <div className="border-t border-border-subtle px-3 py-2">
-          <p className="mb-2 font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
+          <p className="mb-2 font-mono text-micro text-text-muted">
             reported quarters
           </p>
           {data.trends.map((t) => (
