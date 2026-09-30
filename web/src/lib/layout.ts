@@ -97,3 +97,16 @@ export function useResize({ key, initial, min, max, direction }: ResizeOptions) 
 
   return { size, dragging, handlers: { onPointerDown, onPointerMove, onPointerUp: stop, onPointerCancel: stop }, reset };
 }
+
+/** Whether a media query matches, kept current as the window changes. */
+export function useMedia(query: string): boolean {
+  const [hit, setHit] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setHit(m.matches);
+    on();
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, [query]);
+  return hit;
+}

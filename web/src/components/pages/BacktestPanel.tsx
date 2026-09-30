@@ -160,15 +160,15 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
             type="button"
             onClick={() => run.mutate()}
             disabled={run.isPending}
-            className="ml-auto flex items-center gap-1.5 border border-border-subtle px-3 py-1 font-mono text-meta uppercase tracking-wider text-text-secondary transition-colors hover:border-brand hover:text-brand disabled:opacity-40"
+            className="action-primary ml-auto"
           >
-            <Play size={11} />
-            {run.isPending ? "running…" : "run backtest"}
+            <Play size={14} />
+            {run.isPending ? "Running…" : "Run backtest"}
           </button>
         </div>
 
         <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+          <span className="text-meta font-medium text-text-secondary first-letter:uppercase">
             exit
           </span>
           <Chip on={!exitOn} onClick={() => setExitOn(false)}>
@@ -182,7 +182,7 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
               <select
                 value={exit.indicator}
                 onChange={(e) => setExit({ ...exit, indicator: e.target.value })}
-                className="border border-border-subtle bg-bg-base px-1.5 py-0.5 font-mono text-meta text-text-primary outline-none focus:border-brand"
+                className="h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 font-mono text-meta text-text-primary outline-none focus:border-brand"
               >
                 {(vocab.data?.indicators ?? []).map((i) => (
                   <option key={i.name} value={i.name}>
@@ -195,12 +195,12 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
                 value={exit.period}
                 onChange={(e) => setExit({ ...exit, period: Number(e.target.value) })}
                 title="Period"
-                className="w-14 border border-border-subtle bg-bg-base px-1.5 py-0.5 text-right font-mono text-meta outline-none focus:border-brand"
+                className="w-14 h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 text-right font-mono text-meta outline-none focus:border-brand"
               />
               <select
                 value={exit.op}
                 onChange={(e) => setExit({ ...exit, op: e.target.value })}
-                className="border border-border-subtle bg-bg-base px-1.5 py-0.5 font-mono text-meta text-text-primary outline-none focus:border-brand"
+                className="h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 font-mono text-meta text-text-primary outline-none focus:border-brand"
               >
                 {["<", "<=", ">", ">=", "crosses_above", "crosses_below"].map((o) => (
                   <option key={o} value={o}>
@@ -213,7 +213,7 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
                 step="any"
                 value={exit.value}
                 onChange={(e) => setExit({ ...exit, value: Number(e.target.value) })}
-                className="w-20 border border-border-subtle bg-bg-base px-1.5 py-0.5 text-right font-mono text-meta outline-none focus:border-brand"
+                className="w-20 h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 text-right font-mono text-meta outline-none focus:border-brand"
               />
             </>
           )}
@@ -221,7 +221,7 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
 
         {(lists.data?.watchlists ?? []).length > 0 && (
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+            <span className="text-meta font-medium text-text-secondary first-letter:uppercase">
               test on
             </span>
             <Chip on={scope.length === 0} onClick={() => setScope([])}>
@@ -278,7 +278,7 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
 
           {multi && data.summary && (
             <div className="border-b border-border-subtle px-4 py-3">
-              <p className="mb-2 font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+              <p className="mb-2 text-meta font-medium text-text-secondary first-letter:uppercase">
                 across {data.summary.symbols} instruments · {data.elapsed}
               </p>
               <div className="flex flex-wrap gap-x-8 gap-y-3">
@@ -351,7 +351,7 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
 
           {(data.skipped ?? []).length > 0 && (
             <div className="border-t border-border-subtle px-4 py-3">
-              <p className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+              <p className="text-meta font-medium text-text-secondary first-letter:uppercase">
                 not tested
               </p>
               {(data.skipped ?? []).map((s) => (
@@ -384,7 +384,7 @@ function SymbolReport({
   return (
     <>
       <div className="border-b border-border-subtle px-4 py-3">
-        <p className="mb-2.5 font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+        <p className="mb-2.5 text-meta font-medium text-text-secondary first-letter:uppercase">
           {r.symbol} · {r.bars} bars · {r.from.slice(0, 10)} to {r.to.slice(0, 10)}
           {shorts > 0 ? ` · ${shorts} short` : ""}
           {sized ? " · fractional sizing" : ""}
@@ -523,10 +523,10 @@ function EquityCurve({ r }: { r: BacktestResult }) {
   return (
     <div className="border-b border-border-subtle px-4 py-3">
       <div className="mb-2 flex items-center gap-4">
-        <span className="flex items-center gap-1.5 font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+        <span className="flex items-center gap-1.5 text-meta font-medium text-text-secondary first-letter:uppercase">
           <span className="h-px w-4 bg-brand" /> strategy
         </span>
-        <span className="flex items-center gap-1.5 font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+        <span className="flex items-center gap-1.5 text-meta font-medium text-text-secondary first-letter:uppercase">
           <span className="h-px w-4 bg-text-muted" /> buy &amp; hold
         </span>
       </div>
@@ -560,7 +560,7 @@ function Metric({
 }) {
   return (
     <div>
-      <p className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">{label}</p>
+      <p className="text-meta font-medium text-text-secondary first-letter:uppercase">{label}</p>
       <p
         className={
           "mt-0.5 font-mono " +
@@ -590,7 +590,7 @@ function Cell({ v, muted }: { v: number; muted?: boolean }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+      <span className="text-meta font-medium text-text-secondary first-letter:uppercase">
         {label}
       </span>
       {children}
@@ -613,7 +613,7 @@ function Num({
 }) {
   return (
     <div className="flex items-center gap-2" title={title}>
-      <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+      <span className="text-meta font-medium text-text-secondary first-letter:uppercase">
         {label}
       </span>
       <input
@@ -622,9 +622,9 @@ function Num({
         step="any"
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-16 border border-border-subtle bg-bg-base px-1.5 py-0.5 text-right font-mono text-meta outline-none focus:border-brand"
+        className="w-16 h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 text-right font-mono text-meta outline-none focus:border-brand"
       />
-      <span className="font-mono text-micro text-text-muted">{unit}</span>
+      <span className="text-meta font-medium text-text-secondary first-letter:uppercase">{unit}</span>
     </div>
   );
 }
@@ -646,8 +646,8 @@ function Segments<T extends string | number>({
           type="button"
           onClick={() => onChange(v)}
           className={
-            "h-6 border-r border-border-subtle px-2 font-mono text-meta last:border-r-0 transition-colors " +
-            (v === value ? "bg-brand-muted text-brand" : "text-text-muted hover:text-text-primary")
+            "h-8 border-r border-border-subtle px-3 text-meta font-medium last:border-r-0 transition-colors " +
+            (v === value ? "bg-bg-panel-hover text-text-primary" : "text-text-muted hover:text-text-primary")
           }
         >
           {label}
@@ -671,9 +671,9 @@ function Chip({
       type="button"
       onClick={onClick}
       className={
-        "border px-2 py-0.5 font-mono text-meta transition-colors " +
+        "h-8 rounded-md border px-3 text-meta font-medium transition-colors " +
         (on
-          ? "border-brand bg-brand-muted text-brand"
+          ? "border-brand/50 bg-brand-muted text-text-primary"
           : "border-border-subtle text-text-muted hover:text-text-primary")
       }
     >
@@ -694,7 +694,7 @@ function Th({
   return (
     <th
       className={
-        "px-3 py-2 font-mono text-micro font-medium uppercase tracking-[0.12em] text-text-muted " +
+        "px-3 py-2 font-mono text-meta font-medium first-letter:uppercase text-text-muted " +
         (right ? "text-right " : "text-left ") +
         className
       }

@@ -13,7 +13,7 @@
 
 const EM_DASH = "—";
 
-let displayTimeZone = "Asia/Kolkata";
+let displayTimeZone = "America/New_York";
 
 /** Sets the zone every timestamp is rendered in. Called once from meta. */
 export function setDisplayTimeZone(tz: string): void {
@@ -25,7 +25,7 @@ export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return EM_DASH;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return EM_DASH;
-  return d.toLocaleString("en-GB", {
+  return d.toLocaleString("en-US", {
     timeZone: displayTimeZone,
     day: "2-digit",
     month: "short",
@@ -66,4 +66,58 @@ export function formatAgo(iso: string | null | undefined): string {
   if (months < 12) return `${months}mo ago`;
 
   return `${Math.floor(months / 12)}y ago`;
+}
+
+function dayKey(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: displayTimeZone });
+}
+
+/** A clock time in the display zone: 14:32. */
+export function formatClock(iso: string | null | undefined): string {
+  if (!iso) return EM_DASH;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return EM_DASH;
+  return d.toLocaleTimeString("en-US", {
+    timeZone: displayTimeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+/** The calendar day an instant falls on in the display zone, as a stable key. */
+export function dayOf(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : dayKey(d);
+}
+
+/** "Today", "Yesterday", or "Mon, Sep 27" — for grouping a feed by day. */
+export function formatDay(iso: string | null | undefined): string {
+  if (!iso) return EM_DASH;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return EM_DASH;
+  const today = dayKey(new Date());
+  const yesterday = dayKey(new Date(Date.now() - 86_400_000));
+  const k = dayKey(d);
+  if (k === today) return "Today";
+  if (k === yesterday) return "Yesterday";
+  return d.toLocaleDateString("en-US", {
+    timeZone: displayTimeZone,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** A span of seconds, briefly: 45s, 12m, 3h 5m, 2d. */
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return EM_DASH;
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+  return `${Math.floor(h / 24)}d`;
 }

@@ -27,7 +27,7 @@ export function Tabs<T extends string>({
 }) {
   void id;
   return (
-    <div className="flex h-10 shrink-0 items-stretch border-b border-border-subtle bg-bg-panel">
+    <div className="flex h-11 shrink-0 items-stretch border-b border-border-subtle bg-bg-panel">
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
         {tabs.map((t) => {
           const active = t.value === value;
@@ -37,7 +37,7 @@ export function Tabs<T extends string>({
               type="button"
               onClick={() => onChange(t.value)}
               className={
-                "relative flex shrink-0 items-center gap-1.5 px-3.5 font-mono text-micro uppercase tracking-[0.14em] transition-colors " +
+                "relative flex shrink-0 items-center gap-1.5 px-3.5 text-ui font-medium transition-colors " +
                 (active
                   ? "text-text-primary"
                   : "text-text-muted hover:text-text-secondary")
@@ -47,7 +47,7 @@ export function Tabs<T extends string>({
               {t.badge != null && t.badge > 0 && (
                 <span
                   className={
-                    "rounded-sm px-1 py-px font-mono text-micro tracking-normal " +
+                    "rounded-sm px-1.5 py-px text-micro font-semibold " +
                     (active ? "bg-brand-muted text-brand" : "bg-bg-base text-text-muted")
                   }
                 >
@@ -58,7 +58,7 @@ export function Tabs<T extends string>({
                   under it, so the 1px seam between header and body stays
                   continuous across the whole rail. */}
               {active && (
-                <span className="absolute inset-x-0 bottom-[-1px] h-px bg-brand" />
+                <span className="absolute inset-x-3 bottom-[-1px] h-0.5 rounded-full bg-brand" />
               )}
             </button>
           );

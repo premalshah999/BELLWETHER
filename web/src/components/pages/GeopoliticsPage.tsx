@@ -1,13 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { Globe2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ScrollText, ShieldCheck } from "lucide-react";
+import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, type MarketEvent } from "../../lib/api";
-import { formatAgo } from "../../lib/format";
-import { venueOf } from "../../lib/symbol";
-import { Empty } from "../ui/Empty";
-import { Panel } from "../ui/Panel";
-import { EventSource } from "../EventSource";
-import { Pill } from "../ui/Pill";
+import { dayOf, formatClock, formatDateTime, formatDay } from "../../lib/format";
+import { useUrlState } from "../../lib/url";
+import { EventDrawer, importanceLabel, typeLabel } from "../EventDrawer";
+import { PageHeader, Segmented, SkeletonRows, Switch } from "../ui/controls";
 
 /**
  * World events, policy and commodities -- and which of your holdings each
@@ -27,26 +26,28 @@ import { Pill } from "../ui/Pill";
  * rather than folded into one undifferentiated list.
  */
 const TYPES = [
-  { label: "all", value: "" },
-  { label: "geopolitical", value: "GEOPOLITICAL_EVENT" },
-  { label: "policy", value: "REGULATORY_POLICY" },
-  { label: "macro", value: "MACRO_EVENT" },
-  { label: "commodity", value: "COMMODITY_EVENT" },
-  { label: "sector", value: "SECTOR_EVENT" },
+  { label: "Everything", value: "" },
+  { label: "Policy", value: "REGULATORY_POLICY" },
+  { label: "Macro", value: "MACRO_EVENT" },
+  { label: "Geopolitics", value: "GEOPOLITICAL_EVENT" },
+  { label: "Commodities", value: "COMMODITY_EVENT" },
+  { label: "Sectors", value: "SECTOR_EVENT" },
 ] as const;
 
 const ALL_TYPES = TYPES.slice(1)
   .map((t) => t.value)
   .join(",");
 
-function money(n: number, symbol: string) {
-  const cur = venueOf(symbol) === "NSE" ? "₹" : "$";
-  return `${cur}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+function money(n: number) {
+  return `$${Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
 export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
-  const [type, setType] = useState<(typeof TYPES)[number]["value"]>("");
-  const [onlyMine, setOnlyMine] = useState(false);
+  const navigate = useNavigate();
+  const [type, setType] = useUrlState<(typeof TYPES)[number]["value"]>("type", "");
+  const [mine, setMine] = useUrlState<"" | "1">("mine", "");
+  const onlyMine = mine === "1";
+  const [openId, setOpenId] = useUrlState("event", "");
 
   const { data, isLoading } = useQuery({
     queryKey: ["geopolitics-events", type],
@@ -74,7 +75,7 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
 
   const { data: watchlist } = useQuery({
     queryKey: ["watchlist-for-geopolitics"],
-    queryFn: api.watchlist,
+    queryFn: api.watchlistCached,
     staleTime: 60_000,
   });
   const watched = useMemo(() => watchlist?.items ?? [], [watchlist]);
@@ -119,128 +120,132 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
 
   const shown = onlyMine ? events.filter((e) => touching(e).length > 0) : events;
 
+  const toChart = (symbol: string) => {
+    onSelect(symbol);
+    navigate("/charts");
+  };
+  const touchingCount = events.filter((e) => touching(e).length > 0).length;
+  let lastDay = "";
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
-      <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border-subtle px-4">
-        <span className="font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
-          Geopolitics &amp; Policy
-        </span>
-        <div className="flex border border-border-subtle">
-          {TYPES.map((t) => (
-            <button
-              key={t.value}
-              type="button"
-              onClick={() => setType(t.value)}
-              className={
-                "px-2 py-1 font-mono text-micro uppercase tracking-wider transition-colors " +
-                (type === t.value
-                  ? "bg-brand-muted text-brand"
-                  : "text-text-muted hover:text-text-primary")
-              }
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={() => setOnlyMine((v) => !v)}
-          disabled={holdingSymbols.length === 0}
-          className={
-            "border px-2 py-1 font-mono text-micro uppercase tracking-wider transition-colors disabled:opacity-40 " +
-            (onlyMine
-              ? "border-brand/40 bg-brand-muted text-brand"
-              : "border-border-subtle text-text-muted hover:text-text-primary")
-          }
-          title={
-            holdingSymbols.length === 0
-              ? "Add a position or a watchlist symbol to filter by it"
-              : "Show only events that reach a sector you hold or watch"
-          }
-        >
-          touches my holdings
-        </button>
-        <span className="ml-auto font-mono text-meta text-text-muted">{shown.length} events</span>
-      </div>
-
-      {isLoading ? (
-        <div className="flex flex-1 items-center justify-center text-meta text-text-muted">loading…</div>
-      ) : shown.length === 0 ? (
-        <Empty
-          icon={Globe2}
-          title={onlyMine ? "Nothing here touches your holdings right now." : "No events in this window."}
-          hint={onlyMine ? "Turn off the holdings filter to see everything." : "Try a different type."}
+      <PageHeader
+        title="Policy & macro"
+        subtitle={
+          isLoading
+            ? "Loading policy, macro and world events…"
+            : holdingSymbols.length === 0
+              ? "Rules, rates, trade and world events, and the sectors each one reaches."
+              : `Rules, rates, trade and world events. ${touchingCount} of the latest ${events.length} reach a sector you hold or watch.`
+        }
+      >
+        <Segmented label="Kind of event" options={TYPES} value={type} onChange={setType} />
+        <Switch
+          checked={onlyMine}
+          onChange={(v) => setMine(v ? "1" : "")}
+          label={holdingSymbols.length === 0 ? "Touches my holdings (add a position or watchlist first)" : "Touches my holdings"}
         />
-      ) : (
-        <Panel scroll className="min-h-0 flex-1 border-0">
-          <ul className="divide-y divide-border-subtle">
+      </PageHeader>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {isLoading ? (
+          <SkeletonRows count={8} height={64} />
+        ) : shown.length === 0 ? (
+          <div className="flex max-w-md flex-col items-start gap-3 px-6 py-12">
+            <ScrollText size={22} className="text-text-muted" />
+            <p className="font-reading text-display text-text-primary">
+              {onlyMine ? "Nothing here reaches your holdings right now." : "No events of this kind yet."}
+            </p>
+            <p className="text-ui text-text-secondary">
+              {onlyMine ? "Turn off the holdings filter to see every event." : "Choose another kind of event above."}
+            </p>
+          </div>
+        ) : (
+          <ul className="pb-8">
             {shown.map((e) => {
               const hits = touching(e);
+              // Sorted by arrival, so grouped and timed by arrival too: grouping
+              // by publication date made day headings repeat out of order.
+              const at = e.discovered_at;
+              const day = dayOf(at);
+              const header = day !== lastDay;
+              lastDay = day;
+              const major = importanceLabel(e.importance);
               return (
-                <li key={e.id} className="px-4 py-3">
-                  <a
-                    href={e.primary_url || undefined}
-                    target={e.primary_url ? "_blank" : undefined}
-                    rel="noreferrer noopener"
+                <li key={e.id}>
+                  {header && (
+                    <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-bg-panel/95 px-5 py-2 text-meta font-semibold text-text-secondary backdrop-blur md:px-6">
+                      {formatDay(at)}
+                    </h2>
+                  )}
+                  <div
                     className={
-                      "block text-ui leading-relaxed " +
-                      (e.primary_url ? "text-text-primary hover:text-brand" : "cursor-default")
+                      "group relative flex gap-4 border-b border-border-subtle px-5 py-3.5 transition-colors [contain-intrinsic-size:auto_84px] [content-visibility:auto] hover:bg-bg-panel-hover md:px-6 " +
+                      (hits.length ? "shadow-[inset_3px_0_0_var(--brass)]" : "")
                     }
                   >
-                    {e.headline}
-                  </a>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-meta text-text-muted">
-                      {e.timestamp_trust === "observed" ? "seen " : ""}
-                      {formatAgo(e.published_at || e.discovered_at)}
-                    </span>
-                    <EventSource event={e} />
-                    {e.event_type && e.event_type !== "UNCLASSIFIED" && (
-                      <Pill tone="muted">{e.event_type.replace(/_/g, " ").toLowerCase()}</Pill>
-                    )}
-                    {e.official && <Pill tone="brand">official</Pill>}
-                    {(e.importance ?? 0) >= 7 && <Pill tone="down">high</Pill>}
-                    {(e.sectors ?? []).map((s) => (
-                      <Pill key={s} tone="neutral">
-                        {s.replace(/^US: /, "")}
-                      </Pill>
-                    ))}
-                  </div>
-                  {hits.length > 0 && (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5 border-l-2 border-brand/40 pl-2">
-                      <span className="font-mono text-micro uppercase tracking-wider text-brand">
-                        touches
-                      </span>
-                      {hits.map((s) => {
-                        const value = valueBySymbol.get(s);
-                        return (
-                          <button
-                            key={s}
-                            type="button"
-                            onClick={() => onSelect(s)}
-                            className={
-                              "font-mono text-meta " +
-                              (value != null
-                                ? "text-text-primary hover:text-brand"
-                                : "text-text-muted hover:text-brand")
-                            }
-                            title={value != null ? "A real position -- not just watched" : "On your watchlist"}
-                          >
-                            {s}
-                            {value != null && (
-                              <span className="ml-1 text-text-muted">{money(value, s)}</span>
-                            )}
-                          </button>
-                        );
-                      })}
+                    <time dateTime={at} title={formatDateTime(at)} className="w-11 shrink-0 pt-0.5 text-meta text-text-muted max-sm:hidden">
+                      {formatClock(at)}
+                    </time>
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => setOpenId(String(e.id))}
+                        className="text-left font-reading text-emphasis font-medium leading-snug text-text-primary outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-brand"
+                      >
+                        {e.headline}
+                      </button>
+                      <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-text-muted">
+                        <span className="inline-flex items-center gap-1 font-medium text-text-secondary">
+                          {e.official && <ShieldCheck size={13} className="text-brand" aria-label="Official source" />}
+                          {e.source || "Unknown source"}
+                        </span>
+                        <span>{typeLabel(e.event_type)}</span>
+                        {(e.sectors ?? []).length > 0 && (
+                          <span>Reaches {(e.sectors ?? []).map((x) => x.replace(/^US: /, "")).join(", ")}</span>
+                        )}
+                        {(major === "Major" || major === "Significant") && (
+                          <span className="rounded-sm bg-brand-muted px-1.5 font-medium text-brand">{major}</span>
+                        )}
+                      </p>
+                      {hits.length > 0 && (
+                        <p className="relative z-10 mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-meta">
+                          <span className="font-medium text-brand">Touches</span>
+                          {hits.map((sym) => {
+                            const value = valueBySymbol.get(sym);
+                            return (
+                              <button
+                                key={sym}
+                                type="button"
+                                onClick={() => toChart(sym)}
+                                title={value != null ? "A position you hold" : "On your watchlist"}
+                                className="rounded px-1 font-semibold text-text-primary transition-colors hover:bg-brand-muted hover:text-brand"
+                              >
+                                {sym}
+                                {value != null && <span className="ml-1 font-normal text-text-muted">{money(value)}</span>}
+                              </button>
+                            );
+                          })}
+                        </p>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </li>
               );
             })}
           </ul>
-        </Panel>
-      )}
+        )}
+      </div>
+
+      <EventDrawer
+        id={openId ? Number(openId) : null}
+        seed={openId ? events.find((e) => String(e.id) === openId) : undefined}
+        onClose={() => setOpenId("")}
+        onSymbol={(sym) => {
+          setOpenId("");
+          toChart(sym);
+        }}
+      />
     </div>
   );
 }

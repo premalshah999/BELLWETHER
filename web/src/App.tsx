@@ -8,25 +8,30 @@ import { RightRail } from "./components/layout/RightRail";
 import { OverviewPage } from "./components/pages/OverviewPage";
 import { api } from "./lib/api";
 import { setDisplayTimeZone } from "./lib/format";
-import { useResize, usePersisted } from "./lib/layout";
+import { useMedia, useResize, usePersisted } from "./lib/layout";
 import { StreamContext, useMarketStream } from "./lib/useStream";
+import { loaders, preload } from "./lib/routes";
+import { MobileTabBar, MobileTopBar } from "./components/layout/MobileNav";
+import { titleFor } from "./components/layout/nav";
 import { CollapsedRail } from "./components/layout/RailToggle";
 import { Divider } from "./components/ui/Divider";
 
-const AlertsPage = lazy(() => import("./components/pages/AlertsPage").then((m) => ({ default: m.AlertsPage })));
-const AlgorithmsPage = lazy(() => import("./components/pages/AlgorithmsPage").then((m) => ({ default: m.AlgorithmsPage })));
-const CalendarPage = lazy(() => import("./components/pages/CalendarPage").then((m) => ({ default: m.CalendarPage })));
-const CalibrationPage = lazy(() => import("./components/pages/CalibrationPage").then((m) => ({ default: m.CalibrationPage })));
-const ChartsPage = lazy(() => import("./components/pages/ChartsPage").then((m) => ({ default: m.ChartsPage })));
-const CongressPage = lazy(() => import("./components/pages/CongressPage").then((m) => ({ default: m.CongressPage })));
-const EventStudyPage = lazy(() => import("./components/pages/EventStudyPage").then((m) => ({ default: m.EventStudyPage })));
-const GeopoliticsPage = lazy(() => import("./components/pages/GeopoliticsPage").then((m) => ({ default: m.GeopoliticsPage })));
-const JournalPage = lazy(() => import("./components/pages/JournalPage").then((m) => ({ default: m.JournalPage })));
-const PositionsPage = lazy(() => import("./components/pages/PositionsPage").then((m) => ({ default: m.PositionsPage })));
-const NewsPage = lazy(() => import("./components/pages/NewsPage").then((m) => ({ default: m.NewsPage })));
-const ResearchPage = lazy(() => import("./components/pages/ResearchPage").then((m) => ({ default: m.ResearchPage })));
-const ScannerPage = lazy(() => import("./components/pages/ScannerPage").then((m) => ({ default: m.ScannerPage })));
-const SourcesPage = lazy(() => import("./components/pages/SourcesPage").then((m) => ({ default: m.SourcesPage })));
+const page = <K extends keyof typeof loaders, N extends string>(key: K, name: N) =>
+  lazy(() => loaders[key]().then((m) => ({ default: (m as unknown as Record<N, React.ComponentType<any>>)[name] })));
+const AlertsPage = page("/alerts", "AlertsPage");
+const AlgorithmsPage = page("/algorithms", "AlgorithmsPage");
+const CalendarPage = page("/calendar", "CalendarPage");
+const CalibrationPage = page("/ai", "CalibrationPage");
+const ChartsPage = page("/charts", "ChartsPage");
+const CongressPage = page("/congress", "CongressPage");
+const EventStudyPage = page("/eventstudy", "EventStudyPage");
+const GeopoliticsPage = page("/geopolitics", "GeopoliticsPage");
+const JournalPage = page("/journal", "JournalPage");
+const PositionsPage = page("/positions", "PositionsPage");
+const NewsPage = page("/news", "NewsPage");
+const ResearchPage = page("/research", "ResearchPage");
+const ScannerPage = page("/scanner", "ScannerPage");
+const SourcesPage = page("/sources", "SourcesPage");
 
 /**
  * The shell.
@@ -66,6 +71,19 @@ export function App() {
     direction: "w",
   });
   const location = useLocation();
+  const phone = useMedia("(max-width: 767px)");
+  const wide = useMedia("(min-width: 1280px)");
+
+  useEffect(() => {
+    const t = titleFor(location.pathname);
+    document.title = t === "Bellwether" ? t : `${t} · Bellwether`;
+  }, [location.pathname]);
+
+  // Warm the pages a day is spent on once the first one has painted.
+  useEffect(() => {
+    const idle = (window as any).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1200));
+    idle(() => ["/news", "/charts", "/scanner", "/research"].forEach(preload));
+  }, []);
 
   // Every timestamp in the interface is rendered in the operator's zone, which
   // the server owns. Set once rather than threaded through every component.
@@ -109,20 +127,17 @@ export function App() {
   if (auth.isLoading) {
     // A blank field rather than a spinner: this resolves in milliseconds and a
     // flash of loading chrome is more noticeable than the wait.
-    return <div className="h-screen bg-bg-base" />;
+    return <div className="h-[100dvh] bg-bg-base" />;
   }
 
   if (auth.isError) {
     return (
-      <div className="flex h-screen items-center justify-center bg-bg-base">
-        <div className="p-6 text-ui text-text-secondary">
-          <p>Could not verify your session.</p>
-          <button
-            type="button"
-            onClick={() => auth.refetch()}
-            className="mt-3 text-brand"
-          >
-            Retry connection
+      <div className="flex h-[100dvh] items-center justify-center bg-bg-base px-6">
+        <div className="max-w-sm text-ui text-text-secondary">
+          <p className="font-reading text-display text-text-primary">Bellwether can’t reach its server.</p>
+          <p className="mt-2">Check that the app is running, then try again.</p>
+          <button type="button" onClick={() => auth.refetch()} className="action-primary mt-5">
+            Try again
           </button>
         </div>
       </div>
@@ -140,9 +155,10 @@ export function App() {
 
   return (
     <StreamContext.Provider value={stream}>
-      <div className="flex h-screen flex-col overflow-hidden bg-bg-base">
+      <div className="flex h-[100dvh] flex-col overflow-hidden bg-bg-base">
+        {phone && <MobileTopBar onCommand={() => setPalette(true)} />}
         <div className="flex min-h-0 flex-1">
-          <SideNav stream={stream} onCommand={() => setPalette(true)} />
+          {!phone && <SideNav stream={stream} onCommand={() => setPalette(true)} defaultShut={!wide} />}
 
           {/* min-h-0 is load-bearing, not defensive.
               A flex item defaults to min-height:auto, which refuses to shrink
@@ -220,7 +236,7 @@ export function App() {
             </Suspense>
           </main>
 
-          {railed &&
+          {railed && !phone &&
             (rightShut ? (
               <CollapsedRail
                 side="right"
@@ -242,6 +258,8 @@ export function App() {
             ))}
         </div>
 
+        {phone && <MobileTabBar stream={stream} />}
+
         <CommandPalette
           open={palette}
           onClose={() => setPalette(false)}
@@ -252,10 +270,17 @@ export function App() {
   );
 }
 
+/** A page's code is loading: the page's shape, quietly, rather than a word. */
 function PageLoading() {
   return (
-    <div className="flex min-h-0 flex-1 items-start bg-bg-panel px-5 py-6">
-      <span className="font-mono text-meta text-text-muted">loading workspace…</span>
+    <div className="flex min-h-0 flex-1 flex-col gap-4 bg-bg-panel px-6 py-7 [animation:fade-in_300ms_ease_150ms_both]">
+      <span className="skeleton h-7 w-48" />
+      <span className="skeleton h-4 w-80 max-w-full" />
+      <div className="mt-4 flex flex-col gap-3">
+        {Array.from({ length: 6 }, (_, i) => (
+          <span key={i} className="skeleton h-12 w-full" />
+        ))}
+      </div>
     </div>
   );
 }

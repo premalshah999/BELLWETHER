@@ -1,26 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowUp,
-  Search,
-  FileText,
-  Sparkles,
-  PanelLeft,
-  Plus,
-  RotateCw,
-  Trash2,
-} from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowUp, FileText, History, Plus, RotateCw, Sparkles, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type MarketStats, type ResearchTurn } from "../../lib/api";
 import { formatAgo } from "../../lib/format";
-import { useResize, usePersisted } from "../../lib/layout";
-import { Divider } from "../ui/Divider";
-import { Panel } from "../ui/Panel";
+import { usePersisted } from "../../lib/layout";
+import { Drawer, PageHeader, Segmented } from "../ui/controls";
 
 const SUGGESTIONS = [
-  "What changed in NVIDIA’s earnings and export restrictions?",
-  "Which Indian cement companies are exposed to the coal price?",
-  "What do recent central bank releases say about inflation?",
-  "How is the tariff dispute affecting Indian steel exporters?",
+  "What changed in NVIDIA’s latest earnings, and how are export limits affecting it?",
+  "Which large US banks are most exposed to commercial real estate?",
+  "What have recent Federal Reserve statements said about rate cuts?",
+  "How are the new steel tariffs expected to hit US automakers?",
+];
+
+const MODES = [
+  { value: "evidence" as const, label: "Evidence only", title: "Sources and market measurements. No AI, no cost." },
+  { value: "brief" as const, label: "Evidence and AI brief", title: "Adds a short brief written only from readable sources." },
 ];
 
 export function ResearchPage() {
@@ -43,13 +38,6 @@ export function ResearchPage() {
   /** A question posted but not yet visible in the thread. */
   const [pending, setPending] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
-  const threadsPane = useResize({
-    key: "research.threads",
-    initial: 256,
-    min: 180,
-    max: 460,
-    direction: "e",
-  });
 
   const { data: threads } = useQuery({
     queryKey: ["conversations"],
@@ -130,245 +118,239 @@ export function ResearchPage() {
       bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns.length, pending]);
 
+  const empty = turns.length === 0 && !pending && !threadLoading;
+  const conversations = threads?.conversations ?? [];
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    submit(question);
+  };
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-bg-panel px-5 py-4">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            aria-label="Toggle research history"
-            aria-expanded={showThreads}
-            onClick={() => setShowThreads(!showThreads)}
-            className="p-2 text-text-muted hover:text-brand"
-          >
-            <PanelLeft size={16} />
-          </button>
-          <div>
-            <h1 className="text-emphasis font-semibold text-text-primary">
-              Research desk
-            </h1>
-            <p className="mt-1 text-meta text-text-muted">
-              Sources first. A clearer view of what changed.
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+      <PageHeader
+        title="Research"
+        subtitle="Ask about a company, a catalyst or a policy change. Every answer shows the documents it read."
+        actions={
+          <>
+            <button type="button" onClick={() => setShowThreads(true)} className="action-secondary">
+              <History size={15} /> History{conversations.length ? ` (${conversations.length})` : ""}
+            </button>
+            {!empty && (
+              <button
+                type="button"
+                disabled={ask.isPending}
+                onClick={() => {
+                  setActive(null);
+                  setPending(null);
+                  ask.reset();
+                }}
+                className="action-secondary"
+              >
+                <Plus size={15} /> New question
+              </button>
+            )}
+          </>
+        }
+      />
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {threadError && (
+          <p role="alert" className="px-6 py-4 text-ui text-semantic-down">
+            This conversation could not be loaded. {threadError.message}
+          </p>
+        )}
+        {threadLoading && (
+          <div className="mx-auto flex max-w-3xl flex-col gap-3 px-6 py-8">
+            <span className="skeleton h-6 w-2/3" />
+            <span className="skeleton h-24 w-full" />
+          </div>
+        )}
+        {empty ? (
+          <div className="mx-auto flex max-w-3xl flex-col px-5 py-10 md:py-16">
+            <h2 className="font-reading text-[28px] font-semibold leading-tight text-text-primary md:text-[34px]">
+              What do you want to find out?
+            </h2>
+            <p className="mt-3 max-w-2xl text-ui leading-relaxed text-text-secondary">
+              Bellwether searches SEC filings, official releases, its own news archive and the web, reads what it can, and
+              tells you which sources it could and could not read before it draws any conclusion.
+            </p>
+            <Composer
+              big
+              question={question}
+              setQuestion={setQuestion}
+              onSubmit={onSubmit}
+              busy={busy}
+              mode={mode}
+              setMode={setMode}
+              error={ask.isError ? ask.error.message : null}
+              placeholder="For example: why did Carnival jump today?"
+            />
+            <p className="mt-8 text-meta font-semibold text-text-muted">Try one of these</p>
+            <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+              {SUGGESTIONS.map((sug) => (
+                <li key={sug}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setQuestion(sug)}
+                    className="flex h-full w-full items-start gap-3 rounded-lg border border-border-subtle px-4 py-3 text-left text-ui leading-snug text-text-secondary transition-colors hover:border-border-focus hover:bg-bg-panel-hover hover:text-text-primary"
+                  >
+                    <FileText size={15} className="mt-0.5 shrink-0 text-brand" />
+                    {sug}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-5 text-meta text-text-muted">
+              {coverage ? `${coverage.scrapers.length} sources are searched for each question.` : "Checking which sources are available…"}
             </p>
           </div>
-        </div>
-        <button
-          type="button"
-          disabled={ask.isPending}
-          onClick={() => {
-            setActive(null);
-            setPending(null);
-            ask.reset();
-          }}
-          className="flex items-center gap-2 border border-border-focus px-3 py-2 text-meta text-text-secondary hover:border-brand hover:text-brand"
-        >
-          <Plus size={13} /> New research
-        </button>
-      </header>
-      <div className="relative flex min-h-0 flex-1">
-        {showThreads && (
-          <>
-            <Panel
-              title="Threads"
-              collapseKey="research.threads"
-              scroll
-              className="absolute bottom-0 left-0 top-0 z-20 max-w-[85%] shrink-0 border-r border-border-subtle bg-bg-panel md:relative"
-              style={{ width: threadsPane.size }}
-              action={
-                <button
-                  type="button"
-                  onClick={() => setActive(null)}
-                  className="text-text-muted hover:text-brand"
-                  title="New thread"
-                >
-                  <Plus size={13} />
-                </button>
-              }
-            >
-              <div className="divide-y divide-border-subtle">
-                {(threads?.conversations ?? []).map((c) => (
-                  <div
-                    key={c.id}
-                    className={
-                      "group flex items-start gap-1 px-3.5 py-2.5 " +
-                      (c.id === active
-                        ? "bg-brand-muted"
-                        : "hover:bg-bg-panel-hover")
-                    }
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActive(c.id);
-                        setShowThreads(false);
-                      }}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <span className="block truncate text-meta leading-snug text-text-primary">
-                        {c.title}
-                      </span>
-                      <span className="mt-0.5 block font-mono text-micro text-text-muted">
-                        {formatAgo(c.updated_at)} · {c.turn_count}q
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => remove.mutate(c.id)}
-                      className="opacity-0 transition-opacity group-hover:opacity-100"
-                      title="Delete thread"
-                    >
-                      <Trash2
-                        size={11}
-                        className="text-text-muted hover:text-semantic-down"
-                      />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </Panel>
-
-            <Divider resize={threadsPane} orientation="vertical" />
-          </>
-        )}
-
-        <div className="flex min-w-0 flex-1 flex-col bg-bg-panel">
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {threadError && (
-              <p role="alert" className="p-4 text-meta text-semantic-down">
-                Could not load this thread. {threadError.message}
-              </p>
-            )}
-            {threadLoading && (
-              <p className="p-4 text-meta text-text-muted">Loading research…</p>
-            )}
-            {turns.length === 0 && !pending && !threadLoading ? (
-              <div className="mx-auto max-w-3xl px-6 py-12 lg:py-20">
-                <span className="mb-5 inline-flex items-center gap-2 border border-brand/30 bg-brand-muted px-3 py-1.5 font-mono text-micro uppercase tracking-wider text-brand">
-                  <Search size={12} /> Evidence workspace
-                </span>
-                <h2 className="max-w-xl text-hero font-semibold leading-tight tracking-tight text-text-primary">
-                  Follow the question.
-                  <br />
-                  Check the evidence.
-                </h2>
-                <p className="mt-4 max-w-xl text-ui leading-relaxed text-text-secondary">
-                  Investigate a company, a catalyst, or a policy change. Search
-                  filings, official releases, the collected archive, and the
-                  web. See which documents were actually readable before drawing
-                  a conclusion.
-                </p>
-                <div className="mt-7 grid gap-3 sm:grid-cols-2">
-                  {SUGGESTIONS.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setQuestion(suggestion)}
-                      className="flex items-start gap-3 border border-border-subtle bg-bg-base p-4 text-left text-ui leading-relaxed text-text-secondary hover:border-border-focus hover:text-text-primary"
-                    >
-                      <FileText
-                        size={15}
-                        className="mt-1 shrink-0 text-brand"
-                      />
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-5 font-mono text-meta text-text-muted">
-                  {coverage
-                    ? `${coverage.scrapers.length} configured search providers`
-                    : "Loading source coverage…"}{" "}
-                  · Availability is checked during each search
-                </p>
-              </div>
-            ) : (
-              <div className="mx-auto max-w-4xl divide-y divide-border-subtle">
-                {turns.map((t) => (
-                  <Turn key={t.id} turn={t} onRetry={submit} />
-                ))}
-                {pending && <PendingTurn question={pending} />}
-              </div>
-            )}
-            <div ref={bottom} />
+        ) : (
+          <div className="mx-auto max-w-4xl divide-y divide-border-subtle">
+            {turns.map((t) => (
+              <Turn key={t.id} turn={t} onRetry={submit} />
+            ))}
+            {pending && <PendingTurn question={pending} />}
           </div>
+        )}
+        <div ref={bottom} />
+      </div>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              submit(question);
-            }}
-            className="shrink-0 border-t border-border-subtle bg-bg-base px-5 py-4"
+      {!empty && (
+        <div className="shrink-0 border-t border-border-subtle bg-bg-panel px-5 py-3">
+          <div className="mx-auto max-w-4xl">
+            <Composer
+              question={question}
+              setQuestion={setQuestion}
+              onSubmit={onSubmit}
+              busy={busy}
+              mode={mode}
+              setMode={setMode}
+              error={ask.isError ? ask.error.message : null}
+              placeholder="Ask a follow-up…"
+            />
+          </div>
+        </div>
+      )}
+
+      <Drawer open={showThreads} onClose={() => setShowThreads(false)} label="Research history" width={420}>
+        <div className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle px-5">
+          <span className="text-emphasis font-semibold">History</span>
+          <button
+            type="button"
+            onClick={() => setShowThreads(false)}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-panel-hover hover:text-text-primary"
           >
-            <div className="mx-auto max-w-4xl">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                {(["evidence", "brief"] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={mode === value}
-                    disabled={busy}
-                    onClick={() => setMode(value)}
-                    className={
-                      "flex items-center gap-2 border px-3 py-1.5 text-meta " +
-                      (mode === value
-                        ? "border-brand/40 bg-brand-muted text-brand"
-                        : "border-border-subtle text-text-muted hover:text-text-primary")
-                    }
-                  >
-                    {value === "evidence" ? (
-                      <FileText size={12} />
-                    ) : (
-                      <Sparkles size={12} />
-                    )}
-                    {value === "evidence"
-                      ? "Evidence only · no AI"
-                      : "Evidence + AI brief"}
-                  </button>
-                ))}
-              </div>
-              {ask.isError && (
-                <p role="alert" className="mb-3 text-ui text-semantic-down">
-                  {ask.error.message}
-                </p>
-              )}
-              <div className="flex items-center gap-2">
-                <input
-                  aria-label="Research question"
-                  maxLength={500}
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder={
-                    turns.length
-                      ? "follow up…"
-                      : "ask about a company, sector, or event…"
-                  }
-                  className="min-w-0 flex-1 border border-border-subtle bg-bg-base px-2 py-1.5 text-ui outline-none focus:border-brand"
-                />
-                <button
-                  type="submit"
-                  aria-label="Start research"
-                  disabled={!question.trim() || busy}
-                  className="border border-brand bg-brand-muted px-2 py-1.5 text-brand transition-colors hover:bg-brand hover:text-bg-base disabled:opacity-40"
-                >
-                  {busy ? (
-                    <RotateCw size={16} className="animate-spin" />
-                  ) : (
-                    <ArrowUp size={16} />
-                  )}
-                </button>
-              </div>
-              <p className="mt-2 text-meta text-text-muted">
-                {busy
-                  ? "Research continues if you leave this page. You can return to it from history."
-                  : mode === "evidence"
-                    ? "Retrieves sources and market measurements without spending AI tokens."
-                    : "One brief from selected readable passages. Source links remain available if AI is unavailable."}
-              </p>
-            </div>
-          </form>
+            <X size={17} />
+          </button>
+        </div>
+        <ul className="min-h-0 flex-1 overflow-y-auto p-2">
+          {conversations.length === 0 && <li className="px-3 py-6 text-ui text-text-secondary">No questions asked yet.</li>}
+          {conversations.map((c) => (
+            <li key={c.id} className={"group flex items-start gap-1 rounded-md " + (c.id === active ? "bg-brand-muted" : "hover:bg-bg-panel-hover")}>
+              <button
+                type="button"
+                onClick={() => {
+                  setActive(c.id);
+                  setShowThreads(false);
+                }}
+                className="min-w-0 flex-1 px-3 py-2.5 text-left"
+              >
+                <span className="line-clamp-2 block text-ui leading-snug text-text-primary">{c.title}</span>
+                <span className="mt-0.5 block text-meta text-text-muted">
+                  {formatAgo(c.updated_at)}, {c.turn_count} {c.turn_count === 1 ? "question" : "questions"}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm("Delete this conversation? This cannot be undone.")) remove.mutate(c.id);
+                }}
+                className="m-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:text-semantic-down focus-visible:opacity-100 group-hover:opacity-100"
+                aria-label="Delete conversation"
+                title="Delete conversation"
+              >
+                <Trash2 size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Drawer>
+    </div>
+  );
+}
+
+function Composer({
+  big,
+  question,
+  setQuestion,
+  onSubmit,
+  busy,
+  mode,
+  setMode,
+  error,
+  placeholder,
+}: {
+  big?: boolean;
+  question: string;
+  setQuestion: (q: string) => void;
+  onSubmit: (e: FormEvent) => void;
+  busy: boolean;
+  mode: "evidence" | "brief";
+  setMode: (m: "evidence" | "brief") => void;
+  error: string | null;
+  placeholder: string;
+}) {
+  const box = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [question]);
+  return (
+    <form onSubmit={onSubmit} className={big ? "mt-7" : ""}>
+      <div className="rounded-xl border border-border-focus bg-bg-base shadow-sm transition-colors focus-within:border-brand">
+        <textarea
+          ref={box}
+          aria-label="Research question"
+          rows={big ? 2 : 1}
+          maxLength={500}
+          value={question}
+          autoFocus={big}
+          onChange={(e) => setQuestion(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              e.currentTarget.form?.requestSubmit();
+            }
+          }}
+          placeholder={placeholder}
+          className={"block w-full resize-none bg-transparent px-4 pt-3 outline-none " + (big ? "text-emphasis" : "text-ui")}
+        />
+        <div className="flex flex-wrap items-center gap-2 px-3 pb-3 pt-1">
+          <Segmented label="Answer style" size="sm" options={MODES} value={mode} onChange={setMode} />
+          <span className="flex-1" />
+          <button type="submit" aria-label="Start research" disabled={!question.trim() || busy} className="action-primary disabled:opacity-40">
+            {busy ? <RotateCw size={15} className="animate-spin" /> : mode === "brief" ? <Sparkles size={15} /> : <ArrowUp size={15} />}
+            {busy ? "Researching…" : "Research"}
+          </button>
         </div>
       </div>
-    </div>
+      {error && (
+        <p role="alert" className="mt-2 text-ui text-semantic-down">
+          {error}
+        </p>
+      )}
+      <p className="mt-2 text-meta text-text-muted">
+        {busy
+          ? "This takes a minute or two. You can leave the page and come back from History."
+          : mode === "evidence"
+            ? "Evidence only uses no AI and costs nothing."
+            : "The brief is written only from sources Bellwether could read, and cites them."}
+      </p>
+    </form>
   );
 }
 
@@ -547,7 +529,7 @@ function Turn({
           <button
             type="button"
             onClick={() => onRetry(turn.question)}
-            className="flex items-center gap-1 border border-border-focus px-2 py-0.5 font-mono text-micro uppercase tracking-wider text-text-secondary transition-colors hover:border-brand hover:text-brand"
+            className="flex items-center gap-1 border border-border-focus px-2 py-0.5 font-mono text-micro text-text-secondary transition-colors hover:border-brand hover:text-brand"
           >
             <RotateCw size={10} /> ask again
           </button>
@@ -646,7 +628,7 @@ function Turn({
 
       {!!turn.gaps?.length && (
         <div className="mt-3 border-t border-border-subtle pt-2">
-          <p className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+          <p className="font-mono text-micro text-text-muted">
             not established
           </p>
           <ul className="mt-1 space-y-0.5">
@@ -672,7 +654,7 @@ function Turn({
 function Measured({ stats }: { stats: MarketStats[] }) {
   return (
     <div className="mt-3 border border-border-subtle bg-bg-base px-2.5 py-2">
-      <p className="mb-1.5 font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+      <p className="mb-1.5 font-mono text-micro text-text-muted">
         measured from the price series
       </p>
       <div className="space-y-1.5">

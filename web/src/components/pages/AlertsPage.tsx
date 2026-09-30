@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellOff, CheckCheck } from "lucide-react";
-import { useState } from "react";
+import { BellOff, Check, CheckCheck, CircleHelp, Sparkles, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { api, type Alert } from "../../lib/api";
-import { formatAgo } from "../../lib/format";
-import { Empty } from "../ui/Empty";
-import { Pill } from "../ui/Pill";
+import { dayOf, formatAgo, formatClock, formatDay } from "../../lib/format";
+import { useUrlState } from "../../lib/url";
+import { PageHeader, Segmented, Select, SkeletonRows } from "../ui/controls";
 
 /**
  * Everything that has fired.
@@ -17,15 +17,16 @@ import { Pill } from "../ui/Pill";
  */
 export function AlertsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
   const qc = useQueryClient();
-  const [unreadOnly, setUnreadOnly] = useState(false);
-  const [symbol, setSymbol] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const [view, setView] = useUrlState<"all" | "unread">("show", "all");
+  const [symbol, setSymbol] = useUrlState("symbol", "");
+  const unreadOnly = view === "unread";
 
   const { data, isLoading } = useQuery({
     queryKey: ["alerts", unreadOnly],
     queryFn: () => api.alerts({ limit: 200, ...(unreadOnly ? { unread: true } : {}) }),
     refetchInterval: 30_000,
   });
-
   const markAll = useMutation({
     mutationFn: api.markAllAlertsRead,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] }),
@@ -33,152 +34,153 @@ export function AlertsPage({ onSelect }: { onSelect: (symbol: string) => void })
 
   const all = data?.alerts ?? [];
   const shown = symbol ? all.filter((a) => a.symbol === symbol) : all;
-
-  // The instruments that actually fired, so the filter offers what exists
-  // rather than the whole watchlist.
   const symbols = [...new Set(all.map((a) => a.symbol))].sort();
+  const unread = data?.unread ?? 0;
+  const open = (s: string) => {
+    onSelect(s);
+    navigate("/charts");
+  };
+  let lastDay = "";
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
-      <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border-subtle px-4">
-        <span className="font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
-          Alerts
-        </span>
-        <div className="flex border border-border-subtle">
-          <Seg on={!unreadOnly} onClick={() => setUnreadOnly(false)}>
-            all {all.length > 0 && <span className="opacity-60">{all.length}</span>}
-          </Seg>
-          <Seg on={unreadOnly} onClick={() => setUnreadOnly(true)}>
-            unread {data?.unread ? <span className="opacity-60">{data.unread}</span> : null}
-          </Seg>
-        </div>
-
+      <PageHeader
+        title="Alerts"
+        subtitle={
+          isLoading
+            ? "Loading alerts…"
+            : all.length === 0
+              ? "Alerts appear here when every condition of an enabled algorithm holds on a closed bar."
+              : `${unread} unread. Each alert keeps the exact values that made it fire.`
+        }
+        actions={
+          unread > 0 && (
+            <button type="button" onClick={() => markAll.mutate()} disabled={markAll.isPending} className="action-secondary">
+              <CheckCheck size={15} /> {markAll.isPending ? "Marking…" : "Mark all as read"}
+            </button>
+          )
+        }
+      >
+        <Segmented
+          label="Show"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "all", label: "All" },
+            { value: "unread", label: `Unread${unread ? ` ${unread}` : ""}` },
+          ]}
+        />
         {symbols.length > 1 && (
-          <select
-            value={symbol ?? ""}
-            onChange={(e) => setSymbol(e.target.value || null)}
-            className="border border-border-subtle bg-bg-base px-2 py-0.5 font-mono text-meta text-text-secondary outline-none focus:border-brand"
-          >
-            <option value="">every instrument</option>
-            {symbols.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          <Select
+            label="Company"
+            value={symbol}
+            onChange={setSymbol}
+            options={[{ value: "", label: "Every company" }, ...symbols.map((s) => ({ value: s, label: s }))]}
+          />
         )}
-
-        {(data?.unread ?? 0) > 0 && (
-          <button
-            type="button"
-            onClick={() => markAll.mutate()}
-            className="ml-auto flex items-center gap-1.5 font-mono text-meta text-text-muted transition-colors hover:text-brand"
-          >
-            <CheckCheck size={12} /> mark all read
-          </button>
-        )}
-      </div>
+      </PageHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading ? (
-          <p className="px-4 py-6 font-mono text-meta text-text-muted">loading…</p>
+          <SkeletonRows count={7} height={72} />
         ) : shown.length === 0 ? (
-          <Empty
-            icon={BellOff}
-            title={unreadOnly ? "Nothing unread." : "No alerts have fired."}
-            hint="Alerts appear here when an enabled algorithm's conditions all hold on a closed bar."
-          />
-        ) : (
-          <div className="max-w-[1100px] divide-y divide-border-subtle">
-            {shown.map((a) => (
-              <AlertCard key={a.id} alert={a} onSelect={onSelect} />
-            ))}
+          <div className="flex max-w-md flex-col items-start gap-3 px-6 py-12">
+            <BellOff size={22} className="text-text-muted" />
+            <p className="font-reading text-display text-text-primary">{unreadOnly ? "You’re all caught up." : "No alerts have fired yet."}</p>
+            <p className="text-ui text-text-secondary">Build an algorithm and turn it on to be alerted when its conditions are met.</p>
+            <button type="button" onClick={() => navigate("/algorithms/build")} className="action-secondary mt-1">
+              Build an algorithm
+            </button>
           </div>
+        ) : (
+          <ul className="pb-8">
+            {shown.map((a) => {
+              const day = dayOf(a.fired_at);
+              const header = day !== lastDay;
+              lastDay = day;
+              return (
+                <li key={a.id}>
+                  {header && (
+                    <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-bg-panel/95 px-5 py-2 text-meta font-semibold text-text-secondary backdrop-blur md:px-6">
+                      {formatDay(a.fired_at)}
+                    </h2>
+                  )}
+                  <AlertRow alert={a} onOpen={open} />
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
     </div>
   );
 }
 
-/** Two decimals, or a dash. An indicator that could not be computed is not
- *  zero, and showing it as zero would make a failed condition look satisfied. */
 function fmt(v: number | null | undefined) {
-  return v == null || !Number.isFinite(v) ? "—" : v.toFixed(2);
+  return v == null || !Number.isFinite(v) ? "—" : v.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
 }
 
-function AlertCard({
-  alert,
-  onSelect,
-}: {
-  alert: Alert;
-  onSelect: (symbol: string) => void;
-}) {
+const OPS: Record<string, string> = {
+  "<": "below",
+  "<=": "at or below",
+  ">": "above",
+  ">=": "at or above",
+  "==": "equal to",
+  "!=": "not equal to",
+  crosses_above: "crossed above",
+  crosses_below: "crossed below",
+};
+
+function AlertRow({ alert, onOpen }: { alert: Alert; onOpen: (symbol: string) => void }) {
+  const read = !!alert.read_at;
   return (
-    <article className={"px-4 py-3.5 " + (alert.read_at ? "opacity-60" : "")}>
-      <div className="flex items-baseline gap-2.5">
-        <button
-          type="button"
-          onClick={() => onSelect(alert.symbol)}
-          className="font-mono text-ui text-text-primary transition-colors hover:text-brand"
-        >
-          {alert.symbol}
-        </button>
-        <span className="font-mono text-meta text-text-muted">{alert.interval}</span>
-        <span className="text-meta text-text-secondary">{alert.algorithm_name}</span>
-        <span className="font-mono text-meta text-text-secondary">{fmt(alert.price)}</span>
-        <span className="ml-auto font-mono text-meta text-text-muted">
-          {formatAgo(alert.fired_at)}
-        </span>
-      </div>
-
-      {/* The condition snapshot, verbatim. Monospace because it is code, and
-          on its own background because it is evidence rather than commentary. */}
-      {alert.conditions?.length > 0 && (
-        <pre className="mt-2 max-w-3xl overflow-x-auto border border-border-subtle bg-bg-base px-3 py-2 font-mono text-meta leading-relaxed text-text-secondary">
-          {alert.conditions
-            .map((c) => {
-              const lhs = `${c.label} ${c.op} ${c.right_label}`;
-              const actual = `${fmt(c.left_value)} ${c.op} ${fmt(c.right_value)}`;
-              const mark = c.result === "true" ? "✓" : c.result === "false" ? "✗" : "?";
-              return `${lhs}\n  ${actual}  ${mark}`;
-            })
-            .join("\n")}
-        </pre>
-      )}
-
-      {alert.ai_context ? (
-        <div className="mt-2 max-w-3xl">
-          <Pill tone="brand">AI</Pill>
-          <p className="mt-1 text-ui leading-relaxed text-text-secondary">{alert.ai_context}</p>
-        </div>
-      ) : alert.ai_status && alert.ai_status !== "ok" ? (
-        <p className="mt-1.5 text-meta text-text-muted">
-          AI context unavailable ({alert.ai_status}). The alert itself is unaffected.
+    <article className="flex gap-4 border-b border-border-subtle px-5 py-4 md:px-6 [contain-intrinsic-size:auto_110px] [content-visibility:auto]">
+      <time className="w-11 shrink-0 pt-0.5 text-meta text-text-muted max-sm:hidden" title={formatAgo(alert.fired_at)}>
+        {formatClock(alert.fired_at)}
+      </time>
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          {!read && <span className="h-2 w-2 shrink-0 self-center rounded-full bg-brand" aria-label="Unread" />}
+          <button type="button" onClick={() => onOpen(alert.symbol)} className="text-emphasis font-semibold text-text-primary hover:text-brand">
+            {alert.symbol}
+          </button>
+          <span className={"text-ui " + (read ? "text-text-secondary" : "text-text-primary")}>{alert.algorithm_name}</span>
+          <span className="text-meta text-text-muted">
+            at {fmt(alert.price)} on the {alert.interval} chart
+          </span>
         </p>
-      ) : null}
+        {alert.conditions?.length > 0 && (
+          <ul className="mt-2 flex flex-col gap-1">
+            {alert.conditions.map((c, i) => {
+              const Icon = c.result === "true" ? Check : c.result === "false" ? X : CircleHelp;
+              return (
+                <li key={i} className="flex items-baseline gap-2 text-meta text-text-secondary">
+                  <Icon
+                    size={13}
+                    className={"shrink-0 translate-y-0.5 " + (c.result === "true" ? "text-brand" : "text-text-muted")}
+                    aria-label={c.result === "true" ? "Held" : c.result === "false" ? "Did not hold" : "Unknown"}
+                  />
+                  <span>
+                    {c.label} {OPS[c.op] ?? c.op} {c.right_label}
+                    <span className="text-text-muted">
+                      {" "}
+                      ({fmt(c.left_value)} vs {fmt(c.right_value)})
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {alert.ai_context ? (
+          <p className="mt-2.5 max-w-3xl rounded-md bg-brand-muted px-3 py-2 text-ui leading-relaxed text-text-primary">
+            <Sparkles size={13} className="mr-1.5 inline -translate-y-px text-brand" />
+            {alert.ai_context}
+          </p>
+        ) : alert.ai_status && alert.ai_status !== "ok" ? (
+          <p className="mt-1.5 text-meta text-text-muted">No AI context this time ({alert.ai_status}). The alert itself is unaffected.</p>
+        ) : null}
+      </div>
     </article>
-  );
-}
-
-function Seg({
-  on,
-  onClick,
-  children,
-}: {
-  on: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        "border-r border-border-subtle px-2 py-0.5 font-mono text-meta last:border-r-0 transition-colors " +
-        (on ? "bg-brand-muted text-brand" : "text-text-muted hover:text-text-primary")
-      }
-    >
-      {children}
-    </button>
   );
 }

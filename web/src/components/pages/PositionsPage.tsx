@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import { api, ApiError, type Position } from "../../lib/api";
 import { venueOf } from "../../lib/symbol";
 import { Empty } from "../ui/Empty";
+import { PageHeader, SkeletonRows } from "../ui/controls";
 
 function currencyOf(symbol: string): "₹" | "$" {
   return venueOf(symbol) === "NSE" ? "₹" : "$";
@@ -61,32 +62,33 @@ export function PositionsPage({ onSelect }: { onSelect: (symbol: string) => void
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
-      <div className="flex h-10 shrink-0 flex-wrap items-center gap-3 border-b border-border-subtle px-4">
-        <span className="font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
-          Positions
-        </span>
-        {Object.entries(totalsByCurrency).map(([cur, t]) => (
-          <span key={cur} className="flex items-center gap-1.5 font-mono text-meta">
-            <span className="text-text-secondary">{money(t.value, cur)}</span>
-            <span className={t.pnl >= 0 ? "text-semantic-up" : "text-semantic-down"}>
-              {t.pnl >= 0 ? "+" : "−"}
-              {money(t.pnl, cur)}
-            </span>
-          </span>
-        ))}
-        <button
-          type="button"
-          onClick={() => setAdding((v) => !v)}
-          className={
-            "ml-auto flex items-center gap-1 border px-2 py-1 font-mono text-micro uppercase tracking-wider transition-colors " +
-            (adding
-              ? "border-brand/40 bg-brand-muted text-brand"
-              : "border-border-subtle text-text-muted hover:text-text-primary")
-          }
-        >
-          {adding ? <X size={11} /> : <Plus size={11} />} add position
-        </button>
-      </div>
+      <PageHeader
+        title="Positions"
+        subtitle={
+          positions.length === 0 ? (
+            "What you hold, so Bellwether can tell you when news reaches real money."
+          ) : (
+            <>
+              {positions.length} {positions.length === 1 ? "position" : "positions"}
+              {Object.entries(totalsByCurrency).map(([cur, t]) => (
+                <span key={cur}>
+                  , worth <span className="font-medium text-text-primary">{money(t.value, cur)}</span>,{" "}
+                  <span className={t.pnl >= 0 ? "text-semantic-up" : "text-semantic-down"}>
+                    {t.pnl >= 0 ? "up " : "down "}
+                    {money(Math.abs(t.pnl), cur)}
+                  </span>
+                </span>
+              ))}
+              .
+            </>
+          )
+        }
+        actions={
+          <button type="button" onClick={() => setAdding((v) => !v)} className={adding ? "action-secondary" : "action-primary"}>
+            {adding ? <X size={15} /> : <Plus size={15} />} {adding ? "Cancel" : "Add a position"}
+          </button>
+        }
+      />
 
       {adding && (
         <AddPositionForm
@@ -100,12 +102,19 @@ export function PositionsPage({ onSelect }: { onSelect: (symbol: string) => void
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading ? (
-          <p className="px-4 py-6 font-mono text-meta text-text-muted">loading…</p>
+          <SkeletonRows count={5} height={48} />
         ) : positions.length === 0 ? (
           <Empty
             icon={Briefcase}
             title="No positions yet."
-            hint="Add what you actually hold, so the rest of the app can tell you when news touches real money -- not just names on a watchlist."
+            hint="Add what you hold. Policy and news pages will then flag events that reach it, with the value at stake."
+            action={
+              !adding && (
+                <button type="button" onClick={() => setAdding(true)} className="action-primary">
+                  <Plus size={15} /> Add a position
+                </button>
+              )
+            }
           />
         ) : (
           <table className="w-full max-w-[1180px] border-collapse">
@@ -222,7 +231,7 @@ function Row({
             type="button"
             onClick={onClose}
             className={
-              "font-mono text-micro uppercase tracking-wider " +
+              "font-mono text-micro " +
               (closing ? "text-brand" : "text-text-muted hover:text-text-primary")
             }
           >
@@ -239,7 +248,7 @@ function Row({
 
 const inputClass =
   "w-full border border-border-subtle bg-bg-panel px-2 py-1 text-meta outline-none focus:border-brand";
-const labelClass = "block font-mono text-micro uppercase tracking-wider text-text-muted mb-1";
+const labelClass = "block font-mono text-micro text-text-muted mb-1";
 
 function AddPositionForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const [symbol, setSymbol] = useState("");
@@ -334,14 +343,14 @@ function AddPositionForm({ onDone, onCancel }: { onDone: () => void; onCancel: (
           <button
             type="submit"
             disabled={add.isPending}
-            className="border border-brand/40 bg-brand-muted px-3 py-1 font-mono text-micro uppercase tracking-wider text-brand disabled:opacity-50"
+            className="border border-brand/40 bg-brand-muted px-3 py-1 font-mono text-micro text-brand disabled:opacity-50"
           >
             add
           </button>
           <button
             type="button"
             onClick={onCancel}
-            className="border border-border-subtle px-3 py-1 font-mono text-micro uppercase tracking-wider text-text-muted hover:text-text-primary"
+            className="border border-border-subtle px-3 py-1 font-mono text-micro text-text-muted hover:text-text-primary"
           >
             cancel
           </button>
@@ -399,7 +408,7 @@ function ClosePositionForm({
         close.mutate();
       }}
     >
-      <p className="mb-2 font-mono text-micro uppercase tracking-wider text-text-muted">
+      <p className="mb-2 font-mono text-micro text-text-muted">
         close {position.symbol} · {position.quantity.toLocaleString()} held at {money(position.cost_basis, cur)}
       </p>
       <div className="flex flex-wrap items-end gap-3">
@@ -449,14 +458,14 @@ function ClosePositionForm({
           <button
             type="submit"
             disabled={close.isPending}
-            className="border border-semantic-down/40 bg-bg-panel px-3 py-1 font-mono text-micro uppercase tracking-wider text-semantic-down disabled:opacity-50"
+            className="border border-semantic-down/40 bg-bg-panel px-3 py-1 font-mono text-micro text-semantic-down disabled:opacity-50"
           >
             confirm close
           </button>
           <button
             type="button"
             onClick={onCancel}
-            className="border border-border-subtle px-3 py-1 font-mono text-micro uppercase tracking-wider text-text-muted hover:text-text-primary"
+            className="border border-border-subtle px-3 py-1 font-mono text-micro text-text-muted hover:text-text-primary"
           >
             cancel
           </button>
@@ -479,7 +488,7 @@ function Th({
   return (
     <th
       className={
-        "px-3 py-2 font-mono text-micro font-medium uppercase tracking-[0.12em] text-text-muted " +
+        "px-3 py-2 font-mono text-meta font-medium first-letter:uppercase text-text-muted " +
         (right ? "text-right " : "text-left ") +
         className
       }

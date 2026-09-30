@@ -81,7 +81,7 @@ export function Watchlist({
         <button
           type="button"
           onClick={() => setMenu((v) => !v)}
-          className="flex min-w-0 items-center gap-1.5 font-mono text-micro font-medium uppercase tracking-[0.14em] text-text-muted transition-colors hover:text-text-primary"
+          className="flex min-w-0 items-center gap-1.5 font-mono text-micro font-medium text-text-muted transition-colors hover:text-text-primary"
         >
           <span className="truncate">{active?.name ?? "Watchlist"}</span>
           {rows.length > 0 && <span className="shrink-0 text-text-muted">· {rows.length}</span>}
@@ -526,7 +526,7 @@ function BulkAdd({
               if (text.trim()) add.mutate();
             }
           }}
-          placeholder={"RELIANCE, TCS, INFY\nAAPL\nHDFCBANK.NSE"}
+          placeholder={"AAPL, MSFT, NVDA\nJPM\nBRK-B"}
           className="w-full resize-y border border-border-subtle bg-bg-panel px-2 py-1.5 font-mono text-meta leading-relaxed outline-none focus:border-brand"
         />
         <div className="mt-1.5 flex items-center justify-between">
@@ -536,7 +536,7 @@ function BulkAdd({
           <button
             type="submit"
             disabled={!text.trim() || add.isPending}
-            className="border border-border-subtle px-2 py-0.5 font-mono text-micro uppercase tracking-wider text-text-secondary transition-colors hover:border-brand hover:text-brand disabled:opacity-40"
+            className="border border-border-subtle px-2 py-0.5 font-mono text-micro text-text-secondary transition-colors hover:border-brand hover:text-brand disabled:opacity-40"
           >
             {add.isPending ? "Adding" : "Add"}
           </button>

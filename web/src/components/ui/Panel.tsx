@@ -49,12 +49,12 @@ export function Panel({
       {title !== undefined && (
         <header
           className={
-            "flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border-subtle px-3.5 " +
+            "flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border-subtle px-4 " +
             (collapsible ? "cursor-pointer select-none hover:bg-bg-panel-hover" : "")
           }
           onClick={collapsible ? () => setCollapsed((v) => !v) : undefined}
         >
-          <h2 className="flex min-w-0 items-center gap-1.5 font-mono text-micro font-medium uppercase tracking-[0.14em] text-text-muted">
+          <h2 className="flex min-w-0 items-center gap-1.5 text-ui font-semibold text-text-primary">
             {collapsible &&
               (shut ? (
                 <ChevronRight size={11} className="shrink-0" />

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Code2, ListChecks, Plus, Sliders, Trash2, X } from "lucide-react";
+import { Check, ListChecks, Plus, Sliders, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   api,
@@ -13,6 +13,7 @@ import { useResize } from "../../lib/layout";
 import { Divider } from "../ui/Divider";
 import { Empty } from "../ui/Empty";
 import { Panel } from "../ui/Panel";
+import { PageHeader, Segmented } from "../ui/controls";
 import { useParams } from "react-router-dom";
 import { BacktestPanel } from "./BacktestPanel";
 import { Pill } from "../ui/Pill";
@@ -111,14 +112,15 @@ export function AlgorithmsPage() {
   if (mode === "backtest") {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
-        <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border-subtle px-4">
-          <span className="font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
-            Backtest
-          </span>
-          <span className="truncate font-mono text-meta text-text-muted">
-            {draft.name || "unsaved rule"}
-          </span>
-        </div>
+        <PageHeader
+          title="Backtest"
+          subtitle={
+            <>
+              Testing <span className="font-medium text-text-primary">{draft.name || "an unsaved rule"}</span> on stored daily
+              history. Signals fill at the next bar’s open, so a rule never trades on a close it just read.
+            </>
+          }
+        />
         <BacktestPanel draft={draft} />
       </div>
     );
@@ -126,21 +128,25 @@ export function AlgorithmsPage() {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+      <PageHeader
+        title="Algorithms"
+        subtitle="Rules that watch your symbols and alert you when every condition holds on a closed bar."
+        actions={
+          <Segmented
+            label="Editor"
+            value={raw ? "json" : "visual"}
+            onChange={(v) => setRaw(v === "json")}
+            options={[
+              { value: "visual", label: "Visual" },
+              { value: "json", label: "JSON" },
+            ]}
+          />
+        }
+      />
       <div className="flex min-h-0 flex-1">
       <Panel
-        title="Algorithm builder"
         scroll
         className="min-w-0 flex-1"
-        action={
-          <div className="flex items-center border border-border-subtle">
-            <TabButton active={!raw} onClick={() => setRaw(false)} icon={Sliders}>
-              visual
-            </TabButton>
-            <TabButton active={raw} onClick={() => setRaw(true)} icon={Code2}>
-              raw json
-            </TabButton>
-          </div>
-        }
       >
         {raw ? (
           <div className="p-3">
@@ -229,9 +235,9 @@ export function AlgorithmsPage() {
                   onClick={() =>
                     setConditions([...conditions, { indicator: "close", op: ">", value: 0 }])
                   }
-                  className="flex items-center gap-1 border border-dashed border-border-focus px-2 py-1 font-mono text-meta text-text-muted transition-colors hover:border-brand hover:text-brand"
+                  className="inline-flex h-8 w-fit items-center gap-1.5 rounded-md border border-dashed border-border-focus px-3 text-meta font-medium text-text-secondary transition-colors hover:border-brand hover:text-text-primary"
                 >
-                  <Plus size={10} /> add condition
+                  <Plus size={14} /> Add a condition
                 </button>
               </div>
             </Field>
@@ -258,21 +264,12 @@ export function AlgorithmsPage() {
               </div>
             </Field>
 
-            <div className="flex items-center gap-2 p-3">
-              <button
-                type="button"
-                onClick={() => validate.mutate(draft)}
-                className="border border-border-focus px-3 py-1 font-mono text-micro uppercase tracking-wider text-text-secondary transition-colors hover:border-brand hover:text-brand"
-              >
-                validate
+            <div className="flex flex-wrap items-center gap-2 px-4 py-4">
+              <button type="button" onClick={() => save.mutate(draft)} disabled={!draft.name || save.isPending} className="action-primary">
+                {save.isPending ? "Saving…" : "Save algorithm"}
               </button>
-              <button
-                type="button"
-                onClick={() => save.mutate(draft)}
-                disabled={!draft.name || save.isPending}
-                className="border border-brand bg-brand-muted px-3 py-1 font-mono text-micro uppercase tracking-wider text-brand transition-colors hover:bg-brand hover:text-bg-base disabled:opacity-40"
-              >
-                {save.isPending ? "saving…" : "save"}
+              <button type="button" onClick={() => validate.mutate(draft)} disabled={validate.isPending} className="action-secondary">
+                {validate.isPending ? "Checking…" : "Check it against today’s data"}
               </button>
 
               {validate.data && (
@@ -314,7 +311,7 @@ export function AlgorithmsPage() {
         </div>
 
         <div className="border-t border-border-subtle">
-          <h3 className="px-3 py-2 font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+          <h3 className="px-3 py-2 text-meta font-medium text-text-secondary first-letter:uppercase">
             Saved · {existing?.algorithms?.length ?? 0}
           </h3>
           {(existing?.algorithms ?? []).length === 0 ? (
@@ -379,31 +376,6 @@ function Problems({ error }: { error: Error }) {
   );
 }
 
-function TabButton({
-  active,
-  onClick,
-  icon: Icon,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: typeof Sliders;
-  children: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        "flex items-center gap-1 border-r border-border-subtle px-2 py-0.5 font-mono text-meta last:border-r-0 " +
-        (active ? "bg-brand-muted text-brand" : "text-text-muted hover:text-text-primary")
-      }
-    >
-      <Icon size={10} />
-      {children}
-    </button>
-  );
-}
 
 function Field({
   label,
@@ -417,7 +389,7 @@ function Field({
   return (
     <div className="p-3">
       <div className="mb-1.5 flex items-baseline gap-2">
-        <label className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+        <label className="text-meta font-medium text-text-secondary first-letter:uppercase">
           {label}
         </label>
         {hint && <span className="text-meta text-text-muted">{hint}</span>}
@@ -516,7 +488,7 @@ function Select({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="border border-border-subtle bg-bg-base px-1 py-1 font-mono text-micro uppercase outline-none focus:border-brand"
+      className="border border-border-subtle bg-bg-base px-1 py-1 font-mono text-micro outline-none focus:border-brand"
     >
       {options.map((o) => (
         <option key={o} value={o}>
@@ -564,7 +536,7 @@ function WatchlistAttach({
               className={
                 "flex items-center gap-1 border px-1.5 py-0.5 font-mono text-meta transition-colors " +
                 (on
-                  ? "border-brand bg-brand-muted text-brand"
+                  ? "border-brand/50 bg-brand-muted text-text-primary"
                   : "border-border-subtle text-text-muted hover:text-text-primary")
               }
             >
@@ -620,8 +592,8 @@ function SymbolTags({
             setText("");
           }
         }}
-        placeholder="add symbol…"
-        className="min-w-24 flex-1 border border-border-subtle bg-bg-base px-2 py-0.5 font-mono text-meta outline-none focus:border-brand"
+        placeholder="Add a ticker and press Enter…"
+        className="h-8 min-w-24 flex-1 rounded-md border border-border-subtle bg-bg-base px-2.5 text-ui outline-none focus:border-brand"
       />
     </div>
   );
@@ -642,7 +614,7 @@ function Toggle({
         onClick={() => onChange(!checked)}
         className={
           "flex h-3.5 w-3.5 items-center justify-center border " +
-          (checked ? "border-brand bg-brand-muted text-brand" : "border-border-focus")
+          (checked ? "border-brand/50 bg-brand-muted text-text-primary" : "border-border-focus")
         }
       >
         {checked && <Check size={9} />}

@@ -1,16 +1,20 @@
 import type { ReactNode } from "react";
 
-type Tone = "neutral" | "brand" | "up" | "down" | "muted";
+type Tone = "neutral" | "brand" | "up" | "down" | "muted" | "info";
 
 const tones: Record<Tone, string> = {
-  neutral: "border-border-focus text-text-secondary",
-  brand: "border-brand/40 bg-brand-muted text-brand",
-  up: "border-semantic-up/40 text-semantic-up",
-  down: "border-semantic-down/40 text-semantic-down",
-  muted: "border-border-subtle text-text-muted",
+  neutral: "bg-bg-panel-hover text-text-secondary",
+  brand: "bg-brand-muted text-brand",
+  up: "bg-semantic-up-soft text-semantic-up",
+  down: "bg-semantic-down-soft text-semantic-down",
+  muted: "text-text-muted",
+  info: "bg-info-soft text-info",
 };
 
-/** A label with a 1px border and no fill, except where meaning demands one. */
+/**
+ * A short label with a soft tint and no border. Sentence case: a label is
+ * read, and capitals make every one of them shout at the same volume.
+ */
 export function Pill({
   children,
   tone = "neutral",
@@ -23,7 +27,7 @@ export function Pill({
   return (
     <span
       title={title}
-      className={`inline-flex shrink-0 items-center gap-1 border px-1.5 py-px font-mono text-micro uppercase leading-4 tracking-wider ${tones[tone]}`}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-px text-micro font-medium leading-4 ${tones[tone]}`}
     >
       {children}
     </span>

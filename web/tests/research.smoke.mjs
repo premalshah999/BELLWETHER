@@ -124,11 +124,11 @@ try {
   await page.goto(
     process.env.BELLWETHER_UI_URL || "http://127.0.0.1:5174/research",
   );
-  await page.getByRole("heading", { name: "Research desk" }).waitFor();
+  await page.getByRole("heading", { name: "What do you want to find out?" }).waitFor();
   assert.equal(
     await page
-      .getByRole("button", { name: "Evidence only · no AI", exact: true })
-      .getAttribute("aria-pressed"),
+      .getByRole("radio", { name: "Evidence only", exact: true })
+      .getAttribute("aria-checked"),
     "true",
   );
   await page.screenshot({
@@ -156,7 +156,7 @@ try {
   );
   await page.getByTitle("Source 1").click();
   assert.equal(await page.locator("#src-1-1").isVisible(), true);
-  await page.getByRole("button", { name: "New research", exact: true }).click();
+  await page.getByRole("button", { name: "New question", exact: true }).click();
   fail = true;
   await page
     .getByRole("textbox", { name: "Research question" })
@@ -177,7 +177,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  await page.getByRole("heading", { name: "Research desk" }).waitFor();
+  await page.getByRole("heading", { name: "What do you want to find out?" }).waitFor();
   assert.equal(
     await page.getByRole("textbox", { name: "Research question" }).isVisible(),
     true,

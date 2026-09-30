@@ -29,7 +29,7 @@ export function CollapsedRail({
     >
       <Icon size={13} />
       <span
-        className="font-mono text-micro uppercase tracking-[0.18em]"
+        className="font-mono text-micro"
         style={{ writingMode: "vertical-rl" }}
       >
         {label}

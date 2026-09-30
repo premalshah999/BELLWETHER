@@ -1,41 +1,34 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowRight,
-  Bell,
-  CalendarClock,
-  Newspaper,
-  Radar,
-  RefreshCw,
-  Search,
-  Sparkles,
-} from "lucide-react";
+import { Bell, CalendarClock, ChevronRight, Radar, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import {
-  api,
-  type Alert,
-  type MarketEvent,
-  type MorningBrief,
-  type ScanFinding,
-  type UpcomingCatalyst,
-} from "../../lib/api";
-import { formatAgo } from "../../lib/format";
-import { Empty } from "../ui/Empty";
-import { EventSource } from "../EventSource";
-import { Pill } from "../ui/Pill";
+import { api, type Alert, type MarketEvent, type MorningBrief, type ScanFinding, type UpcomingCatalyst } from "../../lib/api";
+import { formatAgo, formatClock } from "../../lib/format";
+import { humanMinutes, sessionState } from "../../lib/session";
+import { signalSentence, signed, toneOf } from "../../lib/signals";
+import { EventDrawer, importanceLabel, typeLabel } from "../EventDrawer";
 
 type Attention = {
   id: string;
   kind: "alert" | "move" | "catalyst";
-  title: string;
-  detail: string;
   symbol?: string;
+  title: ReactNode;
+  detail: string;
   priority: number;
+  go: () => void;
 };
 
-/** The opening screen: a short queue of what deserves attention now. */
+/**
+ * The first screen of the day.
+ *
+ * It opens with a sentence rather than a row of counters: "11 moves need a
+ * look and 3 companies report this week" is read in a second, where four
+ * big numbers under four small labels have to be decoded one at a time.
+ */
 export function OverviewPage({ onSelect }: { onSelect: (symbol: string) => void }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [openEvent, setOpenEvent] = useState<MarketEvent | null>(null);
 
   const alerts = useQuery({
     queryKey: ["alerts", "overview"],
@@ -49,113 +42,105 @@ export function OverviewPage({ onSelect }: { onSelect: (symbol: string) => void 
   });
   const calendar = useQuery({
     queryKey: ["calendar", "overview"],
-    queryFn: () => api.calendar({ days: 14, limit: 30 }),
+    queryFn: () => api.calendar({ days: 7, limit: 60 }),
     staleTime: 10 * 60_000,
   });
+  // Importance runs 0-10. This asked for 50+ and so was always empty.
   const news = useQuery({
     queryKey: ["events", "overview"],
-    queryFn: () => api.events({ hours: 48, minImportance: 50, limit: 16 }),
+    queryFn: () => api.events({ hours: 48, minImportance: 6, limit: 12 }),
     refetchInterval: 60_000,
   });
-  const brief = useQuery({
-    queryKey: ["morning-brief"],
-    queryFn: api.morningBrief,
-    retry: false,
-    staleTime: 5 * 60_000,
-  });
+  const brief = useQuery({ queryKey: ["morning-brief"], queryFn: api.morningBrief, retry: false, staleTime: 5 * 60_000 });
   const generateBrief = useMutation({
     mutationFn: api.generateMorningBrief,
     onSuccess: (data) => qc.setQueryData(["morning-brief"], data),
   });
 
-  const findings = scan.data?.findings ?? [];
-  const unread = alerts.data?.alerts ?? [];
-  const catalysts = calendar.data?.catalysts ?? [];
-  const events = news.data?.events ?? [];
-  const unresolved = findings.filter((finding) => finding.explained !== true);
-  const urgentCatalysts = catalysts.filter((catalyst) => (catalyst.next_in_days ?? 99) <= 7);
-  const attention: Attention[] = [
-    // Cap each source before merging so a large scan cannot crowd every
-    // alert or catalyst out of the one queue meant to combine them.
-    ...unread.slice(0, 3).map(alertAttention),
-    ...unresolved.slice(0, 4).map(moveAttention),
-    ...urgentCatalysts.slice(0, 3).map(catalystAttention),
-  ]
-    .sort((a, b) => b.priority - a.priority)
-    .slice(0, 10);
-
-  const openSymbol = (symbol: string) => {
+  const toChart = (symbol: string) => {
     onSelect(symbol);
     navigate("/charts");
   };
-  const loading = alerts.isLoading || scan.isLoading || calendar.isLoading || news.isLoading;
-  const date = new Intl.DateTimeFormat(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  }).format(new Date());
+
+  const findings = scan.data?.findings ?? [];
+  const unread = alerts.data?.alerts ?? [];
+  const unreadCount = alerts.data?.unread ?? unread.length;
+  const catalysts = calendar.data?.catalysts ?? [];
+  const events = news.data?.events ?? [];
+  const unexplained = findings.filter((f) => f.explained !== true);
+  const earningsSoon = catalysts.filter((c) => c.next_kind?.toLowerCase().includes("earn"));
+
+  const attention: Attention[] = [
+    ...unread.slice(0, 3).map((a) => alertItem(a, () => navigate("/alerts"))),
+    ...unexplained.slice(0, 5).map((f) => moveItem(f, () => toChart(f.symbol))),
+    ...catalysts
+      .filter((c) => (c.next_in_days ?? 99) <= 2)
+      .slice(0, 3)
+      .map((c) => catalystItem(c, () => navigate("/calendar"))),
+  ]
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, 8);
+
+  const loading = alerts.isLoading || scan.isLoading || calendar.isLoading;
+  const us = sessionState("US");
+  const date = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-bg-base">
-      <header className="border-b border-border-subtle bg-bg-panel px-5 py-5 lg:px-7">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="font-mono text-micro uppercase tracking-[0.14em] text-brand">Today</p>
-            <h1 className="mt-1 text-hero font-semibold tracking-tight text-text-primary">
-              Your market, distilled
+      <div className="mx-auto flex max-w-[1320px] flex-col gap-8 px-5 pb-12 pt-7 md:px-8 md:pt-9">
+        <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+          <div className="min-w-0 max-w-3xl">
+            <p className="text-ui text-text-muted">
+              {date}
+              <span className="mx-2 text-border-focus">/</span>
+              <span className={us.open ? "text-semantic-up" : ""}>
+                {us.open
+                  ? `Market open, ${humanMinutes(us.closesInMinutes ?? 0)} to the close`
+                  : `Market closed, opens in ${humanMinutes(us.opensInMinutes ?? 0)}`}
+              </span>
+            </p>
+            <h1 className="font-reading mt-2 text-[28px] font-semibold leading-tight text-text-primary md:text-[32px]">
+              {loading ? <span className="skeleton inline-block h-9 w-[28rem] max-w-full" /> : headline(unexplained.length, earningsSoon.length, unreadCount)}
             </h1>
-            <p className="mt-1 text-ui text-text-muted">{date} · Start with what changed.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-2">
             <Link to="/research" className="action-secondary">
-              <Search size={13} /> Research a question
+              Ask a question
             </Link>
-            <Link to="/charts" className="action-primary">
-              Open charts <ArrowRight size={13} />
+            <Link to="/news" className="action-primary">
+              Read the news
             </Link>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div className="mx-auto max-w-[1500px] p-4 lg:p-6">
-        <section className="grid grid-cols-2 border border-border-subtle bg-bg-panel md:grid-cols-4">
-          <Metric label="Unread alerts" value={alerts.data?.unread ?? unread.length} hint={unread.length ? "rules fired" : "nothing waiting"} tone={unread.length ? "brand" : "quiet"} to="/alerts" />
-          <Metric label="Moves to review" value={unresolved.length} hint="unexplained or unchecked" tone={unresolved.length ? "brand" : "quiet"} to="/scanner/signals" />
-          <Metric label="Catalysts · 7d" value={urgentCatalysts.length} hint="earnings and dividends" tone={urgentCatalysts.length ? "normal" : "quiet"} to="/calendar" />
-          <Metric label="Material news · 48h" value={events.length} hint="importance 50+" tone={events.length ? "normal" : "quiet"} to="/news" />
-        </section>
-
-        <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.8fr)]">
-          <section className="border border-border-subtle bg-bg-panel">
-            <SectionHeader icon={Bell} title="Needs attention" subtitle="Alerts, unexplained moves, and near-term catalysts" to="/alerts" />
+        <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)]">
+          <Card title="Needs a look" to="/scanner/signals" linkLabel="All signals">
             {loading && attention.length === 0 ? (
-              <LoadingRows />
+              <Rows />
             ) : attention.length === 0 ? (
-              <Empty icon={Bell} title="Nothing needs action right now." hint="New rule triggers, unusual moves, and catalysts inside seven days will appear here." />
+              <Quiet>Nothing is waiting. New alerts, unexplained moves and catalysts in the next two days will appear here.</Quiet>
             ) : (
-              <div className="divide-y divide-border-subtle">
+              <ul className="divide-y divide-border-subtle">
                 {attention.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      if (item.kind === "move" && item.symbol) openSymbol(item.symbol);
-                      else navigate(item.kind === "catalyst" ? "/calendar" : "/alerts");
-                    }}
-                    className="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-bg-panel-hover"
-                  >
-                    <AttentionMark kind={item.kind} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-ui text-text-primary">{item.title}</span>
-                      <span className="mt-0.5 block text-meta text-text-muted">{item.detail}</span>
-                    </span>
-                    {item.symbol && <span className="shrink-0 font-mono text-meta text-text-secondary">{item.symbol}</span>}
-                    <ArrowRight size={12} className="mt-1 shrink-0 text-text-muted opacity-0 transition-opacity group-hover:opacity-100" />
-                  </button>
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={item.go}
+                      className="group flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-bg-panel-hover"
+                    >
+                      <KindIcon kind={item.kind} />
+                      <span className="w-14 shrink-0 text-ui font-semibold text-text-primary">{item.symbol}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-ui text-text-primary sm:truncate">{item.title}</span>
+                        <span className="block text-meta text-text-muted sm:truncate">{item.detail}</span>
+                      </span>
+                      <ChevronRight size={16} className="shrink-0 text-text-muted transition-transform group-hover:translate-x-0.5" />
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
-          </section>
+          </Card>
 
           <BriefCard
             data={brief.data?.brief ?? null}
@@ -167,146 +152,254 @@ export function OverviewPage({ onSelect }: { onSelect: (symbol: string) => void 
           />
         </div>
 
-        <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-2">
-          <section className="min-w-0 border border-border-subtle bg-bg-panel">
-            <SectionHeader icon={Radar} title="Largest market moves" subtitle="Statistical signals from the latest scan" to="/scanner/signals" />
+        <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+          <Card title="Biggest moves" to="/scanner/signals" linkLabel="Open signals">
             {findings.length === 0 && !scan.isLoading ? (
-              <Empty icon={Radar} title="No scan findings yet." hint="The scheduled scanner will populate this list." />
+              <Quiet>The scanner has not run yet today. It runs through every trading session.</Quiet>
             ) : (
-              <div className="divide-y divide-border-subtle">
-                {findings.slice(0, 8).map((finding) => (
-                  <button
-                    key={finding.id}
-                    type="button"
-                    onClick={() => openSymbol(finding.symbol)}
-                    className="grid w-full grid-cols-[minmax(90px,1fr)_90px_90px] items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-bg-panel-hover sm:grid-cols-[minmax(100px,1fr)_minmax(120px,1.4fr)_90px_90px]"
-                  >
-                    <span className="font-mono text-ui text-text-primary">{finding.symbol}</span>
-                    <span className="hidden truncate text-meta text-text-muted sm:block">{signalLabel(finding)}</span>
-                    <span className={"text-right font-mono text-ui " + returnTone(finding.return_1d)}>{signed(finding.return_1d)}%</span>
-                    <span className="text-right font-mono text-meta text-text-muted">{finding.volume_ratio.toFixed(1)}× vol</span>
-                  </button>
-                ))}
-              </div>
+              <table className="w-full text-ui">
+                <thead>
+                  <tr className="text-left text-meta text-text-muted">
+                    <th className="px-5 py-2 font-medium">Company</th>
+                    <th className="px-2 py-2 font-medium max-sm:hidden">Why it was flagged</th>
+                    <th className="px-2 py-2 text-right font-medium">Day</th>
+                    <th className="px-5 py-2 text-right font-medium">Volume</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border-subtle border-t border-border-subtle">
+                  {[...findings]
+                    .sort((a, b) => Math.abs(b.return_1d) - Math.abs(a.return_1d))
+                    .slice(0, 8)
+                    .map((f) => (
+                      <tr key={f.id} onClick={() => toChart(f.symbol)} className="cursor-pointer transition-colors hover:bg-bg-panel-hover">
+                        <td className="px-5 py-2.5">
+                          <button type="button" onClick={() => toChart(f.symbol)} className="font-semibold text-text-primary">
+                            {f.symbol}
+                          </button>
+                        </td>
+                        <td className="truncate px-2 py-2.5 text-meta text-text-secondary max-sm:hidden">{signalSentence(f.signals)}</td>
+                        <td className={"px-2 py-2.5 text-right font-medium " + toneOf(f.return_1d)}>{signed(f.return_1d)}%</td>
+                        <td className="px-5 py-2.5 text-right text-text-secondary">{f.volume_ratio.toFixed(1)}×</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
             )}
-          </section>
+          </Card>
 
-          <section className="min-w-0 border border-border-subtle bg-bg-panel">
-            <SectionHeader icon={Newspaper} title="Material news" subtitle="Recent high-importance events" to="/news" />
-            {events.length === 0 && !news.isLoading ? (
-              <Empty icon={Newspaper} title="No material events in this window." />
+          <Card title="What mattered in the news" to="/news?importance=significant&window=3d" linkLabel="All news">
+            {news.isLoading ? (
+              <Rows />
+            ) : events.length === 0 ? (
+              <Quiet>No significant events in the last two days.</Quiet>
             ) : (
-              <div className="divide-y divide-border-subtle">
-                {events.slice(0, 8).map((event) => <NewsRow key={event.id} event={event} />)}
-              </div>
+              <ul className="divide-y divide-border-subtle">
+                {events.slice(0, 7).map((e) => (
+                  <li key={e.id}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenEvent(e)}
+                      className="block w-full px-5 py-3 text-left transition-colors hover:bg-bg-panel-hover"
+                    >
+                      <span className="font-reading line-clamp-2 block text-emphasis font-medium leading-snug text-text-primary">{e.headline}</span>
+                      <span className="mt-1 flex flex-wrap items-center gap-x-2.5 text-meta text-text-muted">
+                        <span className="inline-flex items-center gap-1 text-text-secondary">
+                          {e.official && <ShieldCheck size={13} className="text-brand" />}
+                          {e.source}
+                        </span>
+                        <span>{typeLabel(e.event_type)}</span>
+                        {importanceLabel(e.importance) === "Major" && <span className="font-medium text-brand">Major</span>}
+                        <span>{formatClock(e.published_at || e.discovered_at)}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
-          </section>
+          </Card>
         </div>
       </div>
+
+      <EventDrawer
+        id={openEvent?.id ?? null}
+        seed={openEvent ?? undefined}
+        onClose={() => setOpenEvent(null)}
+        onSymbol={(s) => {
+          setOpenEvent(null);
+          toChart(s);
+        }}
+      />
     </div>
   );
 }
 
-function Metric({ label, value, hint, tone, to }: { label: string; value: number; hint: string; tone: "brand" | "normal" | "quiet"; to: string }) {
-  const color = tone === "brand" ? "text-brand" : tone === "quiet" ? "text-text-muted" : "text-text-primary";
-  return (
-    <Link to={to} className="group min-w-0 border-b border-r border-border-subtle px-4 py-4 transition-colors hover:bg-bg-panel-hover md:border-b-0">
-      <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">{label}</span>
-      <span className={"mt-1 block font-mono text-hero " + color}>{value}</span>
-      <span className="mt-0.5 flex items-center gap-1 text-meta text-text-muted">{hint} <ArrowRight size={10} className="opacity-0 transition-opacity group-hover:opacity-100" /></span>
-    </Link>
-  );
+function headline(moves: number, earnings: number, alerts: number): string {
+  const parts: string[] = [];
+  if (moves > 0) parts.push(`${moves} ${moves === 1 ? "move needs" : "moves need"} a look`);
+  if (earnings > 0) parts.push(`${earnings} ${earnings === 1 ? "company reports" : "companies report"} this week`);
+  if (alerts > 0) parts.push(`${alerts} ${alerts === 1 ? "alert is" : "alerts are"} unread`);
+  if (parts.length === 0) return "A quiet market. Nothing needs you yet.";
+  const last = parts.pop()!;
+  const s = parts.length ? `${parts.join(", ")} and ${last}` : last;
+  return s.charAt(0).toUpperCase() + s.slice(1) + ".";
 }
 
-function SectionHeader({ icon: Icon, title, subtitle, to }: { icon: typeof Bell; title: string; subtitle: string; to: string }) {
+function Card({ title, to, linkLabel, children }: { title: string; to: string; linkLabel: string; children: ReactNode }) {
   return (
-    <header className="flex min-h-12 items-center gap-3 border-b border-border-subtle px-4 py-2.5">
-      <Icon size={14} className="shrink-0 text-text-muted" />
-      <div className="min-w-0 flex-1">
-        <h2 className="text-ui font-medium text-text-primary">{title}</h2>
-        <p className="truncate text-meta text-text-muted">{subtitle}</p>
-      </div>
-      <Link to={to} className="flex shrink-0 items-center gap-1 font-mono text-meta text-text-muted hover:text-brand">View all <ArrowRight size={10} /></Link>
-    </header>
-  );
-}
-
-function BriefCard({ data, stale, note, loading, error, onGenerate }: { data: MorningBrief | null; stale: boolean; note?: string; loading: boolean; error: Error | null; onGenerate: () => void }) {
-  return (
-    <section className="border border-border-subtle bg-bg-panel">
-      <header className="flex min-h-12 items-center gap-3 border-b border-border-subtle px-4 py-2.5">
-        <Sparkles size={14} className="text-brand" />
-        <div className="min-w-0 flex-1">
-          <h2 className="text-ui font-medium text-text-primary">Morning brief</h2>
-          <p className="text-meta text-text-muted">{data ? `${formatAgo(data.generated_at)}${stale ? " · stale" : ""}` : "Your watchlist and market context"}</p>
-        </div>
-        <button type="button" onClick={onGenerate} disabled={loading} className="flex items-center gap-1.5 font-mono text-meta text-text-muted hover:text-brand disabled:opacity-50">
-          <RefreshCw size={11} className={loading ? "animate-spin" : ""} /> {data ? "refresh" : "generate"}
-        </button>
+    <section className="min-w-0 overflow-hidden rounded-lg border border-border-subtle bg-bg-panel">
+      <header className="flex h-12 items-center justify-between gap-3 px-5">
+        <h2 className="text-emphasis font-semibold text-text-primary">{title}</h2>
+        <Link to={to} className="text-meta font-medium text-text-secondary underline-offset-4 hover:text-brand hover:underline">
+          {linkLabel}
+        </Link>
       </header>
-      {data ? (
-        <div className="px-4 py-4">
-          <h3 className="text-emphasis font-medium leading-snug text-text-primary">{data.headline}</h3>
-          <ul className="mt-3 space-y-2">
-            {(data.bullets ?? []).slice(0, 5).map((bullet, index) => (
-              <li key={index} className="flex gap-2 text-ui leading-relaxed text-text-secondary"><span className="mt-[0.55em] h-1 w-1 shrink-0 bg-brand" /><span>{bullet}</span></li>
-            ))}
-          </ul>
-          {(data.watch_today ?? []).length > 0 && (
-            <div className="mt-4 border-t border-border-subtle pt-3">
-              <p className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">Watch today</p>
-              <ul className="mt-2 space-y-1.5">
-                {data.watch_today.slice(0, 5).map((item) => (
-                  <li key={item} className="flex gap-2 text-meta leading-relaxed text-text-secondary">
-                    <span className="mt-[0.55em] h-1 w-1 shrink-0 bg-brand" />
-                    <span className="min-w-0 break-words">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="px-4 py-7">
-          <p className="max-w-[48ch] text-ui leading-relaxed text-text-secondary">{error ? error.message : note ?? "Generate a concise briefing from your alerts, positions, and recent news."}</p>
-          <button type="button" onClick={onGenerate} disabled={loading} className="action-primary mt-4"><Sparkles size={13} /> {loading ? "Building brief…" : "Generate today’s brief"}</button>
-        </div>
-      )}
+      <div className="border-t border-border-subtle">{children}</div>
     </section>
   );
 }
 
-function NewsRow({ event }: { event: MarketEvent }) {
-  const body = <><span className="block text-ui leading-snug text-text-primary">{event.headline}</span><span className="mt-1 flex flex-wrap items-center gap-2 text-meta text-text-muted"><span>{event.event_type.toLowerCase().replace(/_/g, " ")}</span>{event.official && <Pill tone="neutral">official</Pill>}<span>{formatAgo(event.published_at ?? event.discovered_at)}</span><EventSource event={event} /></span></>;
-  return event.primary_url ? <a href={event.primary_url} target="_blank" rel="noreferrer noopener" className="block px-4 py-3 hover:bg-bg-panel-hover">{body}</a> : <div className="px-4 py-3">{body}</div>;
+function Quiet({ children }: { children: ReactNode }) {
+  return <p className="max-w-[52ch] px-5 py-8 text-ui text-text-secondary">{children}</p>;
 }
 
-function AttentionMark({ kind }: { kind: Attention["kind"] }) {
+function Rows() {
+  return (
+    <div className="flex flex-col gap-2 p-4" aria-busy="true">
+      {[0, 1, 2, 3].map((n) => (
+        <span key={n} className="skeleton h-11 w-full" />
+      ))}
+    </div>
+  );
+}
+
+function KindIcon({ kind }: { kind: Attention["kind"] }) {
   const Icon = kind === "alert" ? Bell : kind === "move" ? Radar : CalendarClock;
-  return <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center border border-border-subtle text-text-muted"><Icon size={12} /></span>;
+  const label = kind === "alert" ? "Alert" : kind === "move" ? "Unexplained move" : "Upcoming catalyst";
+  return (
+    <span
+      title={label}
+      className={
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full " +
+        (kind === "alert" ? "bg-brand-muted text-brand" : kind === "move" ? "bg-info-soft text-info" : "bg-bg-panel-hover text-text-secondary")
+      }
+    >
+      <Icon size={15} />
+    </span>
+  );
 }
 
-function LoadingRows() {
-  return <div className="divide-y divide-border-subtle" aria-label="Loading overview">{[0, 1, 2, 3].map((n) => <div key={n} className="flex items-center gap-3 px-4 py-3"><span className="h-6 w-6 animate-pulse bg-border-subtle" /><span className="h-3 w-2/3 animate-pulse bg-border-subtle" /></div>)}</div>;
+function BriefCard({
+  data,
+  stale,
+  note,
+  loading,
+  error,
+  onGenerate,
+}: {
+  data: MorningBrief | null;
+  stale: boolean;
+  note?: string;
+  loading: boolean;
+  error: Error | null;
+  onGenerate: () => void;
+}) {
+  return (
+    <section className="min-w-0 overflow-hidden rounded-lg border border-border-subtle bg-bg-panel">
+      <header className="flex h-12 items-center justify-between gap-3 px-5">
+        <h2 className="flex items-center gap-2 text-emphasis font-semibold text-text-primary">
+          <Sparkles size={15} className="text-brand" /> Morning brief
+        </h2>
+        {data && (
+          <button type="button" onClick={onGenerate} disabled={loading} className="action-ghost text-meta">
+            <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> {loading ? "Rewriting…" : "Rewrite"}
+          </button>
+        )}
+      </header>
+      <div className="border-t border-border-subtle px-5 py-5">
+        {data ? (
+          <>
+            <p className="text-meta text-text-muted">
+              Written {formatAgo(data.generated_at)}
+              {stale ? ", before the latest data arrived" : ""}
+            </p>
+            <h3 className="font-reading mt-2 text-[17px] font-semibold leading-snug text-text-primary">{data.headline}</h3>
+            <ul className="mt-4 flex flex-col gap-3">
+              {(data.bullets ?? []).slice(0, 5).map((b, i) => (
+                <li key={i} className="flex gap-3 text-ui leading-relaxed text-text-secondary">
+                  <span className="mt-[0.6em] h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+            {(data.watch_today ?? []).length > 0 && (
+              <div className="mt-5 rounded-md bg-bg-base px-4 py-3">
+                <p className="text-meta font-semibold text-text-secondary">Watch today</p>
+                <ul className="mt-1.5 flex flex-col gap-1">
+                  {data.watch_today.slice(0, 5).map((w) => (
+                    <li key={w} className="text-meta leading-relaxed text-text-secondary">
+                      {w}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <p className="max-w-[46ch] text-ui leading-relaxed text-text-secondary">
+              {error ? error.message : note ?? "A short read on your watchlist, positions and overnight news, with sources."}
+            </p>
+            <button type="button" onClick={onGenerate} disabled={loading} className="action-primary mt-4">
+              <Sparkles size={14} /> {loading ? "Writing the brief…" : "Write today’s brief"}
+            </button>
+          </>
+        )}
+      </div>
+    </section>
+  );
 }
 
-function alertAttention(alert: Alert): Attention {
-  return { id: `alert-${alert.id}`, kind: "alert", title: alert.summary || `${alert.algorithm_name} triggered`, detail: `${alert.algorithm_name} · ${formatAgo(alert.fired_at)}`, symbol: alert.symbol, priority: 300 + new Date(alert.fired_at).getTime() / 1e13 };
+function alertItem(a: Alert, go: () => void): Attention {
+  return {
+    id: `alert-${a.id}`,
+    kind: "alert",
+    symbol: a.symbol,
+    title: a.summary || `${a.algorithm_name} triggered`,
+    detail: `${a.algorithm_name}, ${formatAgo(a.fired_at)}`,
+    priority: 300 + new Date(a.fired_at).getTime() / 1e13,
+    go,
+  };
 }
 
-function moveAttention(finding: ScanFinding): Attention {
-  const state = finding.explained === false ? "No matching news found" : "Explanation not checked";
-  return { id: `move-${finding.id}`, kind: "move", title: `${signed(finding.return_1d)}% move · ${finding.volume_ratio.toFixed(1)}× volume`, detail: `${state} · ${signalLabel(finding)}`, symbol: finding.symbol, priority: 200 + finding.score };
+function moveItem(f: ScanFinding, go: () => void): Attention {
+  return {
+    id: `move-${f.id}`,
+    kind: "move",
+    symbol: f.symbol,
+    title: (
+      <>
+        <span className={"font-semibold " + toneOf(f.return_1d)}>{signed(f.return_1d)}%</span> on {f.volume_ratio.toFixed(1)}× normal volume
+      </>
+    ),
+    detail: f.explained === false ? "No news explains it yet" : signalSentence(f.signals),
+    priority: 200 + f.score,
+    go,
+  };
 }
 
-function catalystAttention(catalyst: UpcomingCatalyst): Attention {
-  const days = catalyst.next_in_days ?? 99;
-  return { id: `catalyst-${catalyst.symbol}-${catalyst.next_kind}`, kind: "catalyst", title: `${catalyst.next_kind ?? "Catalyst"} ${days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`}`, detail: catalyst.industry || "Scheduled company event", symbol: catalyst.symbol, priority: 150 - days };
+function catalystItem(c: UpcomingCatalyst, go: () => void): Attention {
+  const days = c.next_in_days ?? 99;
+  const kind = (c.next_kind ?? "Catalyst").replace(/_/g, " ");
+  return {
+    id: `cat-${c.symbol}-${c.next_kind}`,
+    kind: "catalyst",
+    symbol: c.symbol,
+    title: `${kind.charAt(0).toUpperCase() + kind.slice(1)} ${days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`}`,
+    detail:
+      kind.toLowerCase().includes("earn") && c.eps_average != null
+        ? `Analysts expect EPS of ${c.eps_average.toFixed(2)}`
+        : c.industry || "Scheduled",
+    priority: 150 - days,
+    go,
+  };
 }
-
-function signalLabel(finding: ScanFinding) {
-  return finding.signals.length ? finding.signals.slice(0, 2).join(" · ").replace(/_/g, " ") : `score ${finding.score.toFixed(1)}`;
-}
-
-function signed(value: number) { return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`; }
-function returnTone(value: number) { return value > 0 ? "text-semantic-up" : value < 0 ? "text-semantic-down" : "text-text-secondary"; }

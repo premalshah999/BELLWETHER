@@ -1,280 +1,157 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  Activity,
-  Bell,
-  BookOpen,
-  BrainCircuit,
-  Briefcase,
-  CalendarClock,
-  CandlestickChart,
-  ChevronDown,
-  ChevronRight,
-  Filter,
-  FlaskConical,
-  Globe2,
-  Landmark,
-  LayoutDashboard,
-  Newspaper,
-  Radar,
-  Rss,
-  Search,
-  SlidersHorizontal,
-} from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { usePersisted } from "../../lib/layout";
+import { preload } from "../../lib/routes";
 import type { StreamState } from "../../lib/stream";
-import { NavFooter, NavHeader } from "./NavChrome";
+import { BrandMark, NavFooter, SearchButton } from "./NavChrome";
+import { NAV, type NavItem } from "./nav";
 
-type Icon = typeof LayoutDashboard;
-
-interface Item {
-  to: string;
-  label: string;
-  icon: Icon;
-  /** Named so a badge can be attached without the nav knowing what it counts. */
-  badge?: "alerts";
-}
-
-interface Group {
-  id: string;
-  label: string;
-  icon: Icon;
-  children: Item[];
-}
-
-type Entry = Item | Group;
-
-const isGroup = (e: Entry): e is Group => "children" in e;
-
-/**
- * The navigation.
- *
- * Flat tab strips stop working somewhere around six destinations, and this
- * app has eleven. They were being hidden in three different ways — a tab
- * inside the Scanner page, a tab inside the Algorithms page, a tab inside the
- * right rail — which meant the only way to learn that screens or backtesting
- * existed was to already know.
- *
- * Grouping makes the second level a destination in its own right rather than
- * a mode of the page above it, so every function in the app is reachable from
- * one place and visible without opening anything.
- */
-const NAV: Entry[] = [
-  { to: "/dashboard", label: "Today", icon: LayoutDashboard },
-  { to: "/research", label: "Research", icon: Search },
-  {
-    id: "markets",
-    label: "Markets",
-    icon: CandlestickChart,
-    children: [
-      { to: "/charts", label: "Charts", icon: CandlestickChart },
-      { to: "/scanner/signals", label: "Signals", icon: Radar },
-      { to: "/news", label: "News", icon: Newspaper },
-      { to: "/calendar", label: "Catalysts", icon: CalendarClock },
-    ],
-  },
-  {
-    id: "portfolio",
-    label: "Portfolio",
-    icon: Briefcase,
-    children: [
-      { to: "/positions", label: "Positions", icon: Briefcase },
-      { to: "/journal", label: "Trade journal", icon: BookOpen },
-    ],
-  },
-  {
-    id: "automate",
-    label: "Automate",
-    icon: SlidersHorizontal,
-    children: [
-      { to: "/alerts", label: "Alerts", icon: Bell, badge: "alerts" },
-      { to: "/algorithms/build", label: "Algorithms", icon: SlidersHorizontal },
-      { to: "/algorithms/backtest", label: "Backtest", icon: FlaskConical },
-    ],
-  },
-  {
-    id: "explore",
-    label: "Explore",
-    icon: Globe2,
-    children: [
-      { to: "/scanner/screens", label: "Screens", icon: Filter },
-      { to: "/geopolitics", label: "Geopolitics", icon: Globe2 },
-      { to: "/congress", label: "Congress", icon: Landmark },
-      { to: "/eventstudy", label: "Event study", icon: FlaskConical },
-    ],
-  },
-  {
-    id: "system",
-    label: "System",
-    icon: Activity,
-    children: [
-      { to: "/sources", label: "Data sources", icon: Rss },
-      { to: "/ai", label: "AI calibration", icon: BrainCircuit },
-    ],
-  },
-];
-
-export function SideNav({
-  stream,
-  onCommand,
-}: {
-  stream: StreamState;
-  onCommand: () => void;
-}) {
-  const [shut, setShut] = usePersisted("nav.shut", window.innerWidth < 1024);
-  const [narrow, setNarrow] = useState(window.innerWidth < 720);
-  const location = useLocation();
-
-  useEffect(() => {
-    const resize = () => setNarrow(window.innerWidth < 720);
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, []);
-
-  const { data: alerts } = useQuery({
+export function useUnreadAlerts() {
+  const { data } = useQuery({
     queryKey: ["alerts"],
     queryFn: () => api.alerts({ limit: 40 }),
     refetchInterval: 30_000,
   });
-  const unread = alerts?.unread ?? 0;
+  return data?.unread ?? 0;
+}
 
-  if (shut || narrow) {
-    return (
-      <nav className="flex w-12 shrink-0 flex-col items-center border-r border-border-subtle bg-bg-panel">
-        <NavHeader shut onExpand={narrow ? undefined : () => setShut(false)} onCommand={onCommand} />
-        <div className="flex flex-1 flex-col items-center gap-1 py-2">
-          {/* Collapsed, groups flatten to their children: a group header that
-            cannot show its label is a button that does nothing legible. */}
-          {NAV.flatMap((e) => (isGroup(e) ? e.children : [e])).map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              title={item.label}
-              className={({ isActive }) =>
-                "relative flex h-8 w-8 items-center justify-center transition-colors " +
-                (isActive
-                  ? "bg-brand-muted text-brand"
-                  : "text-text-muted hover:text-text-primary")
-              }
-            >
-              <item.icon size={15} />
-              {item.badge === "alerts" && unread > 0 && (
-                <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-brand" />
-              )}
-            </NavLink>
-          ))}
-        </div>
-        <NavFooter shut stream={stream} />
-      </nav>
-    );
-  }
+export function isActive(item: NavItem, path: string) {
+  return path.startsWith(item.to) || !!item.match?.some((m) => path.startsWith(m));
+}
+
+/**
+ * The navigation, for screens wide enough to keep it open.
+ *
+ * Collapsed, it becomes a rail of icons with the labels as tooltips; the
+ * choice is remembered because it is a matter of screen and taste.
+ */
+export function SideNav({
+  stream,
+  onCommand,
+  defaultShut,
+}: {
+  stream: StreamState;
+  onCommand: () => void;
+  defaultShut: boolean;
+}) {
+  const [shutPref, setShut] = usePersisted<boolean | null>("nav.collapsed", null);
+  const shut = shutPref ?? defaultShut;
+  const location = useLocation();
+  const unread = useUnreadAlerts();
 
   return (
-    <nav className="flex w-48 shrink-0 flex-col border-r border-border-subtle bg-bg-panel">
-      <NavHeader onCollapse={() => setShut(true)} onCommand={onCommand} />
-
-      <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
-        {NAV.map((entry) =>
-          isGroup(entry) ? (
-            <NavGroup
-              key={entry.id}
-              group={entry}
-              path={location.pathname}
-              unread={unread}
-            />
-          ) : (
-            <NavRow key={entry.to} item={entry} unread={unread} />
-          ),
+    <nav
+      aria-label="Main"
+      className={
+        "flex shrink-0 flex-col border-r border-border-subtle bg-bg-panel transition-[width] duration-200 " +
+        (shut ? "w-16" : "w-60")
+      }
+    >
+      <div className={"flex h-14 shrink-0 items-center gap-2.5 " + (shut ? "justify-center" : "px-4")}>
+        <BrandMark />
+        {!shut && (
+          <span className="font-reading min-w-0 flex-1 truncate text-[17px] font-semibold text-text-primary">
+            Bellwether
+          </span>
+        )}
+        {!shut && (
+          <button
+            type="button"
+            onClick={() => setShut(true)}
+            aria-label="Collapse navigation"
+            title="Collapse navigation"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-panel-hover hover:text-text-primary"
+          >
+            <PanelLeftClose size={15} />
+          </button>
         )}
       </div>
 
-      <NavFooter stream={stream} />
-    </nav>
-  );
-}
+      <div className={shut ? "flex justify-center pb-2" : "px-3 pb-2"}>
+        <SearchButton onClick={onCommand} compact={shut} />
+      </div>
 
-function NavGroup({
-  group,
-  path,
-  unread,
-}: {
-  group: Group;
-  path: string;
-  unread: number;
-}) {
-  // A group holding the current page opens itself, so arriving by any route —
-  // a link, a redirect, a reload — leaves the nav showing where you are.
-  const holdsCurrent = group.children.some((c) => path.startsWith(c.to));
-  const [open, setOpen] = usePersisted(`nav.group.${group.id}`, false);
-  const shown = open || holdsCurrent;
-
-  return (
-    <div className="mb-0.5">
-      <button
-        type="button"
-        aria-expanded={shown}
-        onClick={() => setOpen(!shown)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-bg-panel-hover"
-      >
-        {shown ? (
-          <ChevronDown size={11} className="shrink-0 text-text-muted" />
-        ) : (
-          <ChevronRight size={11} className="shrink-0 text-text-muted" />
-        )}
-        <group.icon size={13} className="shrink-0 text-text-muted" />
-        <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
-          {group.label}
-        </span>
-      </button>
-      {shown &&
-        group.children.map((c) => (
-          <NavRow key={c.to} item={c} unread={unread} nested />
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-3">
+        {NAV.map((section, i) => (
+          <div key={section.label ?? i} className={i > 0 ? "mt-3" : "mt-1"}>
+            {section.label &&
+              (shut ? (
+                <div className="mx-4 mb-2 border-t border-border-subtle" />
+              ) : (
+                <p className="px-5 pb-1 text-meta font-medium text-text-muted">{section.label}</p>
+              ))}
+            <ul className="flex flex-col gap-px px-2">
+              {section.items.map((item) => (
+                <li key={item.to}>
+                  <NavRow item={item} shut={shut} unread={unread} active={isActive(item, location.pathname)} />
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
-    </div>
+      </div>
+
+      {shut && (
+        <div className="flex justify-center pb-1">
+          <button
+            type="button"
+            onClick={() => setShut(false)}
+            aria-label="Expand navigation"
+            title="Expand navigation"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-panel-hover hover:text-text-primary"
+          >
+            <PanelLeftOpen size={15} />
+          </button>
+        </div>
+      )}
+      <NavFooter shut={shut} stream={stream} />
+    </nav>
   );
 }
 
 function NavRow({
   item,
+  shut,
   unread,
-  nested,
+  active,
 }: {
-  item: Item;
+  item: NavItem;
+  shut: boolean;
   unread: number;
-  nested?: boolean;
+  active: boolean;
 }) {
+  const count = item.badge === "alerts" && unread > 0 ? unread : 0;
   return (
     <NavLink
       to={item.to}
-      className={({ isActive }) =>
-        "flex items-center gap-2 py-1.5 pr-3 text-ui transition-colors " +
-        (nested ? "pl-8 " : "pl-3 ") +
-        (isActive
-          ? "bg-brand-muted text-brand"
+      title={shut ? item.label : undefined}
+      onMouseEnter={() => preload(item.to)}
+      onFocus={() => preload(item.to)}
+      aria-current={active ? "page" : undefined}
+      className={
+        "group relative flex h-9 items-center gap-3 rounded-md text-ui transition-colors " +
+        (shut ? "justify-center " : "px-3 ") +
+        (active
+          ? "bg-brand-muted font-medium text-text-primary"
           : "text-text-secondary hover:bg-bg-panel-hover hover:text-text-primary")
       }
     >
-      {/* The active marker is a 1px edge rather than a filled block, matching
-          how selection is drawn everywhere else in this interface. */}
-      {({ isActive }: { isActive: boolean }) => (
-        <>
-          <span
-            className={
-              "-ml-2 h-4 w-px shrink-0 " +
-              (isActive ? "bg-brand" : "bg-transparent")
-            }
-          />
-          <item.icon size={13} className="shrink-0" />
-          <span className="min-w-0 flex-1 truncate">{item.label}</span>
-          {item.badge === "alerts" && unread > 0 && (
-            <span className="shrink-0 rounded-sm bg-brand-muted px-1 py-px font-mono text-micro text-brand">
-              {unread > 99 ? "99+" : unread}
-            </span>
-          )}
-        </>
-      )}
+      <item.icon
+        size={17}
+        strokeWidth={active ? 2.1 : 1.8}
+        className={"shrink-0 " + (active ? "text-brand" : "text-text-muted group-hover:text-text-secondary")}
+      />
+      {!shut && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+      {count > 0 &&
+        (shut ? (
+          <span className="absolute right-2.5 top-2 h-2 w-2 rounded-full bg-brand ring-2 ring-bg-panel" />
+        ) : (
+          <span className="shrink-0 rounded-full bg-brand px-1.5 text-micro font-semibold leading-[18px] text-brand-ink">
+            {count > 99 ? "99+" : count}
+          </span>
+        ))}
     </NavLink>
   );
 }

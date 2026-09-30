@@ -1,13 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
+  ChevronDown,
+  Columns2,
+  Grid2x2,
   Maximize2,
   Minimize2,
   PencilLine,
   Plus,
   RefreshCw,
-  Search,
   Shapes,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
@@ -22,6 +25,7 @@ import { CHART_KINDS, DEFAULT_STUDIES, KLineChart, TOOLS, type ChartKind, type S
 import { BarAge } from "../BarAge";
 import { Divider } from "../ui/Divider";
 import { Tabs } from "../ui/Tabs";
+import { Segmented } from "../ui/controls";
 
 /**
  * Ranges, and how much history each one needs.
@@ -205,38 +209,26 @@ export function ChartsPage({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
-      <div className="flex h-11 shrink-0 items-center gap-4 border-b border-border-subtle px-4">
-        <span className="font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
-          layout
-        </span>
-        <div className="flex border border-border-subtle">
-          {([1, 2, 4] as const).map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setLayout(n)}
-              title={n === 1 ? "One chart" : `${n} charts`}
-              className={
-                "h-6 w-8 border-r border-border-subtle font-mono text-meta last:border-r-0 transition-colors " +
-                (layout === n ? "bg-brand-muted text-brand" : "text-text-muted hover:text-text-primary")
-              }
-            >
-              {n}
-            </button>
-          ))}
-        </div>
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border-subtle px-4">
+        <Segmented
+          label="Layout"
+          size="sm"
+          value={layout}
+          onChange={setLayout}
+          options={[
+            { value: 1, label: <Square size={13} />, title: "One chart" },
+            { value: 2, label: <Columns2 size={13} />, title: "Two charts side by side" },
+            { value: 4, label: <Grid2x2 size={13} />, title: "Four charts" },
+          ]}
+        />
         {layout > 1 && (
-          <span className="font-mono text-meta text-text-muted">
-            the watchlist replaces the outlined chart
+          <span className="text-meta text-text-muted max-md:hidden">
+            Picking from the watchlist changes the outlined chart.
           </span>
         )}
-        <button
-          type="button"
-          onClick={() => setAnalysisShut((v) => !v)}
-          className="ml-auto flex items-center gap-1.5 font-mono text-meta text-text-muted transition-colors hover:text-brand"
-        >
-          {analysisShut ? <Maximize2 size={12} /> : <Minimize2 size={12} />}
-          {analysisShut ? "show analysis" : "hide analysis"}
+        <button type="button" onClick={() => setAnalysisShut((v) => !v)} className="action-ghost ml-auto text-meta">
+          {analysisShut ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+          {analysisShut ? "Show patterns" : "Hide patterns"}
         </button>
       </div>
 
@@ -348,15 +340,15 @@ function ChartPane({
       {/* One toolbar row, and every control on it is an icon or a short group.
           Six spelled-out tool names used to sit here and were clipped mid-word
           the moment a pane got narrower than the full window. */}
-      <div className="flex h-10 shrink-0 items-center gap-2.5 border-b border-border-subtle px-3">
+      <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border-subtle px-3">
         <button
           type="button"
           onClick={() => setSheet(sheet === "symbol" ? null : "symbol")}
-          className="flex shrink-0 items-baseline gap-1.5 transition-colors hover:text-brand"
+          title="Change symbol"
+          className="flex h-8 shrink-0 items-center gap-2 rounded-md px-2 transition-colors hover:bg-bg-panel-hover"
         >
-          <span className="font-mono text-ui text-text-primary">{tickerOf(pane.symbol)}</span>
-          <span className="font-mono text-micro text-text-muted">{venueOf(pane.symbol)}</span>
-          <Search size={10} className="text-text-muted" />
+          <span className="text-emphasis font-semibold text-text-primary">{tickerOf(pane.symbol)}</span>
+          <ChevronDown size={14} className="text-text-muted" />
         </button>
 
         <Group>
@@ -387,11 +379,11 @@ function ChartPane({
 
         {truth != null && (
           <span className="flex shrink-0 items-baseline gap-1.5">
-            <span className="font-mono text-ui text-text-primary">{truth.toFixed(2)}</span>
+            <span className="text-emphasis font-semibold text-text-primary">{truth.toFixed(2)}</span>
             {quote?.quote && (
               <span
                 className={
-                  "font-mono text-micro " +
+                  "text-meta font-medium " +
                   (quote.quote.change_percent >= 0 ? "text-semantic-up" : "text-semantic-down")
                 }
               >
@@ -418,17 +410,7 @@ function ChartPane({
             fetchedAt={dataUpdatedAt}
             venue={venueOf(pane.symbol)}
           />
-          <button
-            type="button"
-            onClick={() => refetch()}
-            title="Fetch the latest bars now"
-            className={
-              "transition-colors " +
-              (isFetching ? "text-brand" : "text-text-muted hover:text-text-primary")
-            }
-          >
-            <RefreshCw size={12} className={isFetching ? "animate-spin" : ""} />
-          </button>
+          <IconBtn title="Fetch the latest bars" on={isFetching} onClick={() => refetch()} icon={RefreshCw} />
           <IconBtn
             title="Chart type"
             on={sheet === "studies"}
@@ -466,24 +448,22 @@ function ChartPane({
           <button
             type="button"
             onClick={() => setClearToken((n) => n + 1)}
-            className="ml-auto flex items-center gap-1 font-mono text-meta text-text-muted transition-colors hover:text-semantic-down"
+            className="action-ghost ml-auto text-meta"
           >
-            <Trash2 size={10} /> clear
+            <Trash2 size={13} /> Clear drawings
           </button>
         </Sheet>
       )}
 
       {sheet === "studies" && (
         <Sheet>
-          <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">type</span>
+          <span className="pr-1 text-meta font-medium text-text-muted">Chart</span>
           {CHART_KINDS.map((k) => (
             <Chip key={k.id} on={pane.kind === k.id} onClick={() => onChange({ kind: k.id })}>
               {k.label}
             </Chip>
           ))}
-          <span className="ml-2 font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
-            studies
-          </span>
+          <span className="pl-3 pr-1 text-meta font-medium text-text-muted">Studies</span>
           {CATALOGUE.map((c) => {
             const active = on.has(skey(c));
             return (
@@ -499,7 +479,7 @@ function ChartPane({
                 }
               >
                 {c.label}
-                {active && <X size={8} className="ml-1 inline" />}
+                {active && <X size={11} className="ml-1 inline" />}
               </Chip>
             );
           })}
@@ -508,7 +488,7 @@ function ChartPane({
 
       <div className="min-h-0 flex-1">
         {isLoading && !data ? (
-          <p className="px-3 py-6 font-mono text-meta text-text-muted">loading price history…</p>
+          <div className="skeleton m-4 h-[calc(100%-2rem)]" aria-label="Loading price history" />
         ) : (
           <KLineChart
             candles={candles}
@@ -702,7 +682,7 @@ function SymbolPicker({
 }
 
 function Group({ children }: { children: React.ReactNode }) {
-  return <div className="flex shrink-0 border border-border-subtle">{children}</div>;
+  return <div className="flex shrink-0 rounded-md bg-bg-base p-0.5 ring-1 ring-border-subtle">{children}</div>;
 }
 
 function Seg({
@@ -722,8 +702,8 @@ function Seg({
       type="button"
       onClick={onClick}
       className={
-        "h-6 border-r border-border-subtle px-2 font-mono text-meta last:border-r-0 transition-colors " +
-        (on ? "bg-brand-muted text-brand" : "text-text-muted hover:text-text-primary")
+        "h-6 rounded-[5px] px-2 text-meta font-medium transition-colors " +
+        (on ? "bg-bg-panel text-text-primary shadow-sm ring-1 ring-border-subtle" : "text-text-muted hover:text-text-primary")
       }
     >
       {children}
@@ -748,13 +728,15 @@ function IconBtn({
     <button
       type="button"
       title={title}
+      aria-label={title}
+      aria-pressed={on}
       onClick={onClick}
       className={
-        "flex items-center gap-1 font-mono text-meta transition-colors " +
-        (on ? "text-brand" : "text-text-muted hover:text-text-primary")
+        "flex h-8 min-w-8 items-center justify-center gap-1 rounded-md px-1.5 text-meta font-medium transition-colors " +
+        (on ? "bg-brand-muted text-brand" : "text-text-muted hover:bg-bg-panel-hover hover:text-text-primary")
       }
     >
-      <Icon size={12} />
+      <Icon size={15} />
       {badge != null && badge > 0 && <span>{badge}</span>}
     </button>
   );
@@ -762,7 +744,7 @@ function IconBtn({
 
 function Sheet({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-b border-border-subtle bg-bg-base px-3 py-2">
+    <div className="flex flex-wrap items-center gap-1.5 border-b border-border-subtle bg-bg-base px-4 py-2.5 [animation:fade-in_140ms_ease]">
       {children}
     </div>
   );
@@ -782,10 +764,10 @@ function Chip({
       type="button"
       onClick={onClick}
       className={
-        "border px-2 py-0.5 font-mono text-meta transition-colors " +
+        "inline-flex h-7 items-center rounded-md px-2.5 text-meta font-medium transition-colors " +
         (on
-          ? "border-brand bg-brand-muted text-brand"
-          : "border-border-subtle text-text-muted hover:text-text-primary")
+          ? "bg-brand-muted text-brand ring-1 ring-brand/40"
+          : "bg-bg-panel text-text-secondary ring-1 ring-border-subtle hover:text-text-primary")
       }
     >
       {children}
@@ -807,7 +789,7 @@ function Th({ children, className = "" }: { children: string; className?: string
   return (
     <th
       className={
-        "px-3 py-2 text-left font-mono text-micro font-medium uppercase tracking-[0.12em] text-text-muted " +
+        "px-4 py-2 text-left text-meta font-medium text-text-muted first-letter:uppercase " +
         className
       }
     >
@@ -826,7 +808,7 @@ function Blank({
   hint: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+    <div className="flex flex-col items-start gap-2 px-6 py-10">
       <Icon size={18} className="text-text-muted" />
       <p className="text-ui text-text-secondary">{title}</p>
       <p className="max-w-md text-meta leading-relaxed text-text-muted">{hint}</p>

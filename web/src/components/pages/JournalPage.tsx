@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { api, type JournalEntry } from "../../lib/api";
 import { venueOf } from "../../lib/symbol";
 import { Empty } from "../ui/Empty";
+import { PageHeader } from "../ui/controls";
 import { Panel } from "../ui/Panel";
 import { Pill } from "../ui/Pill";
 
@@ -63,12 +64,14 @@ export function JournalPage({ onSelect }: { onSelect: (symbol: string) => void }
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
-      <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border-subtle px-4">
-        <span className="font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
-          Trade Journal
-        </span>
-        <span className="ml-auto font-mono text-meta text-text-muted">{trades.length} closed trades</span>
-      </div>
+      <PageHeader
+        title="Journal"
+        subtitle={
+          trades.length === 0
+            ? "Closed trades, with whatever the event archive can attribute to each."
+            : `${trades.length} closed ${trades.length === 1 ? "trade" : "trades"}, each with the events that surrounded it.`
+        }
+      />
 
       {trades.length === 0 && !isLoading ? (
         <Empty
@@ -80,7 +83,7 @@ export function JournalPage({ onSelect }: { onSelect: (symbol: string) => void }
         <>
           <div className="grid grid-cols-2 divide-x divide-y divide-border-subtle border-b border-border-subtle sm:grid-cols-4 sm:divide-y-0">
             <div className="bg-bg-panel px-4 py-4">
-              <p className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+              <p className="font-mono text-micro text-text-muted">
                 Total realized
               </p>
               {stats.pnlByCurrency.size === 0 ? (
@@ -202,7 +205,7 @@ function Metric({
 }) {
   return (
     <div className="bg-bg-panel px-4 py-4">
-      <p className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">{label}</p>
+      <p className="font-mono text-micro text-text-muted">{label}</p>
       <p
         className={
           "mt-1 font-mono text-hero leading-none tabular-nums " +
@@ -228,7 +231,7 @@ function BucketMetric({
   const winRate = bucket.n > 0 ? (bucket.wins / bucket.n) * 100 : null;
   return (
     <div className="bg-bg-panel px-4 py-4">
-      <p className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">{label}</p>
+      <p className="font-mono text-micro text-text-muted">{label}</p>
       <p className="mt-1 font-mono text-hero leading-none tabular-nums text-text-primary">
         {winRate == null ? "—" : `${winRate.toFixed(0)}%`}
       </p>

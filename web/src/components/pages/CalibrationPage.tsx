@@ -5,6 +5,7 @@ import { formatDateTime } from "../../lib/format";
 import { Empty } from "../ui/Empty";
 import { Panel } from "../ui/Panel";
 import { Pill } from "../ui/Pill";
+import { PageHeader } from "../ui/controls";
 
 /**
  * Whether the model's confidence means anything.
@@ -30,6 +31,11 @@ export function CalibrationPage() {
   const skill = skillScore(cal);
 
   return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <PageHeader
+      title="AI track record"
+      subtitle="Every AI outlook is scored against what actually happened, so you can see how far to trust it."
+    />
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="grid grid-cols-1 divide-x divide-y divide-border-subtle border-b border-border-subtle md:grid-cols-3 md:divide-y-0">
         <Metric
@@ -81,7 +87,7 @@ export function CalibrationPage() {
                 {["Date", "Symbol", "Prediction", "Horizon", "Realised", "Result"].map((h) => (
                   <th
                     key={h}
-                    className="px-3.5 py-2 font-mono text-micro font-medium uppercase tracking-[0.12em] text-text-muted"
+                    className="px-3.5 py-2 font-mono text-micro font-medium text-text-muted"
                   >
                     {h}
                   </th>
@@ -96,6 +102,7 @@ export function CalibrationPage() {
           </table>
         )}
       </Panel>
+    </div>
     </div>
   );
 }
@@ -127,10 +134,10 @@ function ReliabilityCurve({ cal }: { cal: Calibration }) {
             measurement. */}
         <line
           x1={x(0)} y1={y(0)} x2={x(1)} y2={y(1)}
-          stroke="#333333" strokeWidth={1} strokeDasharray="3 3"
+          className="stroke-border-focus" strokeWidth={1} strokeDasharray="3 3"
         />
-        <line x1={x(0)} y1={y(0)} x2={x(1)} y2={y(0)} stroke="#222222" strokeWidth={1} />
-        <line x1={x(0)} y1={y(0)} x2={x(0)} y2={y(1)} stroke="#222222" strokeWidth={1} />
+        <line x1={x(0)} y1={y(0)} x2={x(1)} y2={y(0)} className="stroke-border-subtle" strokeWidth={1} />
+        <line x1={x(0)} y1={y(0)} x2={x(0)} y2={y(1)} className="stroke-border-subtle" strokeWidth={1} />
 
         {live.map((b, i) => {
           const cx = x(b.mean_stated);
@@ -141,26 +148,26 @@ function ReliabilityCurve({ cal }: { cal: Calibration }) {
             <g key={i}>
               <line
                 x1={cx} y1={cy} x2={cx} y2={y(b.mean_stated)}
-                stroke={over ? "#F87171" : "#4ADE80"} strokeWidth={1} opacity={0.35}
+                className={over ? "stroke-semantic-down" : "stroke-semantic-up"} strokeWidth={1} opacity={0.35}
               />
-              <circle cx={cx} cy={cy} r={r} fill={over ? "#F87171" : "#4ADE80"} />
+              <circle cx={cx} cy={cy} r={r} className={over ? "fill-semantic-down" : "fill-semantic-up"} />
             </g>
           );
         })}
 
-        <text x={x(0.5)} y={size - 6} textAnchor="middle" fill="#737373" fontSize={9} fontFamily="JetBrains Mono">
+        <text x={x(0.5)} y={size - 6} textAnchor="middle" className="fill-text-muted" fontSize={10}>
           stated confidence
         </text>
         <text
-          x={10} y={y(0.5)} textAnchor="middle" fill="#737373" fontSize={9}
-          fontFamily="JetBrains Mono" transform={`rotate(-90 10 ${y(0.5)})`}
+          x={10} y={y(0.5)} textAnchor="middle" className="fill-text-muted" fontSize={10}
+          transform={`rotate(-90 10 ${y(0.5)})`}
         >
           actually happened
         </text>
       </svg>
 
       <div className="max-w-[52ch]">
-        <p className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
+        <p className="font-mono text-micro text-text-muted">
           reliability
         </p>
         <p className="mt-1.5 text-ui leading-relaxed text-text-secondary">
@@ -228,7 +235,7 @@ function Metric({
 }) {
   return (
     <div className="bg-bg-panel px-5 py-6">
-      <p className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">{label}</p>
+      <p className="font-mono text-micro text-text-muted">{label}</p>
       <p className={"mt-1.5 font-mono text-hero leading-none " + (tone?.(value) ?? "text-text-primary")}>
         {value == null || !Number.isFinite(value) ? "—" : value.toFixed(digits)}
       </p>

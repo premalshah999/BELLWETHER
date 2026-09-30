@@ -1,62 +1,54 @@
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, type UpcomingCatalyst } from "../../lib/api";
-import { Empty } from "../ui/Empty";
-import { Panel } from "../ui/Panel";
-import { Pill } from "../ui/Pill";
+import { useUrlState } from "../../lib/url";
+import { PageHeader, Segmented, SkeletonRows } from "../ui/controls";
 
-const HORIZONS = [7, 14, 30, 60] as const;
 
 /** The holding period the base rate is measured over. */
 const BASE_RATE_DAYS = 5;
 
-function dayLabel(iso: string | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+const KINDS = [
+  { value: "all", label: "Everything" },
+  { value: "earnings", label: "Earnings" },
+  { value: "dividends", label: "Dividends" },
+] as const;
 
-function awayLabel(days: number | undefined): string {
-  if (days == null) return "";
-  if (days === 0) return "today";
-  if (days === 1) return "tomorrow";
-  return `${days}d`;
-}
-
-/** Urgency is a property of proximity, so it is drawn rather than stated. */
-function tone(days: number | undefined): "brand" | "neutral" | "muted" {
-  if (days == null) return "muted";
-  if (days <= 3) return "brand";
-  if (days <= 10) return "neutral";
-  return "muted";
+function kindName(k: string | undefined): string {
+  const s = (k ?? "scheduled").replace(/_/g, " ").toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /**
- * What is scheduled, and what that kind of event has done before.
- *
- * Every other page in this app reports what already happened. This one is
- * the other half of the same discipline: the archive knows, from
- * discovered_at and nothing else, how a given event type has moved prices
- * historically -- so a date on a calendar can carry a base rate instead of
- * only a date. A calendar alone is a commodity; a calendar that says "and
- * the last N times this happened, here is what followed" is not.
- *
- * The base rate is fetched once for the page rather than per row, because it
- * belongs to the event type and not to the symbol. See internal/eventstudy.
+ * Labelled from the calendar date alone. "Days away" is computed on the
+ * server's clock and the date on the exchange's, so near midnight the two
+ * disagreed and two different dates were both headed "Today".
  */
+function dayHeading(iso: string | undefined): string {
+  if (!iso) return "Unscheduled";
+  const key = iso.slice(0, 10);
+  const local = (offsetDays: number) =>
+    new Date(Date.now() + offsetDays * 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  if (key === local(0)) return "Today";
+  if (key === local(1)) return "Tomorrow";
+  return new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
+}
+
 export function CalendarPage({ onSelect }: { onSelect: (symbol: string) => void }) {
-  const [days, setDays] = useState<number>(30);
+  const navigate = useNavigate();
+  const [horizon, setHorizon] = useUrlState<"7" | "14" | "30" | "60">("days", "14");
+  const [kind, setKind] = useUrlState<(typeof KINDS)[number]["value"]>("kind", "all");
+  const days = Number(horizon);
 
   const { data, isLoading } = useQuery({
     queryKey: ["calendar", days],
     queryFn: () => api.calendar({ days, limit: 400 }),
     staleTime: 10 * 60_000,
   });
-
-  // The historical half. Failure here is not failure of the page: a calendar
-  // without a base rate is still a calendar, so this renders as absent
-  // rather than as an error.
+  // A calendar without a base rate is still a calendar, so a failure here
+  // renders as absence rather than as an error.
   const { data: baseRate } = useQuery({
     queryKey: ["eventstudy", "EARNINGS", BASE_RATE_DAYS],
     queryFn: () => api.eventStudy("EARNINGS", BASE_RATE_DAYS),
@@ -64,178 +56,166 @@ export function CalendarPage({ onSelect }: { onSelect: (symbol: string) => void 
     retry: false,
   });
 
-  const rows = useMemo(() => data?.catalysts ?? [], [data]);
+  const rows = useMemo(() => {
+    const all = data?.catalysts ?? [];
+    if (kind === "all") return all;
+    return all.filter((c) => {
+      const k = (c.next_kind ?? "").toLowerCase();
+      return kind === "earnings" ? k.includes("earn") : k.includes("div");
+    });
+  }, [data, kind]);
 
-  const earningsCount = rows.filter((r) => r.earnings_date).length;
+  const groups = useMemo(() => {
+    const out: { key: string; label: string; items: UpcomingCatalyst[] }[] = [];
+    for (const c of rows) {
+      const key = c.next_date?.slice(0, 10) ?? "none";
+      let g = out[out.length - 1];
+      if (!g || g.key !== key) {
+        g = { key, label: dayHeading(c.next_date), items: [] };
+        out.push(g);
+      }
+      g.items.push(c);
+    }
+    return out;
+  }, [rows]);
+
+  const earnings = (data?.catalysts ?? []).filter((c) => c.earnings_date && (c.earnings_in_days ?? 999) <= days).length;
+  const open = (symbol: string) => {
+    onSelect(symbol);
+    navigate("/charts");
+  };
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
-      <div className="flex h-10 shrink-0 flex-wrap items-center gap-3 border-b border-border-subtle px-4">
-        <span className="font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
-          Catalyst Calendar
-        </span>
-
-        <div className="flex items-center gap-1">
-          {HORIZONS.map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => setDays(d)}
-              className={
-                "px-1.5 py-0.5 font-mono text-micro transition-colors " +
-                (days === d
-                  ? "bg-brand-muted text-brand"
-                  : "text-text-muted hover:text-text-primary")
-              }
-            >
-              {d}d
-            </button>
-          ))}
-        </div>
-
-
-        <span className="ml-auto font-mono text-meta text-text-muted">
-          {rows.length} scheduled
-        </span>
-      </div>
-
-      <BaseRate result={baseRate} count={earningsCount} horizon={days} />
-
-      {rows.length === 0 && !isLoading ? (
-        <Empty
-          icon={CalendarClock}
-          title="Nothing scheduled in this window."
-          hint="The calendar refreshes each weekday morning. Widen the horizon, or check back after the next refresh."
+      <PageHeader
+        title="Catalysts"
+        subtitle={
+          isLoading
+            ? "Loading the calendar…"
+            : `${rows.length} scheduled events in the next ${days} days, ${earnings} of them earnings reports.`
+        }
+      >
+        <Segmented
+          label="Horizon"
+          value={horizon}
+          onChange={setHorizon}
+          options={[
+            { value: "7", label: "7 days" },
+            { value: "14", label: "14 days" },
+            { value: "30", label: "30 days" },
+            { value: "60", label: "60 days" },
+          ]}
         />
-      ) : (
-        <Panel scroll className="min-h-0 flex-1 border-0">
-          {isLoading ? (
-            <p className="px-4 py-6 font-mono text-meta text-text-muted">loading…</p>
-          ) : (
-            <ul className="divide-y divide-border-subtle">
-              {rows.map((c) => (
-                <Row key={c.symbol} catalyst={c} onSelect={onSelect} />
-              ))}
-            </ul>
-          )}
-        </Panel>
-      )}
+        <Segmented label="Kind" value={kind} onChange={setKind} options={KINDS} />
+      </PageHeader>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <BaseRate result={baseRate} />
+        {isLoading ? (
+          <SkeletonRows count={8} height={48} />
+        ) : rows.length === 0 ? (
+          <div className="flex max-w-md flex-col items-start gap-3 px-6 py-12">
+            <CalendarClock size={22} className="text-text-muted" />
+            <p className="font-reading text-display text-text-primary">Nothing scheduled in this window.</p>
+            <p className="text-ui text-text-secondary">The calendar refreshes each weekday morning. Try a longer horizon.</p>
+          </div>
+        ) : (
+          <div className="pb-10">
+            {groups.map((g) => (
+              <section key={g.key}>
+                <h2 className="sticky top-0 z-10 flex items-baseline justify-between border-y border-border-subtle bg-bg-panel/95 px-5 py-2 backdrop-blur md:px-6">
+                  <span className="text-ui font-semibold text-text-primary">{g.label}</span>
+                  <span className="text-meta text-text-muted">{g.items.length}</span>
+                </h2>
+                <ul>
+                  {g.items.map((c) => (
+                    <Row key={c.symbol + (c.next_kind ?? "")} c={c} onOpen={open} />
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 function BaseRate({
   result,
-  count,
-  horizon,
 }: {
-  result: { samples: number; mean_abnormal_return_pct: number; hit_rate: number; warnings?: string[] } | undefined;
-  count: number;
-  horizon: number;
+  result: { samples: number; mean_abnormal_return_pct: number; hit_rate: number } | undefined;
 }) {
-  if (!result || result.samples === 0) {
-    return (
-      <div className="border-b border-border-subtle px-4 py-3">
-        <p className="text-meta leading-relaxed text-text-muted">
-          {count} earnings date{count === 1 ? "" : "s"} in the next {horizon} days. No
-          historical base rate yet — the event study needs daily bars covering past
-          events of this type, which accumulate as the scanner runs.
-        </p>
-      </div>
-    );
-  }
-
+  if (!result || result.samples === 0) return null;
   const mean = result.mean_abnormal_return_pct;
-  const thin = result.samples < 30;
-
   return (
-    <div className="border-b border-border-subtle px-4 py-3">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="font-mono text-micro uppercase tracking-[0.12em] text-text-muted">
-          Earnings, historically
-        </span>
-        <span
-          className={
-            "font-mono text-ui tabular-nums " +
-            (mean > 0 ? "text-semantic-up" : mean < 0 ? "text-semantic-down" : "text-text-primary")
-          }
-        >
-          {mean >= 0 ? "+" : ""}
-          {mean.toFixed(2)}%
-        </span>
-        <span className="font-mono text-meta text-text-muted">
-          mean abnormal return over {BASE_RATE_DAYS} days
-        </span>
-        <span className="font-mono text-meta text-text-muted">
-          · {result.hit_rate.toFixed(0)}% positive
-        </span>
-        <span className="font-mono text-meta text-text-muted">· n={result.samples}</span>
-        {thin && <Pill tone="muted">thin sample</Pill>}
-      </div>
-      <p className="mt-1 max-w-[80ch] text-meta leading-relaxed text-text-muted">
-        Measured against the benchmark from each event&rsquo;s discovery time, never its
-        publication time, so nothing here could have been known later than it was.
-        This is what the type has done before — not a forecast for the dates below.
+    <div className="border-b border-border-subtle px-5 py-4 md:px-6">
+      <p className="font-reading max-w-3xl text-[17px] leading-snug text-text-primary">
+        After past earnings reports, stocks moved{" "}
+        <span className={mean > 0 ? "text-semantic-up" : mean < 0 ? "text-semantic-down" : ""}>
+          {mean >= 0 ? "+" : "−"}
+          {Math.abs(mean).toFixed(2)}%
+        </span>{" "}
+        against the market over the next {BASE_RATE_DAYS} days, and beat it {result.hit_rate.toFixed(0)}% of the time.
+      </p>
+      <p className="mt-1 text-meta text-text-muted">
+        {result.samples.toLocaleString()} reports measured from when Bellwether learned of each one. A base rate, not a forecast.
+        {result.samples < 30 ? " Too few cases to lean on yet." : ""}
       </p>
     </div>
   );
 }
 
-function Row({
-  catalyst,
-  onSelect,
-}: {
-  catalyst: UpcomingCatalyst;
-  onSelect: (symbol: string) => void;
-}) {
-  const c = catalyst;
-  const spread =
-    c.eps_low != null && c.eps_high != null ? c.eps_high - c.eps_low : null;
-
+/**
+ * The analysts' range for EPS, drawn to scale.
+ *
+ * The width is the information: a wide spread before a print is a
+ * disagreement, and a disagreement is what makes a print worth watching.
+ */
+function EpsRange({ c }: { c: UpcomingCatalyst }) {
+  if (c.eps_average == null) return <span className="text-text-muted">No estimate</span>;
+  const lo = c.eps_low ?? c.eps_average;
+  const hi = c.eps_high ?? c.eps_average;
+  const span = hi - lo;
+  const rel = Math.abs(c.eps_average) > 0.01 ? span / Math.abs(c.eps_average) : 0;
+  // Width is the spread relative to the estimate: a range half as wide as
+  // the number itself fills the track.
+  const width = Math.max(4, Math.min(100, rel * 200));
   return (
-    <li className="px-4 py-2.5">
-      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <button
-          type="button"
-          onClick={() => onSelect(c.symbol)}
-          className="text-ui text-text-primary hover:text-brand"
-        >
-          {c.symbol}
-        </button>
+    <span className="flex items-center gap-3" title={`Analysts range ${lo.toFixed(2)} to ${hi.toFixed(2)}`}>
+      <span className="w-12 text-right font-medium text-text-primary">{c.eps_average.toFixed(2)}</span>
+      <span className="relative h-1.5 w-20 rounded-full bg-bg-base max-sm:hidden" aria-hidden="true">
+        <span
+          className={"absolute inset-y-0 rounded-full " + (rel > 0.25 ? "bg-brand" : "bg-border-focus")}
+          style={{ left: `${50 - width / 2}%`, width: `${width}%` }}
+        />
+      </span>
+      <span className="text-meta text-text-muted max-md:hidden">
+        {lo.toFixed(2)} to {hi.toFixed(2)}
+      </span>
+    </span>
+  );
+}
 
-        <Pill tone={tone(c.next_in_days)}>
-          {c.next_kind ?? "scheduled"} {dayLabel(c.next_date)}
-          {c.next_in_days != null && ` · ${awayLabel(c.next_in_days)}`}
-        </Pill>
-
-        {/* Shown only when it is not already the headline date, so a row
-            never repeats itself. */}
-        {c.earnings_date && c.next_kind !== "earnings" && (
-          <span className="font-mono text-meta text-text-muted">
-            earnings {dayLabel(c.earnings_date)}
-            {c.earnings_in_days != null && ` (${awayLabel(c.earnings_in_days)})`}
-          </span>
-        )}
-
-        {c.eps_average != null && (
-          <span className="font-mono text-meta text-text-muted">
-            est. EPS {c.eps_average.toFixed(2)}
-            {/* The width of the analyst range is the information: a wide
-                spread before a print is a disagreement, and a disagreement
-                is what makes the print worth watching. */}
-            {spread != null && spread > 0 && (
-              <span className="text-text-muted">
-                {" "}
-                ({c.eps_low?.toFixed(2)}–{c.eps_high?.toFixed(2)})
-              </span>
-            )}
-          </span>
-        )}
-
-        {c.industry && (
-          <span className="ml-auto font-mono text-meta text-text-muted">{c.industry}</span>
-        )}
-      </div>
+function Row({ c, onOpen }: { c: UpcomingCatalyst; onOpen: (symbol: string) => void }) {
+  const earningsFirst = (c.next_kind ?? "").toLowerCase().includes("earn");
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onOpen(c.symbol)}
+        className="grid w-full grid-cols-[4.5rem_1fr_auto] items-center gap-4 border-b border-border-subtle px-5 py-3 text-left text-ui transition-colors hover:bg-bg-panel-hover md:grid-cols-[5rem_9rem_minmax(0,1fr)_auto_12rem] md:px-6"
+      >
+        <span className="font-semibold text-text-primary">{c.symbol}</span>
+        <span className={earningsFirst ? "font-medium text-text-primary" : "text-text-secondary"}>{kindName(c.next_kind)}</span>
+        <span className="min-w-0 truncate text-meta text-text-muted max-md:col-span-3 max-md:col-start-2 max-md:row-start-2">
+          {!earningsFirst && c.earnings_date ? `Reports earnings in ${c.earnings_in_days} days` : ""}
+        </span>
+        <span className="max-md:col-start-3 max-md:row-start-1">
+          <EpsRange c={c} />
+        </span>
+        <span className="truncate text-right text-meta text-text-muted max-md:hidden">{c.industry}</span>
+      </button>
     </li>
   );
 }

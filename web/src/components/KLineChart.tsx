@@ -13,6 +13,7 @@ import {
   type Chart,
 } from "klinecharts";
 import type { Candle, Interval } from "../lib/api";
+import { usePalette, type Palette } from "../lib/palette";
 import { timeZoneOf } from "../lib/symbol";
 
 /**
@@ -104,6 +105,16 @@ export function KLineChart({
   // What is currently drawn, as key -> pane id, so a change adds and removes
   // only what actually differs rather than tearing the chart down.
   const drawn = useRef(new Map<string, string>());
+  const fitted = useRef("");
+  const palette = usePalette();
+  const paletteRef = useRef(palette);
+  paletteRef.current = palette;
+
+  // A theme change repaints in place: rebuilding would lose the zoom, the
+  // pan and every line the reader drew.
+  useEffect(() => {
+    chartRef.current?.setStyles(chartStyles(palette));
+  }, [palette]);
 
   // The chart instance is created once and fed data on updates. Re-creating it
   // per render would discard the viewport — the zoom and pan an operator set —
@@ -134,14 +145,14 @@ export function KLineChart({
         formatDate: (_fmt, timestamp, _format, type) => {
           const d = new Date(timestamp);
           const daily = interval === "1d" || interval === "1wk";
-          const date = d.toLocaleDateString("en-GB", {
+          const date = d.toLocaleDateString("en-US", {
             timeZone,
             day: "2-digit",
             month: "short",
             ...(type === FormatDateType.XAxis ? {} : { year: "numeric" }),
           });
           if (daily) return date;
-          const time = d.toLocaleTimeString("en-GB", {
+          const time = d.toLocaleTimeString("en-US", {
             timeZone,
             hour: "2-digit",
             minute: "2-digit",
@@ -152,122 +163,7 @@ export function KLineChart({
           return type === FormatDateType.XAxis ? time : `${date} ${time}`;
         },
       },
-      styles: {
-        grid: {
-          show: true,
-          horizontal: { show: true, size: 1, color: "#222222", style: LineType.Dashed, dashedValue: [2, 3] },
-          vertical: { show: true, size: 1, color: "#222222", style: LineType.Dashed, dashedValue: [2, 3] },
-        },
-        candle: {
-          type: CandleType.CandleSolid,
-          bar: {
-            upColor: "#4ADE80",
-            downColor: "#F87171",
-            noChangeColor: "#737373",
-            upBorderColor: "#4ADE80",
-            downBorderColor: "#F87171",
-            noChangeBorderColor: "#737373",
-            upWickColor: "#4ADE80",
-            downWickColor: "#F87171",
-            noChangeWickColor: "#737373",
-          },
-          priceMark: {
-            show: true,
-            high: { show: true, color: "#737373", textSize: 10, textFamily: "JetBrains Mono" },
-            low: { show: true, color: "#737373", textSize: 10, textFamily: "JetBrains Mono" },
-            last: {
-              show: true,
-              upColor: "#4ADE80",
-              downColor: "#F87171",
-              noChangeColor: "#737373",
-              line: { show: true, style: LineType.Dashed, dashedValue: [3, 3], size: 1 },
-              text: {
-                show: true,
-                size: 10,
-                family: "JetBrains Mono",
-                color: "#0A0A0A",
-                borderRadius: 0,
-                paddingLeft: 4,
-                paddingRight: 4,
-              },
-            },
-          },
-          tooltip: {
-            showRule: TooltipShowRule.FollowCross,
-            showType: TooltipShowType.Rect,
-            text: { size: 10, family: "JetBrains Mono", color: "#F5F5F5", marginLeft: 8 },
-            rect: {
-              paddingLeft: 6,
-              paddingRight: 6,
-              borderRadius: 0,
-              borderSize: 1,
-              borderColor: "#333333",
-              color: "rgba(10,10,10,0.92)",
-            },
-          },
-        },
-        indicator: {
-          // The moving averages. Brand teal leads, then two greys: a chart
-          // where every line is a different hue reads as a legend to decode
-          // rather than a price to follow.
-          lines: [
-            { color: "#00E5FF", size: 1, style: LineType.Solid, dashedValue: [2, 2] },
-            { color: "#A3A3A3", size: 1, style: LineType.Solid, dashedValue: [2, 2] },
-            { color: "#737373", size: 1, style: LineType.Solid, dashedValue: [2, 2] },
-          ],
-          bars: [
-            {
-              style: PolygonType.Fill,
-              borderSize: 0,
-              upColor: "rgba(74,222,128,0.5)",
-              downColor: "rgba(248,113,113,0.5)",
-              noChangeColor: "rgba(115,115,115,0.5)",
-            },
-          ],
-          tooltip: {
-            showRule: TooltipShowRule.FollowCross,
-            text: { size: 10, family: "JetBrains Mono", color: "#A3A3A3" },
-          },
-        },
-        xAxis: {
-          axisLine: { show: true, color: "#222222", size: 1 },
-          tickLine: { show: true, size: 1, length: 3, color: "#222222" },
-          tickText: { show: true, color: "#737373", size: 10, family: "JetBrains Mono" },
-        },
-        yAxis: {
-          type: YAxisType.Normal,
-          position: YAxisPosition.Right,
-          axisLine: { show: true, color: "#222222", size: 1 },
-          tickLine: { show: true, size: 1, length: 3, color: "#222222" },
-          tickText: { show: true, color: "#737373", size: 10, family: "JetBrains Mono" },
-        },
-        separator: { size: 1, color: "#222222" },
-        crosshair: {
-          show: true,
-          horizontal: {
-            line: { show: true, style: LineType.Dashed, dashedValue: [3, 3], size: 1, color: "#333333" },
-            text: {
-              show: true,
-              size: 10,
-              family: "JetBrains Mono",
-              color: "#0A0A0A",
-              backgroundColor: "#00E5FF",
-              borderRadius: 0,
-            },
-          },
-          vertical: {
-            line: { show: true, style: LineType.Dashed, dashedValue: [3, 3], size: 1, color: "#333333" },
-            text: {
-              show: true,
-              size: 10,
-              family: "JetBrains Mono",
-              color: "#0A0A0A",
-              backgroundColor: "#00E5FF",
-              borderRadius: 0,
-            },
-          },
-        },
-      },
+      styles: chartStyles(paletteRef.current),
     });
     if (!chart) return;
     chartRef.current = chart;
@@ -315,26 +211,10 @@ export function KLineChart({
         {
           name: st.name,
           calcParams: st.params,
-          // The theme defines three line styles. A study asking for more
-          // periods than that would fall through to the library's own
-          // palette, which is where the stray magenta line came from.
-          styles: onMain
-            ? {
-                lines: [
-                  { color: "#00E5FF", size: 1, style: LineType.Solid, dashedValue: [2, 2], smooth: false },
-                  { color: "#A3A3A3", size: 1, style: LineType.Solid, dashedValue: [2, 2], smooth: false },
-                  { color: "#525252", size: 1, style: LineType.Solid, dashedValue: [2, 2], smooth: false },
-                ],
-              }
-            : st.name === "VOL"
-              ? { lines: [] }
-              : {
-                  lines: [
-                    { color: "#00E5FF", size: 1, style: LineType.Solid, dashedValue: [2, 2], smooth: false },
-                    { color: "#A3A3A3", size: 1, style: LineType.Solid, dashedValue: [2, 2], smooth: false },
-                    { color: "#525252", size: 1, style: LineType.Solid, dashedValue: [2, 2], smooth: false },
-                  ],
-                },
+          // Line colours come from the chart's themed styles (five of
+          // them, so a study with many periods never falls through to the
+          // library's own palette). Volume draws bars only.
+          ...(st.name === "VOL" ? { styles: { lines: [] } } : {}),
         },
         false,
         onMain ? { id: "candle_pane" } : { height: st.name === "VOL" ? 72 : 88 },
@@ -414,7 +294,117 @@ export function KLineChart({
         volume: c.v,
       })),
     );
-  }, [candles, symbol]);
+
+    // Fit the range to the pane. klinecharts spaces bars at a fixed width, so
+    // a month of daily bars filled the right third and left the rest of the
+    // chart empty. Refit only when what is being shown changes, never on the
+    // minute's refresh, so a zoom the reader chose is left alone.
+    const key = `${symbol}|${interval}|${candles.length}`;
+    if (fitted.current !== key && ref.current && candles.length > 0) {
+      fitted.current = key;
+      const usable = ref.current.clientWidth - 72;
+      const space = Math.max(1.5, Math.min(36, usable / (candles.length + 3)));
+      chart.setBarSpace(space);
+      chart.setOffsetRightDistance(space * 3);
+      chart.scrollToRealTime();
+    }
+  }, [candles, symbol, interval]);
 
   return <div ref={ref} className="h-full w-full" />;
+}
+
+/**
+ * Every visual choice on the chart, from the theme's own colours.
+ *
+ * Nothing is left to the library's defaults: inheriting even one grid line
+ * or axis label from a palette built for another background is the washed-out
+ * element that makes a chart look pasted in.
+ */
+function chartStyles(p: Palette) {
+  const text = (color: string) => ({ size: 11, family: p.font, color });
+  return {
+    grid: {
+      show: true,
+      horizontal: { show: true, size: 1, color: p.line, style: LineType.Solid, dashedValue: [2, 3] },
+      vertical: { show: false, size: 1, color: p.line, style: LineType.Solid, dashedValue: [2, 3] },
+    },
+    candle: {
+      bar: {
+        upColor: p.up,
+        downColor: p.down,
+        noChangeColor: p.ink3,
+        upBorderColor: p.up,
+        downBorderColor: p.down,
+        noChangeBorderColor: p.ink3,
+        upWickColor: p.up,
+        downWickColor: p.down,
+        noChangeWickColor: p.ink3,
+      },
+      area: {
+        lineSize: 2,
+        lineColor: p.brass,
+        value: "close",
+        backgroundColor: [
+          { offset: 0, color: p.brass + "00" },
+          { offset: 1, color: p.brass + "33" },
+        ],
+      },
+      priceMark: {
+        show: true,
+        high: { show: true, color: p.ink3, textSize: 11, textFamily: p.font },
+        low: { show: true, color: p.ink3, textSize: 11, textFamily: p.font },
+        last: {
+          show: true,
+          upColor: p.up,
+          downColor: p.down,
+          noChangeColor: p.ink3,
+          line: { show: true, style: LineType.Dashed, dashedValue: [3, 3], size: 1 },
+          text: { show: true, size: 11, family: p.font, color: "#ffffff", borderRadius: 3, paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2 },
+        },
+      },
+      tooltip: {
+        showRule: TooltipShowRule.FollowCross,
+        showType: TooltipShowType.Standard,
+        text: { ...text(p.ink2), marginLeft: 10, marginTop: 8 },
+        rect: { paddingLeft: 8, paddingRight: 8, borderRadius: 6, borderSize: 1, borderColor: p.line, color: p.raised },
+      },
+    },
+    indicator: {
+      // The averages: brass leads, then two greys. A chart where every line is
+      // its own hue reads as a legend to decode rather than a price to follow.
+      lines: [
+        { color: p.brass, size: 1.5, style: LineType.Solid, dashedValue: [2, 2] },
+        { color: p.ink2, size: 1, style: LineType.Solid, dashedValue: [2, 2] },
+        { color: p.ink3, size: 1, style: LineType.Solid, dashedValue: [2, 2] },
+        { color: p.up, size: 1, style: LineType.Solid, dashedValue: [2, 2] },
+        { color: p.down, size: 1, style: LineType.Solid, dashedValue: [2, 2] },
+      ],
+      bars: [{ style: PolygonType.Fill, borderSize: 0, upColor: p.upSoft, downColor: p.downSoft, noChangeColor: p.line }],
+      tooltip: { showRule: TooltipShowRule.FollowCross, text: text(p.ink2) },
+    },
+    xAxis: {
+      axisLine: { show: true, color: p.line, size: 1 },
+      tickLine: { show: false, size: 1, length: 3, color: p.line },
+      tickText: { show: true, ...text(p.ink3) },
+    },
+    yAxis: {
+      type: YAxisType.Normal,
+      position: YAxisPosition.Right,
+      axisLine: { show: false, color: p.line, size: 1 },
+      tickLine: { show: false, size: 1, length: 3, color: p.line },
+      tickText: { show: true, ...text(p.ink3) },
+    },
+    separator: { size: 1, color: p.line },
+    crosshair: {
+      show: true,
+      horizontal: {
+        line: { show: true, style: LineType.Dashed, dashedValue: [3, 3], size: 1, color: p.ink3 },
+        text: { show: true, size: 11, family: p.font, color: p.brassInk, backgroundColor: p.brass, borderRadius: 3, paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2 },
+      },
+      vertical: {
+        line: { show: true, style: LineType.Dashed, dashedValue: [3, 3], size: 1, color: p.ink3 },
+        text: { show: true, size: 11, family: p.font, color: p.brassInk, backgroundColor: p.brass, borderRadius: 3, paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2 },
+      },
+    },
+  };
 }

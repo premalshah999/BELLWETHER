@@ -1255,6 +1255,8 @@ export const api = {
   health: () => request<HealthResponse>("/api/health"),
 
   watchlist: () => request<{ items: WatchlistItem[] }>("/api/watchlist"),
+  /** The list without waiting on live prices: persisted bars only. */
+  watchlistCached: () => request<{ items: WatchlistItem[] }>("/api/watchlist?cached=1"),
 
   addWatchlist: (symbol: string, note = "") =>
     request<{ symbol: string }>("/api/watchlist", {

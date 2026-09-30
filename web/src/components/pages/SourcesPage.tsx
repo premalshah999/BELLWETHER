@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { api, type IngestSource, type SourceLatency } from "../../lib/api";
 import { formatAgo } from "../../lib/format";
 import { Empty } from "../ui/Empty";
+import { PageHeader, Segmented, SkeletonRows } from "../ui/controls";
+import { ShieldCheck } from "lucide-react";
 
 /**
  * Every feed, and whether it is still delivering.
@@ -51,35 +53,33 @@ export function SourcesPage() {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
-      <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border-subtle px-4">
-        <span className="font-mono text-micro uppercase tracking-[0.14em] text-text-muted">
-          Sources
-        </span>
-        <div className="flex border border-border-subtle">
-          <Seg on={only === "all"} onClick={() => setOnly("all")}>
-            all {sources.length}
-          </Seg>
-          <Seg on={only === "failing"} onClick={() => setOnly("failing")}>
-            failing {failing}
-          </Seg>
-          <Seg on={only === "watchlist"} onClick={() => setOnly("watchlist")}>
-            per-instrument
-          </Seg>
-          <Seg on={only === "latency"} onClick={() => setOnly("latency")}>
-            <Zap size={11} className="inline -mt-px" /> first-to-report
-          </Seg>
-        </div>
-        <span className="ml-auto font-mono text-meta text-text-muted">
-          {only === "latency"
-            ? "trailing 30 days"
-            : `${items.toLocaleString()} items collected`}
-        </span>
-      </div>
+      <PageHeader
+        title="Data sources"
+        subtitle={
+          only === "latency"
+            ? "Which sources break stories first, over the last 30 days."
+            : failing > 0
+              ? `${sources.length} sources, ${failing} failing right now. ${items.toLocaleString()} items collected so far.`
+              : `All ${sources.length} sources are delivering. ${items.toLocaleString()} items collected so far.`
+        }
+      >
+        <Segmented
+          label="Show"
+          value={only}
+          onChange={setOnly}
+          options={[
+            { value: "all", label: `All ${sources.length || ""}` },
+            { value: "failing", label: `Failing ${failing}` },
+            { value: "watchlist", label: "Per company" },
+            { value: "latency", label: "First to report" },
+          ]}
+        />
+      </PageHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {only === "latency" ? (
           latencyLoading ? (
-            <p className="px-4 py-6 font-mono text-meta text-text-muted">loading…</p>
+            <SkeletonRows count={10} height={40} />
           ) : latency.length === 0 ? (
             <Empty
               icon={Zap}
@@ -106,7 +106,7 @@ export function SourcesPage() {
             </table>
           )
         ) : isLoading ? (
-          <p className="px-4 py-6 font-mono text-meta text-text-muted">loading…</p>
+          <SkeletonRows count={10} height={40} />
         ) : shown.length === 0 ? (
           <Empty
             icon={Rss}
@@ -140,7 +140,7 @@ export function SourcesPage() {
 
 function LatencyRow({ rank, s }: { rank: number; s: SourceLatency }) {
   return (
-    <tr className="hover:bg-bg-panel-hover">
+    <tr className="transition-colors hover:bg-bg-panel-hover">
       <td className="px-3 py-2 font-mono text-meta text-text-muted">{rank}</td>
       <td className="px-3 py-2 text-ui text-text-primary">{s.name}</td>
       <td className="px-3 py-2 text-right font-mono text-ui text-text-secondary">
@@ -173,24 +173,20 @@ function humanLead(seconds: number) {
 
 function Row({ s }: { s: IngestSource }) {
   return (
-    <tr className="hover:bg-bg-panel-hover">
+    <tr className="transition-colors hover:bg-bg-panel-hover">
       <td className="px-3 py-2">
         <span className="flex items-center gap-2">
           <span
-            className={"h-1.5 w-1.5 shrink-0 " + (s.healthy ? "bg-semantic-up" : "bg-semantic-down")}
+            className={"h-2 w-2 shrink-0 rounded-full " + (s.healthy ? "bg-semantic-up" : "bg-semantic-down")}
+            aria-label={s.healthy ? "Working" : "Failing"}
           />
-          <span className="truncate text-ui text-text-primary">{s.name}</span>
+          <span className="truncate text-ui font-medium text-text-primary">{s.name}</span>
           {s.official && (
-            <span
-              className="shrink-0 font-mono text-micro text-text-muted"
-              title="An exchange or regulator: ground truth when it disagrees with a newspaper."
-            >
-              official
-            </span>
+            <ShieldCheck size={14} className="shrink-0 text-brand" aria-label="Official source" />
           )}
         </span>
       </td>
-      <td className="px-3 py-2 font-mono text-meta text-text-muted">{s.category}</td>
+      <td className="px-3 py-2 font-mono text-meta text-text-muted first-letter:uppercase">{s.category}</td>
       <td className="px-3 py-2 font-mono text-meta text-text-muted">
         {humanEvery(s.refresh_ms)}
       </td>
@@ -205,7 +201,7 @@ function Row({ s }: { s: IngestSource }) {
       </td>
       <td className="px-3 py-2 text-meta">
         {s.healthy ? (
-          <span className="text-text-muted">ok</span>
+          <span className="text-text-muted">Working</span>
         ) : (
           // Verbatim, not summarised: "rate-limited" and "certificate
           // expired" need different responses and a shared word for both
@@ -231,28 +227,6 @@ function humanEvery(ms: number) {
   return `${Math.round(m / 60)}h`;
 }
 
-function Seg({
-  on,
-  onClick,
-  children,
-}: {
-  on: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        "border-r border-border-subtle px-2 py-0.5 font-mono text-meta last:border-r-0 transition-colors " +
-        (on ? "bg-brand-muted text-brand" : "text-text-muted hover:text-text-primary")
-      }
-    >
-      {children}
-    </button>
-  );
-}
 
 function Th({
   children,
@@ -266,7 +240,7 @@ function Th({
   return (
     <th
       className={
-        "px-3 py-2 font-mono text-micro font-medium uppercase tracking-[0.12em] text-text-muted " +
+        "px-3 py-2 font-mono text-meta font-medium first-letter:uppercase text-text-muted " +
         (right ? "text-right " : "text-left ") +
         className
       }
