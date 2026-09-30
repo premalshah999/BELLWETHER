@@ -1,19 +1,20 @@
-# Ordinary English words that must never, on their own, identify a company.
+# Ordinary words that must never, on their own, identify a company.
 #
-# Roughly a thousand NSE names begin with a word distinctive enough to stand in
-# for the company — "Suzlon", "Havells", "Polycab". Seventy-odd begin with a
-# word that is also everyday English: Solar Industries, Energy Development,
-# Network People, General Insurance. Indexing those as leads would make
-# "Solar Capacity Grows In Gujarat" a story about SOLARINDS.
+# A registrant whose whole name is one word resolves on that word: "Apple",
+# "Nvidia", "Chevron". Some of those words are also everyday English, a place,
+# a person or a market term: Dow, Nasdaq, Gap, Snap, Target, Citizens. Matching
+# them made every market wrap a story about Dow Inc. and every analyst note
+# from Citizens a story about an insurer of the same name.
 #
 # Case is no defence here, because headlines are frequently title-cased. So the
 # discrimination has to be lexical, and this is the lexicon. One word per line;
-# blank lines and # comments ignored.
+# blank lines and # comments ignored. A multi-word name ("Dow Inc", "Delta Air
+# Lines") and a curated alias still resolve.
 about above accel access accord acquire action active add advance advanced advantage
 agency agree aim air alliance allied alpha alter ambition amount anchor annual answer
-apex appeal apply approach approve archer area arrow ascent aspire assam asset assist
+apex appeal apply approach approve archer area arrow ascent aspire asset assist
 atlas august aurum author auto autumn avenue award aware
-balance bank banking baroda base basic batch bear begin best beta better beyond bharat
+balance bank banking base basic batch bear begin best beta better beyond
 bid big bill blue board body bond bonus book boost border bottom bound brand break
 bridge brief bright brilliant broad budget build bull business buy
 call cancel candid capital care career carry case cash cause center central century
@@ -39,12 +40,12 @@ forward foundation frame free freedom fresh friend front frontier fuel full func
 fusion future
 gain galaxy game garden gateway gather general generation generic genesis genius gentle
 genuine giant gift give glass global globe glory gold golden good govern grace grade
-graduate grand grant graphite grasp great green greenlam grid gross ground group grow
+graduate grand grant graphite grasp great green grid gross ground group grow
 growth guarantee guard guide
 habit half hand handle happy harbour hard harmony head health heart heavy help heritage
 high hold home honest honour hope horizon host hotel hour house human hundred
 ideal identity image impact imperial import impress improve include income increase
-independent index indicate indus industry infinite influence inform initial inner
+independent index indicate industry infinite influence inform initial inner
 innovative input inquire insight inspire install instant institute insurance integra
 integral intense interest internal invest invite issue item
 join joint journey judge jumbo junction junior justice
@@ -108,72 +109,62 @@ world worth worthy
 yield young
 zenith zodiac zone
 
+# Found matching in the archive: market terms, months and amounts that are
+# also a registrant's whole name.
+dow nasdaq crypto bullish sea citizens gap nov paid esg bancorp snap winners reliance
+news strategy happen seek tiny nice inter weed
+delta swan orbit force eagle tiger lotus prime vision empire advance premier summit
+compass pioneer atlas
+
+# More ordinary words that are, or begin, a registrant's name.
+affiliated alarm align alignment analog arbor armour associated assured automatic badger
+beacon benchmark black booking bread capitol cardinal carrier celsius charter church
+commerce commercial community consolidated cousins cracker crescent customers dominion
+dream dutch employers enact encore ensign equitable everest extreme federated fifth floor
+flowers fortune gaming glacier graphic grocery heartland hilltop independence installed
+integer interactive intuitive invitation knife kodiak lattice liquidity magnolia merchants
+mobility monster norwegian penguin performance permian planet preferred proto provident
+pursuit regions reinsurance republic safety science selective shake silicon simply
+solstice sonic super tandem telephone tractor travelers trinity tutor ultra under valley
+viper waste zebra
+
 # ---------------------------------------------------------------------------
 # Place names.
 #
-# Indian companies are named after where they were founded far more often than
-# Western ones are: Chennai Petroleum, Karnataka Bank, Gujarat Gas, Bombay
-# Dyeing. Every one of those first words is also a place that appears in
-# political and general news constantly, so as a lead word each is a reliable
-# source of false attributions. The full registered name still resolves.
-andhra arunachal assam bihar chhattisgarh goa gujarat haryana himachal jharkhand
-karnataka kerala madhya maharashtra manipur meghalaya mizoram nagaland odisha orissa
-punjab rajasthan sikkim tamil telangana tripura uttar uttarakhand bengal delhi
-puducherry chandigarh ladakh kashmir jammu andaman lakshadweep daman dadra
-mumbai bombay chennai madras kolkata calcutta bangalore bengaluru hyderabad pune
-ahmedabad surat jaipur lucknow kanpur nagpur indore bhopal patna vadodara ludhiana
-agra nashik faridabad meerut rajkot varanasi srinagar aurangabad dhanbad amritsar
-allahabad ranchi coimbatore jabalpur gwalior vijayawada jodhpur madurai raipur kota
-guwahati solapur hubli mysore mysuru bareilly aligarh moradabad gurgaon gurugram
-noida thane kochi cochin trivandrum thiruvananthapuram bhubaneswar cuttack salem
-warangal guntur saharanpur gorakhpur bikaner amravati jamshedpur bhilai firozabad
-kollam nellore jhansi sangli belgaum tirunelveli malegaon udaipur kozhikode kurnool
-bokaro bellary patiala agartala bhagalpur muzaffarpur latur dhule rohtak korba
-bhilwara berhampur ahmednagar mathura kadapa anantapur bilaspur sambalpur satara
-bijapur rampur chandrapur junagadh thrissur alwar kakinada nizamabad parbhani tumkur
-khammam panipat darbhanga aizawl dewas karnal bathinda jalna eluru purnia satna
-sonipat farrukhabad sagar rourkela durg imphal ratlam hapur karimnagar etawah
-bharatpur begusarai gandhidham thanjavur bulandshahr sambhal singrauli nadiad
-secunderabad yamunanagar pallavaram bidar munger panchkula burhanpur kharagpur
-dindigul gandhinagar hospet malda ongole deoghar chapra haldia khandwa nandyal
-morena amroha anand bhind bhiwani ambala morbi fatehpur raebareli chittoor bhusawal
-orai bahraich vellore mehsana raiganj sirsa danapur guna jaunpur panvel shivpuri
-surendranagar unnao alappuzha kottayam shimla adoni udupi katni mahbubnagar saharsa
-dibrugarh jorhat hazaribagh hindupur nagaon sasaram hajipur bhimavaram madanapalle
-siwan bettiah guntakal srikakulam motihari gudivada phagwara suryapet karaikudi
-kishanganj jamalpur ballia kavali amaravati buxar jehanabad gangtok kohima itanagar
-shillong panaji silvassa mangalore mangaluru vizag visakhapatnam tirupati tiruchirappalli
-india indian bharat asia asian europe european america american china chinese japan
-japanese korea russia africa gulf arabia emirates dubai london newyork singapore
+# A place appears in political and general news constantly, so a registrant
+# named after one cannot be identified by that word alone.
+alabama alaska arizona arkansas california carolina colorado connecticut dakota delaware
+florida georgia hawaii hawaiian idaho illinois indiana iowa kansas kentucky louisiana
+maine maryland massachusetts michigan minnesota mississippi missouri montana nebraska
+nevada hampshire jersey mexico ohio oklahoma oregon pennsylvania rhode tennessee texas
+utah vermont virginia washington wisconsin wyoming
+albany alexandria atlanta austin baltimore boise boston bristol brooklyn buffalo
+burlington camden charlotte chesapeake chicago cincinnati cleveland columbia columbus
+dallas denver detroit essex fulton gulfport hamilton hancock hanover hartford houston
+indianapolis jackson jacksonville lakeland lincoln madison manhattan memphis miami
+middlesex milwaukee minneapolis nashville newark norfolk oakland omaha orlando
+philadelphia phoenix pittsburgh portland raleigh richmond sacramento seattle shenandoah
+tampa tucson tulsa victoria
+america american atlantic pacific asia asian europe european africa african china
+chinese japan japanese korea korean india indian russia russian canada canadian britain
+british germany german france french gulf arabia emirates dubai london singapore cathay
+gibraltar
 
 # ---------------------------------------------------------------------------
-# Given names.
+# Given names and surnames.
 #
-# Founder-named companies are common here — Lokesh Machines, Kirloskar, Bajaj —
-# and the given name half of that pattern collides with every politician,
-# executive and sportsperson in the news. The surname half is usually
-# distinctive enough to survive, so only forenames are listed.
-lokesh ramesh suresh mahesh rajesh ganesh dinesh naresh mukesh hitesh nilesh
-jignesh bhavesh paresh ritesh mitesh amit anil sunil vinod ashok arun rakesh
-manoj sanjay vijay ajay kishore krishna rama shiva shiv lakshmi kamal vishal
-deepak prakash rajendra narendra surendra devendra jitendra mahendra virendra
-yogesh umesh nitesh gaurav vikas vivek rahul rohit sachin sameer pankaj alok
-ashish atul chetan harish jayesh kunal manish nikhil pramod praveen rajiv
-sandeep sudhir tarun varun aditya arjun karan nitin rohan sagar siddharth
-abhishek akash ankit ankur bharat chirag darshan gagan hemant imran jatin
-kartik lalit mohit naveen nishant piyush pooja priya rajat ravi sahil shyam
-sourav tushar uday vikram vinay vishnu yash arvind bhupendra chandra devi
-gopal govind hari jagdish jayant keshav madan mohan mukund murali narayan
-nitya padma parth raghav rajan raman sanjeev shankar sharad subhash sushil
-swami tara tejas venkat vidya vinit yogendra
+# A founder's name collides with every politician, executive and central
+# banker in the news.
+allison arthur avery baker carpenter charles churchill cooper douglas fuller gates
+harley henry horace jones kimberly knight lamar martin matthews morgan owens parker
+patrick patterson philip piper powell ralph raymond reynolds robert sally schneider
+simon simpson smith stanley steven stewart tyler walker wells armstrong
 
 # ---------------------------------------------------------------------------
 # Sector and commodity nouns.
 #
-# These name what a company does rather than which company it is. As a lead
-# word each one claims an entire industry's coverage: "coffee" would hand
-# every story about the crop to Coffee Day, and "campus" every story about a
-# building site to Campus Activewear.
+# These name what a company does rather than which company it is: "copper"
+# would hand every story about the metal to one miner.
 campus coffee cocoa sugar cotton jute silk wool cement clinker paper pulp glass
 rubber leather textile textiles spinning weaving knitting dyeing chemicals
 chemical petrochemical polymer plastics packaging pharma pharmaceutical

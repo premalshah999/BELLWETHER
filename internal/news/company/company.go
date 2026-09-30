@@ -136,7 +136,6 @@ const (
 	MethodLegalName Method = "legal_name"
 	MethodAlias     Method = "alias"
 	MethodTicker    Method = "ticker"
-	MethodLeadWord  Method = "lead_word"       // distinctive first word of a name
 	MethodExplicit  Method = "explicit_ticker" // "NASDAQ: NVDA"
 )
 
@@ -157,7 +156,6 @@ const (
 	confAlias     = 0.95 // a curated brand name appeared
 	confSoleName  = 0.92 // a one-word registered name ("Apple") appeared whole
 	confTicker    = 0.90 // a bare uppercase symbol appeared
-	confSingle    = 0.80 // one word of a longer name appeared
 )
 
 // maxPhraseTokens caps how long an n-gram may be when scanning text.
@@ -166,21 +164,17 @@ const maxPhraseTokens = 8
 // Master is an indexed, read-only view of the listed universe.
 type Master struct {
 	bySymbol map[string]Company
-	// byPhrase maps a normalized name, alias or lead word to the symbols
-	// claiming it; more than one claimant is ambiguous and matches nothing.
+	// byPhrase maps a normalized name or alias to the symbols claiming it;
+	// more than one claimant is ambiguous and matches nothing.
 	byPhrase    map[string][]string
 	aliasPhrase map[string]bool // contributed by the curated alias table
-	leadPhrase  map[string]bool // a distinctive first word: a lead, not an identification
-	solePhrase  map[string]bool // some company's entire normalized name
 	sector      map[string]string
 	rank        map[string]int    // position in SEC's list, roughly market value
 	byCIK       map[string]string // the primary (first-listed) share class
 }
 
-// Load builds the resolver over every SEC registrant. Lead words and sectors
-// come from the scan universe only: lead words are the loosest evidence the
-// resolver accepts, and ten thousand registrants would turn a great many
-// ordinary words into company leads.
+// Load builds the resolver over every SEC registrant. Sectors come from the
+// scan universe.
 func Load() (*Master, error) {
 	tickers, listings, err := LoadEmbeddedUS()
 	if err != nil {
@@ -190,8 +184,6 @@ func Load() (*Master, error) {
 		bySymbol:    make(map[string]Company, len(tickers)),
 		byPhrase:    make(map[string][]string, len(tickers)),
 		aliasPhrase: make(map[string]bool, len(brandAliases)),
-		leadPhrase:  make(map[string]bool, 1024),
-		solePhrase:  make(map[string]bool, len(tickers)),
 		sector:      make(map[string]string, len(listings)),
 		rank:        make(map[string]int, len(tickers)),
 		byCIK:       make(map[string]string, len(tickers)),
@@ -199,7 +191,6 @@ func Load() (*Master, error) {
 	for _, l := range listings {
 		m.sector[l.Symbol] = l.Sector
 	}
-	var leadEligible []Company
 	for i, t := range tickers {
 		c := Company{Symbol: t.Symbol, Name: t.Name, CIK: t.CIK}
 		if _, dup := m.bySymbol[c.Symbol]; dup || c.Name == "" {
@@ -211,10 +202,6 @@ func Load() (*Master, error) {
 		}
 		if p := Normalize(c.Name); p != "" && !m.sameIssuer(m.byPhrase[p], c) {
 			m.byPhrase[p] = append(m.byPhrase[p], c.Symbol)
-			m.solePhrase[p] = true
-		}
-		if _, listed := m.sector[c.Symbol]; listed {
-			leadEligible = append(leadEligible, c)
 		}
 	}
 	// Aliases go in after legal names, so an alias can point at a company
@@ -229,7 +216,6 @@ func Load() (*Master, error) {
 		}
 		m.byPhrase[key] = appendUnique(m.byPhrase[key], sym)
 	}
-	m.indexLeadWords(leadEligible)
 	if len(m.bySymbol) == 0 {
 		return nil, fmt.Errorf("company: the listed universe is empty")
 	}
@@ -246,29 +232,6 @@ func (m *Master) sameIssuer(claimants []string, c Company) bool {
 		}
 	}
 	return false
-}
-
-// indexLeadWords registers the distinctive first word of each eligible name,
-// so "Costco" finds Costco Wholesale. A word shared by two issuers indexes
-// nothing, so ambiguity eliminates itself; short and common words are skipped.
-func (m *Master) indexLeadWords(eligible []Company) {
-	owners := make(map[string][]string, len(eligible))
-	for _, c := range eligible {
-		tokens := strings.Fields(Normalize(c.Name))
-		if len(tokens) < 2 || m.sameIssuer(owners[tokens[0]], c) {
-			continue // a one-word name is indexed in full already
-		}
-		owners[tokens[0]] = appendUnique(owners[tokens[0]], c.Symbol)
-	}
-	for word, syms := range owners {
-		if len(syms) != 1 || len(word) < 5 || commonWords[word] || nameBlocklist[word] || tickerBlocklist[strings.ToUpper(word)] {
-			continue
-		}
-		if _, taken := m.byPhrase[word]; !taken {
-			m.byPhrase[word] = syms
-			m.leadPhrase[word] = true
-		}
-	}
 }
 
 func appendUnique(list []string, v string) []string {

@@ -13,13 +13,16 @@ import (
 // Nasdaq Inc. is itself listed (NDAQ).
 var exchangeTicker = regexp.MustCompile(`(?i)\b(?:NASDAQ|NYSE|NYSEAMERICAN|NYSEARCA|AMEX|OTC|CBOE)\s*[:\-]\s*([A-Z0-9.\-]{1,6})\b`)
 
+// legalForm words after a one-word name say it is the company: "Dow Inc".
+var legalForm = map[string]bool{"inc": true, "corp": true, "corporation": true, "incorporated": true, "ltd": true, "plc": true}
+
 // exchangeWords are never company mentions as bare words in market copy.
 var exchangeWords = map[string]bool{"NASDAQ": true, "NYSE": true, "AMEX": true, "CBOE": true, "OTC": true}
 
 // Resolve finds the companies named in text.
 //
 // The ladder runs most-certain first -- exchange-qualified ticker, registered
-// name, curated alias, lead word, bare uppercase symbol -- and a company found
+// name, curated alias, bare uppercase symbol -- and a company found
 // by a stronger rule is never downgraded by a weaker one. Name matching is
 // longest-first and non-overlapping. A phrase claimed by two issuers matches
 // nothing: there is no evidence in the phrase for choosing.
@@ -49,22 +52,21 @@ func (m *Master) Resolve(text string) []Match {
 	}
 	text = blankSpans(text, exchangeTicker.FindAllStringIndex(text, -1))
 
-	// Registered names, aliases and lead words.
+	// Registered names and aliases.
 	tokens := strings.Fields(Normalize(text))
 	for i := 0; i < len(tokens); i++ {
 		for n := min(maxPhraseTokens, len(tokens)-i); n >= 1; n-- {
 			phrase := strings.Join(tokens[i:i+n], " ")
 			// One word is the weakest evidence, and normalizing has discarded
 			// the case that separates a company from a common noun. So: no
-			// ordinary word ("Delta") or word-like ticker ("ALL") unless a
-			// person curated it as an alias, it must appear capitalized
-			// ("Apple unveils", not "an apple"), and a lead word must start
-			// a name rather than sit inside another one.
+			// ordinary word ("Delta", "Dow") or word-like ticker ("ALL")
+			// unless a person curated it as an alias or the text gives its
+			// legal form ("Dow Inc"), and it must appear capitalized ("Apple
+			// unveils", not "an apple").
 			if n == 1 {
-				if nameBlocklist[phrase] || tickerBlocklist[strings.ToUpper(phrase)] ||
-					(!m.aliasPhrase[phrase] && commonWords[phrase]) ||
-					!appearsCapitalized(text, phrase) ||
-					(m.leadPhrase[phrase] && !startsProperNoun(text, phrase)) {
+				named := m.aliasPhrase[phrase] || (i+1 < len(tokens) && legalForm[tokens[i+1]])
+				if tickerBlocklist[strings.ToUpper(phrase)] || (commonWords[phrase] && !named) ||
+					!appearsCapitalized(text, phrase) {
 					continue
 				}
 			}
@@ -76,12 +78,8 @@ func (m *Master) Resolve(text string) []Match {
 			switch {
 			case m.aliasPhrase[phrase]:
 				conf, method = confAlias, MethodAlias
-			case m.leadPhrase[phrase]:
-				conf, method = confSingle, MethodLeadWord
-			case n == 1 && m.solePhrase[phrase]:
-				conf = confSoleName
 			case n == 1:
-				conf = confSingle
+				conf = confSoleName
 			}
 			offer(claimants[0], conf, method, phrase)
 			i += n - 1 // consume the span
@@ -154,47 +152,19 @@ func isShouting(text string) bool {
 	return letters >= 12 && upper*3 >= letters*2
 }
 
-// occurrences calls fn for every whole-word, capitalized occurrence of word
-// in raw text, stopping when fn returns true.
-func occurrences(raw, word string, fn func(i int) bool) bool {
+// appearsCapitalized reports whether word occurs capitalized, as a word. An
+// amount is not a name: "$3M" is three million dollars, not 3M.
+func appearsCapitalized(raw, word string) bool {
 	for i := 0; word != "" && i+len(word) <= len(raw); i++ {
 		end := i + len(word)
-		if !strings.EqualFold(raw[i:end], word) || (raw[i] >= 'a' && raw[i] <= 'z') ||
-			(i > 0 && isWordByte(raw[i-1])) || (end < len(raw) && isWordByte(raw[end])) {
-			continue
-		}
-		if fn(i) {
+		if strings.EqualFold(raw[i:end], word) && !(raw[i] >= 'a' && raw[i] <= 'z') &&
+			(i == 0 || !(isWordByte(raw[i-1]) || raw[i-1] == '$')) && (end == len(raw) || !isWordByte(raw[end])) {
 			return true
 		}
 	}
 	return false
 }
 
-// appearsCapitalized reports whether word occurs capitalized, as a word.
-func appearsCapitalized(raw, word string) bool {
-	return occurrences(raw, word, func(int) bool { return true })
+func isWordByte(b byte) bool {
+	return b == '_' || (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
-
-// startsProperNoun reports whether word appears at the head of a capitalized
-// phrase: "Costco" in "Costco raised prices", not in "Big Costco Rival".
-// Punctuation breaks the chain, so a name after a comma still counts.
-func startsProperNoun(raw, word string) bool {
-	return occurrences(raw, word, func(i int) bool {
-		j := i
-		for j > 0 && raw[j-1] == ' ' {
-			j--
-		}
-		if j == 0 || !isLetterByte(raw[j-1]) {
-			return true
-		}
-		start := j
-		for start > 0 && isWordByte(raw[start-1]) {
-			start--
-		}
-		return !(raw[start] >= 'A' && raw[start] <= 'Z')
-	})
-}
-
-func isLetterByte(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') }
-
-func isWordByte(b byte) bool { return b == '_' || (b >= '0' && b <= '9') || isLetterByte(b) }
