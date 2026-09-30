@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/tradesys/dashboard/internal/eventstudy"
 	"github.com/tradesys/dashboard/internal/marketdata"
@@ -89,6 +91,12 @@ func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
 		days = n
 	}
 
+	key := fmt.Sprintf("%s/%d", eventType, days)
+	if res, ok := s.studies.get(key, s.deps.Now()); ok {
+		writeJSON(w, http.StatusOK, res)
+		return
+	}
+
 	ctx := r.Context()
 	pairs, err := reader.EventTypeSymbolPairs(ctx, eventType)
 	if err != nil {
@@ -130,21 +138,40 @@ func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
 	// scanner's daily pass -- see internal/scanner's Result.Series). A
 	// symbol with no cached history is a real, expected gap, reported by
 	// eventstudy.Run's own coverage warning rather than papered over here.
+	//
+	// Read in parallel, bounded: one at a time, an event type spanning a few
+	// hundred companies took seconds of back-to-back round trips.
 	candlesBySymbol := map[string][]marketdata.Candle{}
+	var (
+		mu   sync.Mutex
+		wg   sync.WaitGroup
+		sem  = make(chan struct{}, 8)
+		seen = map[string]bool{}
+	)
 	for _, p := range pairs {
-		if _, done := candlesBySymbol[p.Symbol]; done {
+		if seen[p.Symbol] {
 			continue
 		}
+		seen[p.Symbol] = true
 		sym, err := marketdata.ParseSymbol(p.Symbol)
 		if err != nil {
 			continue
 		}
-		series, err := reader.LoadCandles(ctx, sym, marketdata.Interval1d, eventStudyCandleLen)
-		if err != nil || len(series.Candles) == 0 {
-			continue
-		}
-		candlesBySymbol[p.Symbol] = series.Candles
+		wg.Add(1)
+		go func(key string, sym marketdata.Symbol) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			series, err := reader.LoadCandles(ctx, sym, marketdata.Interval1d, eventStudyCandleLen)
+			if err != nil || len(series.Candles) == 0 {
+				return
+			}
+			mu.Lock()
+			candlesBySymbol[key] = series.Candles
+			mu.Unlock()
+		}(p.Symbol, sym)
 	}
+	wg.Wait()
 
 	var samples []eventstudy.Sample
 	for _, p := range pairs {
@@ -169,7 +196,46 @@ func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res := eventstudy.Run(eventType, benchmarkLabel(needUS, needNSE), days, len(pairs), samples)
+	s.studies.put(key, res, s.deps.Now())
 	writeJSON(w, http.StatusOK, res)
+}
+
+// studyTTL is how long a computed study is served before it is recomputed.
+// Its inputs -- the events of a type and the persisted daily bars -- change
+// when the scanner writes new bars a few times a day, so a quarter of an
+// hour costs no accuracy anyone could notice, and it turns a page that asks
+// for the same study on every visit from seconds into a map lookup.
+const studyTTL = 15 * time.Minute
+
+// studyCache holds computed studies by type and holding period. The zero
+// value is ready to use.
+type studyCache struct {
+	mu sync.Mutex
+	m  map[string]studyEntry
+}
+
+type studyEntry struct {
+	at  time.Time
+	res eventstudy.Result
+}
+
+func (c *studyCache) get(key string, now time.Time) (eventstudy.Result, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.m[key]
+	if !ok || now.Sub(e.at) > studyTTL {
+		return eventstudy.Result{}, false
+	}
+	return e.res, true
+}
+
+func (c *studyCache) put(key string, res eventstudy.Result, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = map[string]studyEntry{}
+	}
+	c.m[key] = studyEntry{at: now, res: res}
 }
 
 func loadBenchmark(ctx context.Context, s *Server, symbol string) []marketdata.Candle {

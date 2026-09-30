@@ -152,6 +152,8 @@ type Server struct {
 	aiLimiter *rateLimiter
 	// sessionSecret signs session cookies.
 	sessionSecret []byte
+	// studies caches computed event studies; see studyTTL.
+	studies studyCache
 }
 
 // New builds the server and its routes.
