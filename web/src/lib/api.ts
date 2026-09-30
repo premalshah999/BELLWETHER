@@ -74,21 +74,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type Interval = "1m" | "5m" | "15m" | "1h" | "1d" | "1wk";
 
-export interface Meta {
-  app: string;
-  version: string;
-  disclaimer: string;
-  server_time: string;
-  features: {
-    ai: boolean;
-    telegram: boolean;
-    search: boolean;
-    alphavantage: boolean;
-  };
-  marketdata_providers: string[];
-  intervals: Interval[];
-}
-
 export type HealthStatus = "ok" | "degraded" | "down" | "unconfigured";
 
 export interface ProviderHealth {
@@ -1324,7 +1309,6 @@ export const api = {
 
   logout: () => request<{ authenticated: boolean }>("/api/auth/logout", { method: "POST" }),
 
-  meta: () => request<Meta>("/api/meta"),
 
   health: () => request<HealthResponse>("/api/health"),
 
