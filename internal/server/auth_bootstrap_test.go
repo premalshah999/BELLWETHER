@@ -5,28 +5,27 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
-	"time"
 
-	"github.com/tradesys/dashboard/internal/auth"
 	"github.com/tradesys/dashboard/internal/config"
-	"github.com/tradesys/dashboard/internal/storage"
+	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
-type emptyKeyStore struct{ storage.Store }
-
-func (emptyKeyStore) CountActiveKeys(context.Context) (int, error) { return 0, nil }
-func (emptyKeyStore) ProfileForKey(context.Context, string) (auth.Profile, bool, error) {
-	return auth.Profile{}, false, nil
-}
-func (emptyKeyStore) ProfileByPrefix(context.Context, string) (auth.Profile, bool, error) {
-	return auth.Profile{}, false, nil
-}
-func (emptyKeyStore) TouchKey(context.Context, int64, time.Time) error { return nil }
-
+// A deployment with no keys yet stays closed unless the operator opts in.
 func TestFreshPersistentDeploymentRequiresKey(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("set TEST_DATABASE_URL to run database-backed server tests")
+	}
+	db, drop, err := postgres.OpenScratch(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(drop)
+
 	for _, open := range []bool{false, true} {
-		s := &Server{deps: Deps{Config: &config.Config{AllowUnauthenticated: open}, Store: emptyKeyStore{}}}
+		s := &Server{deps: Deps{Config: &config.Config{AllowUnauthenticated: open}, Store: db}}
 		called := false
 		handler := s.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true; w.WriteHeader(204) }))
 		w := httptest.NewRecorder()

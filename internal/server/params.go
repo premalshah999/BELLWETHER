@@ -5,7 +5,10 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/storage"
@@ -131,3 +134,14 @@ func clampInt(v, lo, hi int) int {
 // marketdataParse and marketdataInterval are thin aliases so the algorithm
 // handlers read cleanly without importing the package under a second name.
 func marketdataParse(s string) (marketdata.Symbol, error) { return marketdata.ParseSymbol(s) }
+
+// pathID reads the {id} path parameter, answering the request with a 400
+// when it is not a positive integer.
+func pathID(w http.ResponseWriter, r *http.Request, what string) (int64, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "That is not a valid "+what+" id.")
+		return 0, false
+	}
+	return id, true
+}

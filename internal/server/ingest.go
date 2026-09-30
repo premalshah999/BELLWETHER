@@ -1,20 +1,13 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"sort"
 	"strconv"
 	"time"
 
 	"github.com/tradesys/dashboard/internal/news"
-	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
-
-// rawItemCounter is the optional part of the store this handler can use.
-type rawItemCounter interface {
-	CountRawItems(ctx context.Context) (int, error)
-}
 
 // ingestSourceView is one source as the operator sees it: its configuration
 // and its recent behaviour in a single row.
@@ -139,13 +132,8 @@ func (s *Server) handleIngestSources(w http.ResponseWriter, r *http.Request) {
 		return a.ID < b.ID
 	})
 
-	// The item count is an optional extra: the storage interface does not
-	// require it, and a store that cannot answer simply reports zero rather
-	// than failing the whole page.
-	if counter, ok := s.deps.Store.(rawItemCounter); ok {
-		if n, err := counter.CountRawItems(r.Context()); err == nil {
-			out.ItemsHeld = n
-		}
+	if n, err := s.deps.Store.CountRawItems(r.Context()); err == nil {
+		out.ItemsHeld = n
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -258,17 +246,6 @@ func (s *Server) handlePipeline(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// SourceLatencyReader is the part of storage the source-latency leaderboard
-// reads.
-type SourceLatencyReader interface {
-	SourceLatencyLeaderboard(ctx context.Context, since time.Time, minParticipation int) ([]postgres.SourceLatency, error)
-}
-
-func (s *Server) sourceLatencyReader() (SourceLatencyReader, bool) {
-	r, ok := s.deps.Store.(SourceLatencyReader)
-	return r, ok
-}
-
 // sourceLatencyView is one source's leaderboard row, with the display name
 // the registry knows it by rather than its bare id.
 type sourceLatencyView struct {
@@ -285,11 +262,6 @@ type sourceLatencyView struct {
 // actually worth the slot in the catalog", not "which feeds publish the
 // most". See postgres.SourceLatencyLeaderboard's doc for the method.
 func (s *Server) handleSourceLatency(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.sourceLatencyReader()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "The source leaderboard is not available.")
-		return
-	}
 
 	days := 30
 	if raw := r.URL.Query().Get("days"); raw != "" {
@@ -301,7 +273,7 @@ func (s *Server) handleSourceLatency(w http.ResponseWriter, r *http.Request) {
 
 	// Five is a floor, not a target: fewer appearances than that and a win
 	// rate is describing a coin flip, not a pattern.
-	board, err := reader.SourceLatencyLeaderboard(r.Context(), since, 5)
+	board, err := s.deps.Store.SourceLatencyLeaderboard(r.Context(), since, 5)
 	if err != nil {
 		s.deps.Log.Error("source latency leaderboard failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read the source leaderboard.")

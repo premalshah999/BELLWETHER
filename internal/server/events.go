@@ -1,8 +1,6 @@
 package server
 
 import (
-	"context"
-
 	"database/sql"
 	"errors"
 	"net/http"
@@ -12,48 +10,17 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/tradesys/dashboard/internal/ai"
 	"github.com/tradesys/dashboard/internal/events"
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
 	"github.com/tradesys/dashboard/internal/storage"
 )
 
-// EventReader is the part of storage the news section needs.
-type EventReader interface {
-	ListEvents(ctx context.Context, f storage.EventFilter) ([]news.Event, error)
-	GetEvent(ctx context.Context, id int64) (news.Event, error)
-	EventFacts(ctx context.Context, eventID int64) (map[string]string, error)
-	EventSectors(ctx context.Context, eventID int64) ([]string, error)
-	Stats(ctx context.Context) (storage.Stats, error)
-}
-
-func (s *Server) eventReader() (EventReader, bool) {
-	r, ok := s.deps.Store.(EventReader)
-	return r, ok
-}
-
-// SectorsReader is the part of storage the "which holdings does this touch"
-// lookup needs.
-type SectorsReader interface {
-	SectorsFor(ctx context.Context, symbols []string) (map[string]string, error)
-}
-
-func (s *Server) sectorsReader() (SectorsReader, bool) {
-	r, ok := s.deps.Store.(SectorsReader)
-	return r, ok
-}
-
 // handleSymbolSectors reports each requested symbol's industry, already
 // normalised to the same spelling an event's own Sectors carries -- so the
 // Geopolitics & Policy page can find "which of my holdings does this touch"
 // with a plain set membership check, no per-venue logic of its own.
 func (s *Server) handleSymbolSectors(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.sectorsReader()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Sector lookup is not available.")
-		return
-	}
 	raw := strings.TrimSpace(r.URL.Query().Get("symbols"))
 	if raw == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"sectors": map[string]string{}})
@@ -68,7 +35,7 @@ func (s *Server) handleSymbolSectors(w http.ResponseWriter, r *http.Request) {
 	if len(symbols) > 100 {
 		symbols = symbols[:100]
 	}
-	sectors, err := reader.SectorsFor(r.Context(), symbols)
+	sectors, err := s.deps.Store.SectorsFor(r.Context(), symbols)
 	if err != nil {
 		s.deps.Log.Error("sector lookup failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read sectors.")
@@ -101,11 +68,6 @@ type eventListResponse struct {
 
 // handleEvents serves the news and filings feed.
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.eventReader()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Event storage is not available.")
-		return
-	}
 	q := r.URL.Query()
 
 	filter := storage.EventFilter{
@@ -126,8 +88,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		filter.MinImportance = atoiDefault(v, 0)
 	}
 	// Index-only is the default for the market feed, so the parameter turns it
-	// off rather than on. A reader who wants the whole filing queue can ask
-	// for it; a reader who says nothing should not be given it.
+	// off rather than on. A s.deps.Store who wants the whole filing queue can ask
+	// for it; a s.deps.Store who says nothing should not be given it.
 	//
 	// An explicit search is the exception, and never narrowing it is the whole
 	// point. Someone typing a query is asking for matches to that query, not
@@ -143,7 +105,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	//
 	// The feed ordered by arrival, on the argument that a publisher with a
 	// skewed clock could otherwise dominate it. That argument is real but it
-	// loses to the plainer one: a reader asking for the latest news means the
+	// loses to the plainer one: a s.deps.Store asking for the latest news means the
 	// latest news, and an article published in July arriving at the top of
 	// today's feed because we happened to find it five minutes ago reads as
 	// the sort being broken. Arrival order is still available for anyone
@@ -168,7 +130,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if a := s.deps.NewsArchive; a != nil {
 		list, err = a.ListEvents(r.Context(), filter, s.now())
 	} else {
-		list, err = reader.ListEvents(r.Context(), filter)
+		list, err = s.deps.Store.ListEvents(r.Context(), filter)
 	}
 	if err != nil {
 		s.deps.Log.Error("list events failed", "err", err)
@@ -181,12 +143,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// doing that for every item scrolled past would spend the month's budget
 	// on shareholding patterns.
 	briefs := map[int64]string{}
-	if store, ok := s.briefStore(); ok && len(list) > 0 {
+	if len(list) > 0 {
 		ids := make([]int64, 0, len(list))
 		for _, e := range list {
 			ids = append(ids, e.ID)
 		}
-		if got, err := store.EventBriefs(r.Context(), ids); err == nil {
+		if got, err := s.deps.Store.EventBriefs(r.Context(), ids); err == nil {
 			briefs = got
 		} else {
 			s.deps.Log.Warn("could not read event briefs", "err", err)
@@ -207,17 +169,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 // handleEvent serves one event with all its evidence.
 func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.eventReader()
+	id, ok := pathID(w, r, "event")
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Event storage is not available.")
 		return
 	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "Event id must be a number.")
-		return
-	}
-	e, err := reader.GetEvent(r.Context(), id)
+	e, err := s.deps.Store.GetEvent(r.Context(), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "No such event.")
 		return
@@ -229,20 +185,18 @@ func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The brief, if one has been written. Attached here as well as on the
-	// list: opening a single item is exactly when a reader wants the note,
+	// list: opening a single item is exactly when a s.deps.Store wants the note,
 	// and wiring it into only one of the two routes meant the feed showed a
 	// brief that vanished when you clicked into it.
-	if store, ok := s.briefStore(); ok {
-		if brief, err := store.EventBrief(r.Context(), id); err == nil {
-			e.Brief = brief
-		}
+	if brief, err := s.deps.Store.EventBrief(r.Context(), id); err == nil {
+		e.Brief = brief
 	}
 
 	env := s.envelope(e, s.now())
-	if facts, err := reader.EventFacts(r.Context(), id); err == nil && len(facts) > 0 {
+	if facts, err := s.deps.Store.EventFacts(r.Context(), id); err == nil && len(facts) > 0 {
 		env.Facts = facts
 	}
-	if sectors, err := reader.EventSectors(r.Context(), id); err == nil && len(sectors) > 0 {
+	if sectors, err := s.deps.Store.EventSectors(r.Context(), id); err == nil && len(sectors) > 0 {
 		env.Sectors = sectors
 	}
 	writeJSON(w, http.StatusOK, env)
@@ -284,12 +238,7 @@ func (s *Server) handleEventTypes(w http.ResponseWriter, r *http.Request) {
 
 // handleStorageStats reports what the database holds.
 func (s *Server) handleStorageStats(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.eventReader()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Storage stats are not available.")
-		return
-	}
-	st, err := reader.Stats(r.Context())
+	st, err := s.deps.Store.Stats(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read storage stats.")
 		return
@@ -376,11 +325,6 @@ func (s *Server) handleClassifyEvents(w http.ResponseWriter, r *http.Request) {
 // the bare NSE symbol, so the exchange suffix is dropped here rather than in
 // every caller.
 func (s *Server) handleSymbolEvents(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.eventReader()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Event storage is not available.")
-		return
-	}
 	sym, err := marketdata.ParseSymbol(chi.URLParam(r, "symbol"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "Unrecognised symbol.")
@@ -412,7 +356,7 @@ func (s *Server) handleSymbolEvents(w http.ResponseWriter, r *http.Request) {
 		filter.MinImportance = atoiDefault(v, 0)
 	}
 
-	list, err := reader.ListEvents(r.Context(), filter)
+	list, err := s.deps.Store.ListEvents(r.Context(), filter)
 	if err != nil {
 		s.deps.Log.Error("symbol events failed", "symbol", sym.String(), "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read events.")
@@ -441,11 +385,6 @@ func (s *Server) handleSymbolDebrief(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAI(w, r) {
 		return
 	}
-	reader, ok := s.eventReader()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Event storage is not available.")
-		return
-	}
 	sym, err := marketdata.ParseSymbol(chi.URLParam(r, "symbol"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "Unrecognised symbol.")
@@ -453,7 +392,7 @@ func (s *Server) handleSymbolDebrief(w http.ResponseWriter, r *http.Request) {
 	}
 
 	days := clampInt(intParam(r, "days", 30), 1, 365)
-	list, err := reader.ListEvents(r.Context(), storage.EventFilter{
+	list, err := s.deps.Store.ListEvents(r.Context(), storage.EventFilter{
 		Symbol: sym.String(),
 		Since:  s.now().AddDate(0, 0, -days),
 		Limit:  200,
@@ -478,13 +417,7 @@ func (s *Server) handleSymbolDebrief(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	store, ok := s.deps.Store.(ai.DebriefStore)
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Fact storage is unavailable.")
-		return
-	}
-
-	out, err := s.deps.AI.Debrief(r.Context(), store, sym.String(), company, industry, list, days)
+	out, err := s.deps.AI.Debrief(r.Context(), s.deps.Store, sym.String(), company, industry, list, days)
 	if err != nil {
 		s.deps.Log.Warn("debrief failed", "symbol", sym.String(), "err", err)
 		writeError(w, http.StatusBadGateway, "ai_unavailable", "The debrief failed: "+err.Error())

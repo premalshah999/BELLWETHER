@@ -15,8 +15,6 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-
-	"github.com/tradesys/dashboard/internal/storage"
 )
 
 //go:embed migrations/*.sql
@@ -225,8 +223,6 @@ func nullFloat(p *float64) any {
 	}
 	return *p
 }
-
-var _ storage.Store = (*DB)(nil)
 
 // OpenScratch opens a migrated, empty schema of its own inside dsn's
 // database, so tests can run in parallel without seeing each other's rows.

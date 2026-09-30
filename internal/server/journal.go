@@ -1,22 +1,9 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"strconv"
-
-	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
-
-// JournalReader is the part of storage the trade journal reads.
-type JournalReader interface {
-	TradesWithCatalysts(ctx context.Context, limit int) ([]postgres.TradeCatalyst, error)
-}
-
-func (s *Server) journalReader() (JournalReader, bool) {
-	r, ok := s.deps.Store.(JournalReader)
-	return r, ok
-}
 
 // journalEntryView is one closed trade with its catalyst attribution,
 // dates rendered plainly (see tradeViewOf's own note on why).
@@ -54,18 +41,13 @@ type journalCatalystView struct {
 // did having one (especially an official one) correlate with a better
 // outcome?
 func (s *Server) handleJournal(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.journalReader()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "The trade journal is not available.")
-		return
-	}
 	limit := 0
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil {
 			limit = n
 		}
 	}
-	trades, err := reader.TradesWithCatalysts(r.Context(), limit)
+	trades, err := s.deps.Store.TradesWithCatalysts(r.Context(), limit)
 	if err != nil {
 		s.deps.Log.Error("journal query failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read the trade journal.")

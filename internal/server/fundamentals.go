@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -9,31 +8,15 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
 	"github.com/tradesys/dashboard/internal/fundamentals"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
-
-// FundamentalsReader is the slice of storage these routes need.
-type FundamentalsReader interface {
-	LatestSnapshot(ctx context.Context, symbol string) (fundamentals.Snapshot, error)
-	Financials(ctx context.Context, symbol, periodType string, limit int, asOf time.Time) ([]fundamentals.Period, error)
-	ComparePeers(ctx context.Context, symbol string) (postgres.PeerComparison, error)
-}
-
-func (s *Server) fundamentalsStore() (FundamentalsReader, bool) {
-	r, ok := s.deps.Store.(FundamentalsReader)
-	return r, ok
-}
 
 // handleFundamentals returns valuation, reported periods and peer position for
 // one company — the three things needed to judge whether it is worth owning,
 // rather than merely what has been said about it.
 func (s *Server) handleFundamentals(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.fundamentalsStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Fundamentals are not available.")
-		return
-	}
 	// The symbol arrives already canonical (RELIANCE.NSE, AAPL) -- stripping
 	// everything after the dot used to be here, which silently turned every
 	// venue-qualified lookup into a bare-ticker one and, once fundamentals
@@ -45,7 +28,7 @@ func (s *Server) handleFundamentals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snap, err := store.LatestSnapshot(r.Context(), symbol)
+	snap, err := s.deps.Store.LatestSnapshot(r.Context(), symbol)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found",
 			"No fundamentals have been collected for "+symbol+" yet.")
@@ -57,12 +40,12 @@ func (s *Server) handleFundamentals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	quarters, err := store.Financials(r.Context(), symbol, "quarterly",
+	quarters, err := s.deps.Store.Financials(r.Context(), symbol, "quarterly",
 		clampInt(intParam(r, "quarters", 8), 1, 40), time.Time{})
 	if err != nil {
 		s.deps.Log.Warn("quarterly financials failed", "symbol", symbol, "err", err)
 	}
-	years, err := store.Financials(r.Context(), symbol, "annual",
+	years, err := s.deps.Store.Financials(r.Context(), symbol, "annual",
 		clampInt(intParam(r, "years", 5), 1, 20), time.Time{})
 	if err != nil {
 		s.deps.Log.Warn("annual financials failed", "symbol", symbol, "err", err)
@@ -71,7 +54,7 @@ func (s *Server) handleFundamentals(w http.ResponseWriter, r *http.Request) {
 	// Peer position is best-effort: a company outside the index has no peer
 	// group here, and that is a normal answer rather than an error.
 	var peers *postgres.PeerComparison
-	if pc, err := store.ComparePeers(r.Context(), symbol); err == nil {
+	if pc, err := s.deps.Store.ComparePeers(r.Context(), symbol); err == nil {
 		peers = &pc
 	}
 

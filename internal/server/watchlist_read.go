@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/go-chi/chi/v5"
+
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/storage"
 )

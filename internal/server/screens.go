@@ -1,35 +1,16 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/tradesys/dashboard/internal/screens"
 	"github.com/tradesys/dashboard/internal/storage"
-	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
-
-// ScreenStore is the slice of storage these routes need.
-type ScreenStore interface {
-	RunScreen(ctx context.Context, def screens.Definition) (postgres.ScreenResult, error)
-	Screens(ctx context.Context) ([]postgres.Screen, error)
-	Screen(ctx context.Context, id int64) (postgres.Screen, error)
-	CreateScreen(ctx context.Context, name, description string, def screens.Definition) (postgres.Screen, error)
-	UpdateScreen(ctx context.Context, id int64, name, description string, def screens.Definition) (postgres.Screen, error)
-	DeleteScreen(ctx context.Context, id int64) error
-	TouchScreen(ctx context.Context, id int64) error
-}
-
-func (s *Server) screenStore() (ScreenStore, bool) {
-	st, ok := s.deps.Store.(ScreenStore)
-	return st, ok
-}
 
 // handleScreenFields is the catalogue a screen can be built from.
 //
@@ -57,11 +38,6 @@ func (s *Server) handleScreenFields(w http.ResponseWriter, _ *http.Request) {
 // no side effects: an operator dragging a threshold around should not be
 // writing rows.
 func (s *Server) handleRunScreen(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.screenStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Screens are not available.")
-		return
-	}
 	var def screens.Definition
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&def); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "That screen could not be read.")
@@ -71,7 +47,7 @@ func (s *Server) handleRunScreen(w http.ResponseWriter, r *http.Request) {
 		writeFieldErrors(w, errs)
 		return
 	}
-	res, err := store.RunScreen(r.Context(), def)
+	res, err := s.deps.Store.RunScreen(r.Context(), def)
 	if err != nil {
 		s.deps.Log.Error("could not run screen", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not run that screen.")
@@ -81,12 +57,7 @@ func (s *Server) handleRunScreen(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListScreens(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.screenStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Screens are not available.")
-		return
-	}
-	list, err := store.Screens(r.Context())
+	list, err := s.deps.Store.Screens(r.Context())
 	if err != nil {
 		s.deps.Log.Error("could not list screens", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read the screens.")
@@ -126,16 +97,11 @@ func (b *screenBody) read(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *Server) handleCreateScreen(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.screenStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Screens are not available.")
-		return
-	}
 	var body screenBody
 	if !body.read(w, r) {
 		return
 	}
-	sc, err := store.CreateScreen(r.Context(), body.Name, body.Description, body.Definition)
+	sc, err := s.deps.Store.CreateScreen(r.Context(), body.Name, body.Description, body.Definition)
 	if err != nil {
 		if isUniqueViolation(err) {
 			writeError(w, http.StatusConflict, "duplicate_name", "A screen with that name already exists.")
@@ -149,12 +115,7 @@ func (s *Server) handleCreateScreen(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateScreen(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.screenStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Screens are not available.")
-		return
-	}
-	id, ok := screenID(w, r)
+	id, ok := pathID(w, r, "screen")
 	if !ok {
 		return
 	}
@@ -162,7 +123,7 @@ func (s *Server) handleUpdateScreen(w http.ResponseWriter, r *http.Request) {
 	if !body.read(w, r) {
 		return
 	}
-	sc, err := store.UpdateScreen(r.Context(), id, body.Name, body.Description, body.Definition)
+	sc, err := s.deps.Store.UpdateScreen(r.Context(), id, body.Name, body.Description, body.Definition)
 	if errors.Is(err, storage.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "No such screen.")
 		return
@@ -180,16 +141,11 @@ func (s *Server) handleUpdateScreen(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteScreen(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.screenStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Screens are not available.")
-		return
-	}
-	id, ok := screenID(w, r)
+	id, ok := pathID(w, r, "screen")
 	if !ok {
 		return
 	}
-	err := store.DeleteScreen(r.Context(), id)
+	err := s.deps.Store.DeleteScreen(r.Context(), id)
 	if errors.Is(err, storage.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "No such screen.")
 		return
@@ -207,16 +163,11 @@ func (s *Server) handleDeleteScreen(w http.ResponseWriter, r *http.Request) {
 // Separate from the ad-hoc run because this one is a deliberate act rather
 // than a keystroke, so it is worth recording when it last happened.
 func (s *Server) handleRunSavedScreen(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.screenStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Screens are not available.")
-		return
-	}
-	id, ok := screenID(w, r)
+	id, ok := pathID(w, r, "screen")
 	if !ok {
 		return
 	}
-	sc, err := store.Screen(r.Context(), id)
+	sc, err := s.deps.Store.Screen(r.Context(), id)
 	if errors.Is(err, storage.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "No such screen.")
 		return
@@ -226,7 +177,7 @@ func (s *Server) handleRunSavedScreen(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read that screen.")
 		return
 	}
-	res, err := store.RunScreen(r.Context(), sc.Definition)
+	res, err := s.deps.Store.RunScreen(r.Context(), sc.Definition)
 	if err != nil {
 		s.deps.Log.Error("could not run screen", "id", id, "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not run that screen.")
@@ -234,7 +185,7 @@ func (s *Server) handleRunSavedScreen(w http.ResponseWriter, r *http.Request) {
 	}
 	// Best effort: the run succeeded, and failing the request because a
 	// bookkeeping column did not update would throw away the answer.
-	if err := store.TouchScreen(r.Context(), id); err != nil {
+	if err := s.deps.Store.TouchScreen(r.Context(), id); err != nil {
 		s.deps.Log.Warn("could not record screen run", "id", id, "err", err)
 	}
 	writeJSON(w, http.StatusOK, res)
@@ -249,15 +200,6 @@ func (s *Server) handleRunSavedScreen(w http.ResponseWriter, r *http.Request) {
 func isUniqueViolation(err error) bool {
 	var pg *pgconn.PgError
 	return errors.As(err, &pg) && pg.Code == "23505"
-}
-
-func screenID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "That is not a screen id.")
-		return 0, false
-	}
-	return id, true
 }
 
 // writeFieldErrors reports a rejected definition.

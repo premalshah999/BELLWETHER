@@ -21,7 +21,6 @@ import (
 	"github.com/tradesys/dashboard/internal/news/company"
 	"github.com/tradesys/dashboard/internal/research"
 	"github.com/tradesys/dashboard/internal/scanner"
-	"github.com/tradesys/dashboard/internal/storage"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 	"github.com/tradesys/dashboard/internal/stream"
 )
@@ -79,7 +78,7 @@ type BudgetReporter interface {
 // tested without a database or a network.
 type Deps struct {
 	Config  *config.Config
-	Store   storage.Store
+	Store   *postgres.DB
 	Router  *marketdata.Router
 	Health  *health.Tracker
 	Budgets map[string]BudgetReporter

@@ -7,13 +7,13 @@ import (
 
 	"github.com/tradesys/dashboard/internal/algo"
 	"github.com/tradesys/dashboard/internal/marketdata"
-	"github.com/tradesys/dashboard/internal/storage"
+	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
 // First-run seeding, so a fresh deployment is not an empty screen.
 
 // seedWatchlist populates an empty watchlist on first run.
-func seedWatchlist(ctx context.Context, store storage.Store, log *slog.Logger) error {
+func seedWatchlist(ctx context.Context, store *postgres.DB, log *slog.Logger) error {
 	existing, err := store.ListWatchlist(ctx)
 	if err != nil {
 		return err
@@ -39,7 +39,7 @@ func seedWatchlist(ctx context.Context, store storage.Store, log *slog.Logger) e
 // They arrive disabled. A fresh installation must not start sending
 // notifications nobody has looked at yet, but the builder should have real
 // examples to open rather than a blank editor.
-func seedAlgorithms(ctx context.Context, store storage.Store, log *slog.Logger) error {
+func seedAlgorithms(ctx context.Context, store *postgres.DB, log *slog.Logger) error {
 	existing, err := store.ListAlgorithms(ctx)
 	if err != nil {
 		return err
