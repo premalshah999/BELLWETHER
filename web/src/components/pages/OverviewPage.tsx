@@ -201,13 +201,13 @@ export function OverviewPage({ onSelect }: { onSelect: (symbol: string) => void 
                       onClick={() => setOpenEvent(e)}
                       className="block w-full px-5 py-3 text-left transition-colors hover:bg-bg-panel-hover"
                     >
-                      <span className="font-reading line-clamp-2 block text-emphasis font-medium leading-snug text-text-primary">{e.headline}</span>
+                      <span className="line-clamp-2 block text-[15px] font-semibold leading-snug text-text-primary">{e.headline}</span>
                       <span className="mt-1 flex flex-wrap items-center gap-x-2.5 text-meta text-text-muted">
                         <span className="inline-flex items-center gap-1 text-text-secondary">
                           {e.official && <ShieldCheck size={13} className="text-brand" />}
                           {e.source}
                         </span>
-                        <span>{typeLabel(e.event_type)}</span>
+                        <span className="rounded-full border border-border-subtle px-2 py-px">{typeLabel(e.event_type)}</span>
                         {importanceLabel(e.importance) === "Major" && <span className="font-medium text-brand">Major</span>}
                         <span>{formatClock(e.published_at || e.discovered_at)}</span>
                       </span>

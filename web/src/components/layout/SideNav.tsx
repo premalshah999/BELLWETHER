@@ -49,10 +49,10 @@ export function SideNav({
         (shut ? "w-16" : "w-60")
       }
     >
-      <div className={"flex h-14 shrink-0 items-center gap-2.5 " + (shut ? "justify-center" : "px-4")}>
+      <div className={"flex h-16 shrink-0 items-center gap-2.5 " + (shut ? "justify-center" : "px-4")}>
         <BrandMark />
         {!shut && (
-          <span className="font-reading min-w-0 flex-1 truncate text-[17px] font-semibold text-text-primary">
+          <span className="min-w-0 flex-1 truncate text-[16px] font-semibold tracking-[-0.01em] text-text-primary">
             Bellwether
           </span>
         )}
@@ -134,7 +134,7 @@ function NavRow({
         "group relative flex h-9 items-center gap-3 rounded-md text-ui transition-colors " +
         (shut ? "justify-center " : "px-3 ") +
         (active
-          ? "bg-brand-muted font-medium text-text-primary"
+          ? "bg-bg-panel-hover font-medium text-text-primary shadow-[inset_0_0_0_1px_var(--line)]"
           : "text-text-secondary hover:bg-bg-panel-hover hover:text-text-primary")
       }
     >

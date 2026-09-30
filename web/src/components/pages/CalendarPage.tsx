@@ -86,7 +86,7 @@ export function CalendarPage({ onSelect }: { onSelect: (symbol: string) => void 
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Catalysts"
         subtitle={
@@ -120,10 +120,10 @@ export function CalendarPage({ onSelect }: { onSelect: (symbol: string) => void 
             <p className="text-ui text-text-secondary">The calendar refreshes each weekday morning. Try a longer horizon.</p>
           </div>
         ) : (
-          <div className="pb-10">
+          <div className="mx-5 mb-8 overflow-clip rounded-xl border border-border-subtle bg-bg-card md:mx-8">
             {groups.map((g) => (
               <section key={g.key}>
-                <h2 className="sticky top-0 z-10 flex items-baseline justify-between border-y border-border-subtle bg-bg-panel/95 px-5 py-2 backdrop-blur md:px-6">
+                <h2 className="sticky top-0 z-10 flex items-baseline justify-between border-y border-border-subtle bg-bg-card/95 px-5 py-2 backdrop-blur md:px-6">
                   <span className="text-ui font-semibold text-text-primary">{g.label}</span>
                   <span className="text-meta text-text-muted">{g.items.length}</span>
                 </h2>

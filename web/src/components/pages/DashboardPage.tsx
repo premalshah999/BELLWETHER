@@ -24,11 +24,7 @@ const RANGES = [
 
 /**
  * Bars in one trading session, per interval -- sized for a US-hours 6h30m
- * session (390 one-minute bars) rather than NSE's shorter 6h15m (375),
- * since this only ever decides how many bars to *request*: asking for
- * slightly more than an NSE session actually has is harmless, while sizing
- * to NSE's shorter session would under-fetch and silently truncate a US
- * intraday range.
+ * session: 390 one-minute bars.
  */
 const PER_SESSION: Record<Interval, number> = {
   "1m": 390,
@@ -137,7 +133,7 @@ export function DashboardPage({ symbol }: { symbol: string }) {
             {tickerOf(symbol)}
           </span>
           <span className="font-mono text-meta text-text-muted">
-            {venueOf(symbol) === "NSE" ? "NSE" : ""}
+            {""}
           </span>
         </div>
 

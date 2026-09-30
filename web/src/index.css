@@ -1,98 +1,107 @@
-@import "@fontsource-variable/public-sans/wght.css";
-@import "@fontsource-variable/source-serif-4/standard.css";
+@import "@fontsource-variable/geist/index.css";
+@import "@fontsource-variable/geist-mono/index.css";
 @import "tailwindcss";
 
 /*
- * Bellwether's visual language comes from the documents it reads.
+ * Midnight.
  *
- * Its argument is provenance: an SEC filing, a Federal Register notice, a
- * disclosure with a date on it. So the interface borrows from American public
- * print rather than from a hacker's terminal — Public Sans, the typeface the
- * US government designed for its own services, for everything you operate;
- * Source Serif for the things you read, the headlines and the briefs; and one
- * brass accent, the bell of the bellwether, kept for the few things that are
- * genuinely primary: where you are, what to press, and what is official.
+ * Near-black with a faint violet glow, Geist throughout, hairline borders and
+ * small radii: everything recedes except the data. One violet accent marks
+ * where you are, what to press and what is official. Green and red belong to
+ * price alone.
  *
- * Green and red belong to price alone. Nothing decorative may use them.
- *
- * Every colour is a token defined once per theme below. Components use the
- * tokens and never a literal, so both themes stay whole.
+ * Dark is the product's default. Light is a deliberate choice, and "system"
+ * follows the operating system. Every colour is a token defined once per
+ * theme; components never use a literal.
  */
 
 :root {
-  /* Light: cool paper, not cream. */
-  --ground: #f3f4f6;
-  --surface: #ffffff;
-  --surface-hover: #f1f3f5;
-  --raised: #ffffff;
-  --line: #e2e5e9;
-  --line-strong: #c9cfd6;
-  --ink: #14181d;
-  --ink-2: #4a545f;
-  --ink-3: #737e89;
-  --brass: #8a6614;
-  --brass-soft: rgba(138, 102, 20, 0.1);
-  --brass-ink: #ffffff;
-  --up: #16804f;
-  --up-soft: rgba(22, 128, 79, 0.1);
-  --down: #c23b32;
-  --down-soft: rgba(194, 59, 50, 0.09);
-  --info: #2f5f9e;
-  --info-soft: rgba(47, 95, 158, 0.09);
-  --shadow: 0 1px 2px rgba(20, 24, 29, 0.06), 0 8px 24px rgba(20, 24, 29, 0.08);
-  --scrim: rgba(20, 24, 29, 0.28);
-  color-scheme: light;
+  --ground: #08090b;
+  --surface: #0c0d10;
+  --surface-hover: rgba(255, 255, 255, 0.045);
+  --raised: #15161c;
+  --card: #101116;
+  --field: #0f1014;
+  --chip: #1b1d24;
+  --line: rgba(255, 255, 255, 0.075);
+  --line-strong: rgba(255, 255, 255, 0.15);
+  --ink: #f2f3f5;
+  --ink-2: #a3a8b3;
+  --ink-3: #6b707b;
+  --brass: #7c83ff;
+  --brass-soft: rgba(124, 131, 255, 0.14);
+  --brass-ink: #0a0b10;
+  --accent-text: #a9adff;
+  --up: #3ddc97;
+  --up-soft: rgba(61, 220, 151, 0.12);
+  --down: #ff6b7a;
+  --down-soft: rgba(255, 107, 122, 0.12);
+  --info: #6cb4ff;
+  --info-soft: rgba(108, 180, 255, 0.12);
+  --glow: rgba(124, 131, 255, 0.09);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 24px 48px -12px rgba(0, 0, 0, 0.7);
+  --scrim: rgba(3, 4, 6, 0.6);
+  color-scheme: dark;
 }
 
-/* Dark: slate, not black — a black ground with one bright accent is the
-   house style of every generated dashboard. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --ground: #0f1317;
-    --surface: #141a1f;
-    --surface-hover: #1a2128;
-    --raised: #1b2229;
-    --line: #232b33;
-    --line-strong: #34404b;
-    --ink: #e6e9ec;
-    --ink-2: #a2acb6;
-    --ink-3: #6e7a86;
-    --brass: #d4ab52;
-    --brass-soft: rgba(212, 171, 82, 0.13);
-    --brass-ink: #16130b;
-    --up: #45bd84;
-    --up-soft: rgba(69, 189, 132, 0.12);
-    --down: #ec6a60;
-    --down-soft: rgba(236, 106, 96, 0.12);
-    --info: #7ea6dc;
-    --info-soft: rgba(126, 166, 220, 0.12);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.35);
-    --scrim: rgba(5, 8, 10, 0.55);
-    color-scheme: dark;
-  }
+/* Light: the same system on white. */
+:root[data-theme="light"] {
+  --ground: #f7f7f8;
+  --surface: #ffffff;
+  --surface-hover: rgba(10, 11, 16, 0.04);
+  --raised: #ffffff;
+  --card: #ffffff;
+  --field: #ffffff;
+  --chip: #f0f1f4;
+  --line: rgba(10, 11, 16, 0.08);
+  --line-strong: rgba(10, 11, 16, 0.16);
+  --ink: #0b0c0f;
+  --ink-2: #4b5160;
+  --ink-3: #8a909c;
+  --brass: #5b61f0;
+  --brass-soft: rgba(91, 97, 240, 0.1);
+  --brass-ink: #ffffff;
+  --accent-text: #4a50e0;
+  --up: #0e9f6e;
+  --up-soft: rgba(14, 159, 110, 0.1);
+  --down: #e5354b;
+  --down-soft: rgba(229, 53, 75, 0.09);
+  --info: #2f6fd6;
+  --info-soft: rgba(47, 111, 214, 0.09);
+  --glow: rgba(91, 97, 240, 0.06);
+  --shadow: 0 1px 2px rgba(10, 11, 16, 0.06), 0 16px 40px -12px rgba(10, 11, 16, 0.18);
+  --scrim: rgba(10, 11, 16, 0.3);
+  color-scheme: light;
 }
-:root[data-theme="dark"] {
-  --ground: #0f1317;
-  --surface: #141a1f;
-  --surface-hover: #1a2128;
-  --raised: #1b2229;
-  --line: #232b33;
-  --line-strong: #34404b;
-  --ink: #e6e9ec;
-  --ink-2: #a2acb6;
-  --ink-3: #6e7a86;
-  --brass: #d4ab52;
-  --brass-soft: rgba(212, 171, 82, 0.13);
-  --brass-ink: #16130b;
-  --up: #45bd84;
-  --up-soft: rgba(69, 189, 132, 0.12);
-  --down: #ec6a60;
-  --down-soft: rgba(236, 106, 96, 0.12);
-  --info: #7ea6dc;
-  --info-soft: rgba(126, 166, 220, 0.12);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.35);
-  --scrim: rgba(5, 8, 10, 0.55);
-  color-scheme: dark;
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    --ground: #f7f7f8;
+    --surface: #ffffff;
+    --surface-hover: rgba(10, 11, 16, 0.04);
+    --raised: #ffffff;
+    --card: #ffffff;
+    --field: #ffffff;
+    --chip: #f0f1f4;
+    --line: rgba(10, 11, 16, 0.08);
+    --line-strong: rgba(10, 11, 16, 0.16);
+    --ink: #0b0c0f;
+    --ink-2: #4b5160;
+    --ink-3: #8a909c;
+    --brass: #5b61f0;
+    --brass-soft: rgba(91, 97, 240, 0.1);
+    --brass-ink: #ffffff;
+    --accent-text: #4a50e0;
+    --up: #0e9f6e;
+    --up-soft: rgba(14, 159, 110, 0.1);
+    --down: #e5354b;
+    --down-soft: rgba(229, 53, 75, 0.09);
+    --info: #2f6fd6;
+    --info-soft: rgba(47, 111, 214, 0.09);
+    --glow: rgba(91, 97, 240, 0.06);
+    --shadow: 0 1px 2px rgba(10, 11, 16, 0.06), 0 16px 40px -12px rgba(10, 11, 16, 0.18);
+    --scrim: rgba(10, 11, 16, 0.3);
+    color-scheme: light;
+  }
 }
 
 /*
@@ -108,6 +117,10 @@
   --color-bg-panel: var(--surface);
   --color-bg-panel-hover: var(--surface-hover);
   --color-bg-raised: var(--raised);
+  --color-bg-card: var(--card);
+  --color-bg-field: var(--field);
+  --color-bg-chip: var(--chip);
+  --color-accent-text: var(--accent-text);
 
   --color-border-subtle: var(--line);
   --color-border-focus: var(--line-strong);
@@ -123,13 +136,14 @@
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
 
-  --font-sans: "Public Sans Variable", "Public Sans", system-ui, sans-serif;
-  --font-serif: "Source Serif 4 Variable", "Source Serif 4", Georgia, serif;
+  --font-sans: "Geist Variable", "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: var(--font-sans);
+  --font-num: "Geist Mono Variable", "Geist Mono", ui-monospace, "SF Mono", monospace;
   /* "mono" was the terminal face for every label and number. Figures now
      line up through tabular numerals in the interface face instead, and a
      true monospace is kept for code alone. */
   --font-mono: var(--font-sans);
-  --font-code: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+  --font-code: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* One scale. A component picks the job, not a number. */
   --text-micro: 11px;      /* the smallest honest label */
@@ -147,9 +161,9 @@
   --text-hero: 34px;       /* the one headline figure on a page */
   --text-hero--line-height: 1.05;
 
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
 
   --shadow-pop: var(--shadow);
 
@@ -176,11 +190,14 @@
 
   body {
     margin: 0;
-    background: var(--ground);
+    background:
+      radial-gradient(1100px 480px at 78% -12%, var(--glow), transparent 62%),
+      var(--ground);
     color: var(--ink);
     font-family: var(--font-sans);
     font-size: 13.5px;
     line-height: 1.5;
+    font-feature-settings: "ss01", "cv11";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -336,10 +353,10 @@
 }
 
 /* Where a headline is read rather than scanned. */
+/* Headlines and titles: Geist, tightened. (Named for where a reader reads.) */
 @utility font-reading {
-  font-family: var(--font-serif);
-  font-optical-sizing: auto;
-  letter-spacing: -0.005em;
+  font-family: var(--font-sans);
+  letter-spacing: -0.015em;
 }
 
 @keyframes sheet-in {

@@ -36,3 +36,12 @@ export function signed(value: number, digits = 2): string {
 export function toneOf(value: number): string {
   return value > 0 ? "text-semantic-up" : value < 0 ? "text-semantic-down" : "text-text-secondary";
 }
+
+/**
+ * The US sectors an event reaches, named plainly. Events carry GICS sectors
+ * prefixed "US: "; anything else is a legacy industry the product no longer
+ * covers.
+ */
+export function usSectors(sectors: string[] | undefined): string[] {
+  return (sectors ?? []).filter((x) => x.startsWith("US: ")).map((x) => x.slice(4));
+}

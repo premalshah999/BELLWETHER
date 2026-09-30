@@ -14,7 +14,7 @@ export function MobileTopBar({ onCommand }: { onCommand: () => void }) {
   return (
     <header className="flex h-13 shrink-0 items-center gap-3 border-b border-border-subtle bg-bg-panel px-4 pt-[env(safe-area-inset-top)]">
       <BrandMark size={24} />
-      <h1 className="font-reading min-w-0 flex-1 truncate text-[18px] font-semibold text-text-primary">
+      <h1 className="min-w-0 flex-1 truncate text-[17px] font-semibold tracking-[-0.01em] text-text-primary">
         {titleFor(pathname)}
       </h1>
       <SearchButton onClick={onCommand} compact />
@@ -96,7 +96,7 @@ function MoreSheet({ stream, unread, onClose }: { stream: StreamState; unread: n
       />
       <div className="relative max-h-[85vh] overflow-y-auto overscroll-contain rounded-t-2xl bg-bg-raised pb-[env(safe-area-inset-bottom)] shadow-pop [animation:rise-in_220ms_var(--ease-out)]">
         <div className="sticky top-0 flex items-center justify-between bg-bg-raised px-5 pb-2 pt-4">
-          <span className="font-reading text-[18px] font-semibold">All pages</span>
+          <span className="text-[17px] font-semibold">All pages</span>
           <button
             type="button"
             onClick={onClose}

@@ -125,11 +125,9 @@ export function KLineChart({
       /*
        * The exchange's timezone, never the browser's.
        *
-       * NSE stamps a daily bar at midnight IST, which is 18:30 UTC on the
-       * previous calendar day. Rendered in any other zone, every daily candle
-       * is labelled a day early — the bar for the 26th session reads "Aug 25"
-       * — and a viewer west of India sees the whole series shifted. The data
-       * was never wrong; the axis was reading it in the wrong zone.
+       * A daily bar is stamped at the start of the exchange's day. Rendered in
+       * another zone, every daily candle can be labelled a day early; the data
+       * was never wrong, the axis was reading it in the wrong zone.
        */
       timezone: timeZone,
       customApi: {

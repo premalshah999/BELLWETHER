@@ -130,7 +130,7 @@ export function NewsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
 
   let lastDay = "";
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="News"
         subtitle={
@@ -139,6 +139,8 @@ export function NewsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
             : `${events.length.toLocaleString()}${events.length >= limit ? "+" : ""} ${events.length === 1 ? "event" : "events"} in the last ${window_.words}${official === "1" ? ", official sources only" : ""}.`
         }
         actions={
+          <>
+          <Select label="Order" value={order} onChange={setOrder} options={ORDERS} align="right" />
           <form
             role="search"
             onSubmit={(e) => {
@@ -174,6 +176,7 @@ export function NewsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
               </kbd>
             )}
           </form>
+          </>
         }
       >
         <Segmented label="Time window" options={WINDOWS} value={win} onChange={setWin} />
@@ -189,8 +192,6 @@ export function NewsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
             </span>
           }
         />
-        <span className="flex-1 max-md:hidden" />
-        <Select label="Order" value={order} onChange={setOrder} options={ORDERS} />
         {isFetching && !isLoading && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-brand" title="Refreshing" />}
       </PageHeader>
 
@@ -211,7 +212,7 @@ export function NewsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
             )}
           </div>
         ) : (
-          <ul ref={listRef} className="pb-8">
+          <ul ref={listRef} className="mx-5 mb-8 overflow-clip rounded-xl border border-border-subtle bg-bg-card md:mx-8">
             {events.map((e, i) => {
               const at = e.published_at || e.discovered_at;
               const day = dayOf(at);
@@ -220,7 +221,7 @@ export function NewsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
               return (
                 <li key={e.id} data-row={i}>
                   {header && (
-                    <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-bg-panel/95 px-5 py-2 text-meta font-semibold text-text-secondary backdrop-blur md:px-6">
+                    <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-bg-card/95 px-5 py-2 text-meta font-semibold text-text-secondary backdrop-blur md:px-6">
                       {formatDay(at)}
                     </h2>
                   )}
@@ -277,7 +278,7 @@ function EventRow({
       <time
         dateTime={at}
         title={formatDateTime(at)}
-        className="w-11 shrink-0 pt-0.5 text-meta text-text-muted max-sm:hidden"
+        className="w-12 shrink-0 pt-0.5 font-num text-[12px] text-text-muted max-sm:hidden"
       >
         {formatClock(at)}
       </time>
@@ -286,7 +287,7 @@ function EventRow({
           type="button"
           data-open
           onClick={() => onOpen(e.id)}
-          className="text-left font-reading text-emphasis font-medium leading-snug text-text-primary outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-brand"
+          className="text-left text-[15px] font-semibold leading-snug tracking-[-0.005em] text-text-primary outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-brand"
         >
           {e.headline}
         </button>
@@ -304,16 +305,16 @@ function EventRow({
                   type="button"
                   onClick={() => onSymbol(en.symbol)}
                   title={`Open ${en.symbol} on the chart`}
-                  className="inline-flex h-6 items-center rounded px-1.5 font-semibold text-text-primary transition-colors hover:bg-brand-muted hover:text-brand"
+                  className="inline-flex h-6 items-center rounded-md bg-bg-chip px-2 font-num text-[12px] font-medium text-text-primary transition-colors hover:bg-brand-muted hover:text-accent-text"
                 >
                   {en.symbol}
                 </button>
               ))}
             </span>
           )}
-          {e.event_type && e.event_type !== "UNCLASSIFIED" && <span>{typeLabel(e.event_type)}</span>}
+          {e.event_type && e.event_type !== "UNCLASSIFIED" && <span className="rounded-full border border-border-subtle px-2 py-px">{typeLabel(e.event_type)}</span>}
           {major && (major === "Major" || major === "Significant") && (
-            <span className="rounded-sm bg-brand-muted px-1.5 font-medium text-brand">{major}</span>
+            <span className="rounded-full bg-brand-muted px-2 py-px font-semibold text-accent-text">{major}</span>
           )}
           {e.brief && (
             <span className="inline-flex items-center gap-1 text-brand" title="Has an AI brief">

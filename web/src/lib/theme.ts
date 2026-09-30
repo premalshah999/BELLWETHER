@@ -1,52 +1,45 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type ThemeChoice = "system" | "light" | "dark";
+export type ThemeChoice = "dark" | "light" | "system";
 
 const KEY = "bellwether.theme";
 
 function read(): ThemeChoice {
   try {
     const v = localStorage.getItem(KEY);
-    return v === "light" || v === "dark" ? v : "system";
+    return v === "light" || v === "system" ? v : "dark";
   } catch {
-    return "system";
+    return "dark";
   }
 }
 
 function apply(choice: ThemeChoice) {
   const root = document.documentElement;
-  if (choice === "system") root.removeAttribute("data-theme");
+  // Dark is the stylesheet's own default, so it stamps nothing.
+  if (choice === "dark") root.removeAttribute("data-theme");
   else root.setAttribute("data-theme", choice);
 }
 
-/**
- * The theme, as the viewer chose it.
- *
- * "System" is a real third state rather than a default that gets overwritten:
- * it stamps nothing on <html>, so the stylesheet follows the operating system
- * and keeps following it when that changes at sunset.
- */
+/** The theme the viewer chose: dark (the default), light, or the OS's. */
 export function useTheme() {
   const [choice, setChoice] = useState<ThemeChoice>(read);
-
   useEffect(() => apply(choice), [choice]);
-
   const set = useCallback((next: ThemeChoice) => {
     try {
-      if (next === "system") localStorage.removeItem(KEY);
+      if (next === "dark") localStorage.removeItem(KEY);
       else localStorage.setItem(KEY, next);
     } catch {
-      /* private mode: the choice lasts for this tab only */
+      /* private mode: lasts for this tab */
     }
     setChoice(next);
   }, []);
-
   return [choice, set] as const;
 }
 
-/** Whether the page is currently drawn dark, whichever way that was decided. */
+/** Whether the page is currently drawn dark, however that was decided. */
 export function isDark(): boolean {
   const stamped = document.documentElement.getAttribute("data-theme");
-  if (stamped) return stamped === "dark";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  if (stamped === "light") return false;
+  if (stamped === "system") return !window.matchMedia("(prefers-color-scheme: light)").matches;
+  return true;
 }

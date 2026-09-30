@@ -52,7 +52,7 @@ export function SourcesPage() {
   const items = sources.reduce((n, s) => n + s.total_items, 0);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Data sources"
         subtitle={

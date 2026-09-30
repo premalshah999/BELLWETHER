@@ -5,8 +5,8 @@ import type { Candle } from "./api";
  *
  * Every rule here is expressed in proportions of the bar's own range rather
  * than in absolute prices, for the same reason the scanner works in z-scores:
- * a 4-rupee body means one thing on a 40-rupee stock and nothing at all on a
- * 4,000-rupee one.
+ * a $4 body means one thing on a $40 stock and nothing at all on a $4,000
+ * one.
  *
  * The patterns that need context — a hammer is only a hammer at the bottom of
  * a decline; the same bar in an uptrend is a hanging man and means the

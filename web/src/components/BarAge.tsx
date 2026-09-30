@@ -14,30 +14,16 @@ const SPAN: Record<Interval, number> = {
 };
 
 /**
- * How far behind the newest bar is.
+ * How far behind the newest bar is, and whether that is the feed or the app.
  *
- * The chart was described as "always lagging" and it is, but not for a reason
- * anything here can fix: Yahoo delays NSE intraday data by about fifteen
- * minutes, and — measured across five sessions — it stops every one of them at
- * 15:15 IST even though the exchange trades to 15:30. The last two five-minute
- * bars of every Indian session simply never arrive, so an intraday chart's
- * final close is not the session's close and is routinely several rupees away
- * from it.
- *
- * None of that is visible on a chart, which is what made it feel broken rather
- * than delayed. This states the gap: how old the newest bar is, and — once the
- * gap is wider than the upstream's own delay — that it is the feed and not the
- * app.
+ * Free intraday data runs about fifteen minutes behind the market. A chart
+ * that silently lags reads as broken; one that says how old its newest bar
+ * is reads as delayed, which is the truth.
  */
 export function BarAge({
   bar,
   interval,
   fetchedAt,
-  // Every current caller passes this explicitly; the default is a last
-  // resort for one that does not, and NSE is no longer a safe guess now
-  // that the app is US-first. There is no universally-correct default for
-  // a prop whose entire job is telling two venues apart, so callers should
-  // pass it rather than rely on this.
   venue = "US",
 }: {
   bar: Candle | null;
@@ -64,28 +50,25 @@ export function BarAge({
 
   // Outside market hours the newest bar is supposed to be old, and reporting a
   // seventeen-hour lag overnight would be noise rather than information.
-  // The venue follows the symbol's own exchange: a US bar at 21:00 IST is
-  // mid-session, and calling it closed because the NSE has gone home would be
-  // wrong in exactly the hours a US chart is most used.
   if (!sessionState(venue).open && !daily) {
     return (
       <span className="font-mono text-micro text-text-muted" title={label(fetchedAt)}>
-        session closed
+        Market closed
       </span>
     );
   }
   if (minutes < span) return null;
 
-  // Yahoo's own delay on NSE intraday. Beyond it the feed has stalled rather
-  // than merely being behind, and the two deserve different words.
+  // The feed's usual delay. Beyond it the feed has stalled rather than
+  // merely being behind, and the two deserve different words.
   const stalled = !daily && minutes > 25;
   return (
     <span
       className={"font-mono text-micro " + (stalled ? "text-semantic-down" : "text-brand")}
       title={
         stalled
-          ? `The newest bar is ${Math.round(minutes)} minutes old. The upstream feed delays NSE intraday data by about fifteen minutes and stops each session at 15:15 IST, so the last quarter hour of a session never arrives. ${label(fetchedAt)}`
-          : `The upstream feed delays NSE intraday data by about fifteen minutes. ${label(fetchedAt)}`
+          ? `The newest bar is ${Math.round(minutes)} minutes old, longer than the feed’s usual fifteen-minute delay. ${label(fetchedAt)}`
+          : `Intraday prices arrive about fifteen minutes behind the market. ${label(fetchedAt)}`
       }
     >
       {daily ? `${Math.round(minutes / (60 * 24))}d behind` : `${Math.round(minutes)}m behind`}

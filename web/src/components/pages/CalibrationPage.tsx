@@ -31,7 +31,7 @@ export function CalibrationPage() {
   const skill = skillScore(cal);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     <PageHeader
       title="AI track record"
       subtitle="Every AI outlook is scored against what actually happened, so you can see how far to trust it."

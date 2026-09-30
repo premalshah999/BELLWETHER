@@ -7,12 +7,12 @@
  * like nothing changing.
  *
  * Mirrors the server's session model rather than inventing a second one —
- * NSE 09:15–15:30 IST, US 09:30–16:00 ET, weekdays. Holidays are not
+ * US regular hours, 09:30–16:00 ET, weekdays. Holidays are not
  * modelled here or on the server; a holiday reads as open-with-no-ticks,
  * which is a smaller error than pretending to know every exchange calendar.
  */
 
-export type Venue = "NSE" | "US";
+export type Venue = "US";
 
 interface Window {
   tz: string;
@@ -21,7 +21,6 @@ interface Window {
 }
 
 const WINDOWS: Record<Venue, Window> = {
-  NSE: { tz: "Asia/Kolkata", open: [9, 15], close: [15, 30] },
   US: { tz: "America/New_York", open: [9, 30], close: [16, 0] },
 };
 

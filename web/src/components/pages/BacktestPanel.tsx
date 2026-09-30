@@ -1,3 +1,4 @@
+import { Select } from "../ui/controls";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Play } from "lucide-react";
 import { useState } from "react";
@@ -179,17 +180,13 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
           </Chip>
           {exitOn && (
             <>
-              <select
+              <Select
+                label="Indicator"
+                showLabel={false}
                 value={exit.indicator}
-                onChange={(e) => setExit({ ...exit, indicator: e.target.value })}
-                className="h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 font-mono text-meta text-text-primary outline-none focus:border-brand"
-              >
-                {(vocab.data?.indicators ?? []).map((i) => (
-                  <option key={i.name} value={i.name}>
-                    {i.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setExit({ ...exit, indicator: v })}
+                options={(vocab.data?.indicators ?? []).map((i) => ({ value: i.name, label: i.name.replace(/_/g, " ") }))}
+              />
               <input
                 type="number"
                 value={exit.period}
@@ -197,17 +194,13 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
                 title="Period"
                 className="w-14 h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 text-right font-mono text-meta outline-none focus:border-brand"
               />
-              <select
+              <Select
+                label="Comparison"
+                showLabel={false}
                 value={exit.op}
-                onChange={(e) => setExit({ ...exit, op: e.target.value })}
-                className="h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 font-mono text-meta text-text-primary outline-none focus:border-brand"
-              >
-                {["<", "<=", ">", ">=", "crosses_above", "crosses_below"].map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setExit({ ...exit, op: v })}
+                options={([["<","below"],["<=","at or below"],[">","above"],[">=","at or above"],["crosses_above","crosses above"],["crosses_below","crosses below"]] as const).map(([value, label]) => ({ value: value as string, label }))}
+              />
               <input
                 type="number"
                 step="any"

@@ -45,9 +45,9 @@ export function SearchButton({ onClick, compact }: { onClick: () => void; compac
 }
 
 const THEMES: { value: ThemeChoice; label: string; icon: typeof Sun }[] = [
-  { value: "system", label: "Match system", icon: Monitor },
-  { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
+  { value: "light", label: "Light", icon: Sun },
+  { value: "system", label: "Match system", icon: Monitor },
 ];
 
 export function ThemeSwitch() {

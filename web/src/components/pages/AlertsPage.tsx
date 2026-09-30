@@ -43,7 +43,7 @@ export function AlertsPage({ onSelect }: { onSelect: (symbol: string) => void })
   let lastDay = "";
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Alerts"
         subtitle={
@@ -93,7 +93,7 @@ export function AlertsPage({ onSelect }: { onSelect: (symbol: string) => void })
             </button>
           </div>
         ) : (
-          <ul className="pb-8">
+          <ul className="mx-5 mb-8 overflow-clip rounded-xl border border-border-subtle bg-bg-card md:mx-8">
             {shown.map((a) => {
               const day = dayOf(a.fired_at);
               const header = day !== lastDay;
@@ -101,7 +101,7 @@ export function AlertsPage({ onSelect }: { onSelect: (symbol: string) => void })
               return (
                 <li key={a.id}>
                   {header && (
-                    <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-bg-panel/95 px-5 py-2 text-meta font-semibold text-text-secondary backdrop-blur md:px-6">
+                    <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-bg-card/95 px-5 py-2 text-meta font-semibold text-text-secondary backdrop-blur md:px-6">
                       {formatDay(a.fired_at)}
                     </h2>
                   )}
@@ -135,7 +135,7 @@ function AlertRow({ alert, onOpen }: { alert: Alert; onOpen: (symbol: string) =>
   const read = !!alert.read_at;
   return (
     <article className="flex gap-4 border-b border-border-subtle px-5 py-4 md:px-6 [contain-intrinsic-size:auto_110px] [content-visibility:auto]">
-      <time className="w-11 shrink-0 pt-0.5 text-meta text-text-muted max-sm:hidden" title={formatAgo(alert.fired_at)}>
+      <time className="w-12 shrink-0 pt-0.5 font-num text-[12px] text-text-muted max-sm:hidden" title={formatAgo(alert.fired_at)}>
         {formatClock(alert.fired_at)}
       </time>
       <div className="min-w-0 flex-1">

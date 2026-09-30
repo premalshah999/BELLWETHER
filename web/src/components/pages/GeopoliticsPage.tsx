@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { api, type MarketEvent } from "../../lib/api";
 import { dayOf, formatClock, formatDateTime, formatDay } from "../../lib/format";
 import { useUrlState } from "../../lib/url";
+import { usSectors } from "../../lib/signals";
 import { EventDrawer, importanceLabel, typeLabel } from "../EventDrawer";
 import { PageHeader, Segmented, SkeletonRows, Switch } from "../ui/controls";
 
@@ -17,7 +18,7 @@ import { PageHeader, Segmented, SkeletonRows, Switch } from "../ui/controls";
  * entities, and an event with none looks like it is about nothing. It is
  * about a sector, which is a fact this page can act on because every event
  * here already carries the sectors it reaches (internal/events/sector.go --
- * NSE industries and, prefixed "US: ", GICS ones) and every held or watched
+ * GICS sectors, prefixed "US: ") and every held or watched
  * symbol has a known industry to compare them against.
  *
  * Positions, not just the watchlist, are what "touches my holdings" checks
@@ -128,7 +129,7 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
   let lastDay = "";
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Policy & macro"
         subtitle={
@@ -161,7 +162,7 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
             </p>
           </div>
         ) : (
-          <ul className="pb-8">
+          <ul className="mx-5 mb-8 overflow-clip rounded-xl border border-border-subtle bg-bg-card md:mx-8">
             {shown.map((e) => {
               const hits = touching(e);
               // Sorted by arrival, so grouped and timed by arrival too: grouping
@@ -174,7 +175,7 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
               return (
                 <li key={e.id}>
                   {header && (
-                    <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-bg-panel/95 px-5 py-2 text-meta font-semibold text-text-secondary backdrop-blur md:px-6">
+                    <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-bg-card/95 px-5 py-2 text-meta font-semibold text-text-secondary backdrop-blur md:px-6">
                       {formatDay(at)}
                     </h2>
                   )}
@@ -184,14 +185,14 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
                       (hits.length ? "shadow-[inset_3px_0_0_var(--brass)]" : "")
                     }
                   >
-                    <time dateTime={at} title={formatDateTime(at)} className="w-11 shrink-0 pt-0.5 text-meta text-text-muted max-sm:hidden">
+                    <time dateTime={at} title={formatDateTime(at)} className="w-12 shrink-0 pt-0.5 font-num text-[12px] text-text-muted max-sm:hidden">
                       {formatClock(at)}
                     </time>
                     <div className="min-w-0 flex-1">
                       <button
                         type="button"
                         onClick={() => setOpenId(String(e.id))}
-                        className="text-left font-reading text-emphasis font-medium leading-snug text-text-primary outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-brand"
+                        className="text-left text-[15px] font-semibold leading-snug tracking-[-0.005em] text-text-primary outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-brand"
                       >
                         {e.headline}
                       </button>
@@ -200,12 +201,10 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
                           {e.official && <ShieldCheck size={13} className="text-brand" aria-label="Official source" />}
                           {e.source || "Unknown source"}
                         </span>
-                        <span>{typeLabel(e.event_type)}</span>
-                        {(e.sectors ?? []).length > 0 && (
-                          <span>Reaches {(e.sectors ?? []).map((x) => x.replace(/^US: /, "")).join(", ")}</span>
-                        )}
+                        <span className="rounded-full border border-border-subtle px-2 py-px">{typeLabel(e.event_type)}</span>
+                        {usSectors(e.sectors).length > 0 && <span>Reaches {usSectors(e.sectors).join(", ")}</span>}
                         {(major === "Major" || major === "Significant") && (
-                          <span className="rounded-sm bg-brand-muted px-1.5 font-medium text-brand">{major}</span>
+                          <span className="rounded-full bg-brand-muted px-2 py-px font-semibold text-accent-text">{major}</span>
                         )}
                       </p>
                       {hits.length > 0 && (
@@ -219,7 +218,7 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
                                 type="button"
                                 onClick={() => toChart(sym)}
                                 title={value != null ? "A position you hold" : "On your watchlist"}
-                                className="inline-flex h-6 items-center rounded px-1.5 font-semibold text-text-primary transition-colors hover:bg-brand-muted hover:text-brand"
+                                className="inline-flex h-6 items-center rounded-md bg-bg-chip px-2 font-num text-[12px] font-medium text-text-primary transition-colors hover:bg-brand-muted hover:text-accent-text"
                               >
                                 {sym}
                                 {value != null && <span className="ml-1 font-normal text-text-muted">{money(value)}</span>}
