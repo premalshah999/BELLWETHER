@@ -2,6 +2,8 @@ package news
 
 import (
 	"time"
+
+	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
 // Lane is how urgently a source is polled.
@@ -42,94 +44,44 @@ func (l Lane) Bounds() (min, max time.Duration) {
 	return b.min, b.max
 }
 
-// MarketPhase is where the Indian trading day currently is.
-//
-// Cadence follows the phase because information density does. A filing at
-// 15:45 IST moves tomorrow's open; the same filing at 03:00 IST is being read
-// by nobody for six hours, and polling for it every thirty seconds spends the
-// publisher's bandwidth and ours to learn the same thing later anyway.
+// MarketPhase is where the US trading day currently is, reported on the
+// data-sources page so stale news can be told apart from a quiet hour.
 type MarketPhase string
 
 const (
-	// PhasePreOpen is the run-up to the session, when overnight developments
-	// are being priced and the exchange publishes its pre-open data.
-	PhasePreOpen MarketPhase = "pre_open"
-	// PhaseOpen is the continuous session.
-	PhaseOpen MarketPhase = "open"
-	// PhasePostClose is the results-and-filings window. It is deliberately
-	// treated as aggressively as the session itself: Indian companies file
-	// their results after the close, so this is when the highest-value
-	// disclosures of the day actually arrive.
-	PhasePostClose MarketPhase = "post_close"
-	// PhaseOvernight is when Indian sources go quiet.
+	PhasePreOpen   MarketPhase = "pre_open"   // 04:00-09:30 ET, pre-market
+	PhaseOpen      MarketPhase = "open"       // the regular session
+	PhasePostClose MarketPhase = "post_close" // 16:00-20:00 ET, when earnings land
 	PhaseOvernight MarketPhase = "overnight"
-	// PhaseWeekend is Saturday and Sunday.
-	PhaseWeekend MarketPhase = "weekend"
+	PhaseWeekend   MarketPhase = "weekend"
 )
 
-// PhaseAt reports the market phase for an instant, in the given location.
-//
-// The boundaries are in IST regardless of where the process runs, because they
-// describe the Indian trading day rather than the server's timezone.
-func PhaseAt(t time.Time, loc *time.Location) MarketPhase {
-	if loc == nil {
-		loc = time.UTC
-	}
-	local := t.In(loc)
-	switch local.Weekday() {
-	case time.Saturday, time.Sunday:
+// PhaseAt reports the phase of the US trading day at t.
+func PhaseAt(t time.Time) MarketPhase {
+	local := t.In(marketdata.Market)
+	if wd := local.Weekday(); wd == time.Saturday || wd == time.Sunday {
 		return PhaseWeekend
 	}
-
-	minutes := local.Hour()*60 + local.Minute()
-	switch {
-	case minutes >= 7*60 && minutes < 9*60+15:
+	switch m := local.Hour()*60 + local.Minute(); {
+	case m >= 4*60 && m < 9*60+30:
 		return PhasePreOpen
-	case minutes >= 9*60+15 && minutes < 15*60+30:
+	case m >= 9*60+30 && m < 16*60:
 		return PhaseOpen
-	case minutes >= 15*60+30 && minutes < 21*60:
+	case m >= 16*60 && m < 20*60:
 		return PhasePostClose
-	default:
-		return PhaseOvernight
 	}
+	return PhaseOvernight
 }
 
-// cadenceMultiplier scales a source's interval for the current phase.
-//
-// Values below one mean "poll more often". Indian company sources slow down
-// overnight and at weekends; sources whose subject matter is global do not,
-// because what happens in Washington or Riyadh at 02:00 IST is exactly what
-// moves the Indian open.
-func cadenceMultiplier(phase MarketPhase, indian bool) float64 {
-	if !indian {
-		// Global and geopolitical coverage runs at a steady cadence around
-		// the clock. Slowing it overnight would blind the system during the
-		// hours when the news that sets the Indian open is actually made.
-		switch phase {
-		case PhaseWeekend:
-			return 1.5
-		default:
-			return 1
-		}
+// cadenceMultiplier scales a source's interval for the phase. Coverage runs
+// around the clock, because what happens overnight sets the open; only the
+// weekend eases off.
+func cadenceMultiplier(phase MarketPhase) float64 {
+	if phase == PhaseWeekend {
+		return 1.5
 	}
-	switch phase {
-	case PhasePreOpen, PhaseOpen:
-		return 1
-	case PhasePostClose:
-		// Results and filings land here. This is not a quiet period.
-		return 1
-	case PhaseOvernight:
-		return 4
-	case PhaseWeekend:
-		return 8
-	default:
-		return 1
-	}
+	return 1
 }
-
-// Indian reports whether a source's subject matter is Indian, and therefore
-// whether it should quieten outside Indian market hours.
-func (s Source) Indian() bool { return s.Country == "IN" }
 
 // Lane classifies a source by how urgent its contents are.
 //
@@ -185,7 +137,7 @@ func adaptiveInterval(src Source, emptyPolls int, phase MarketPhase) time.Durati
 		base = time.Duration(float64(base) * grow)
 	}
 
-	base = time.Duration(float64(base) * cadenceMultiplier(phase, src.Indian()))
+	base = time.Duration(float64(base) * cadenceMultiplier(phase))
 
 	lo, hi := src.Lane().Bounds()
 	if base < lo {
@@ -195,11 +147,4 @@ func adaptiveInterval(src Source, emptyPolls int, phase MarketPhase) time.Durati
 		base = hi
 	}
 	return base
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

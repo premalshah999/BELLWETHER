@@ -136,18 +136,9 @@ func syncWatchlistSources(
 	items := make([]news.Watched, 0, len(symbols))
 	for _, sym := range symbols {
 		watched[sym.String()] = true
-		w := news.Watched{Ticker: sym.Ticker, Venue: sym.Exchange}
-		// The registered name makes a far better query than a bare ticker,
-		// and the master has it for every NSE-listed instrument. There is no
-		// equivalent US text master yet (Phase 2), so a US company name is
-		// left blank and the query falls back to the ticker plus market
-		// words -- still correct, just less precise.
-		if sym.Exchange != marketdata.ExchangeUS {
-			if c, found := master.Lookup(sym.Ticker); found {
-				w.Company = c.Name
-			}
-		}
-		items = append(items, w)
+		// Queried by ticker with market words: many US company names are
+		// ordinary words ("Target", "Visa"), which a name search drowns in.
+		items = append(items, news.Watched{Ticker: sym.Ticker, Venue: sym.Exchange})
 	}
 
 	var fromScanner int
@@ -160,13 +151,7 @@ func syncWatchlistSources(
 			if watched[sym.String()] {
 				continue
 			}
-			w := news.Watched{Ticker: sym.Ticker, Venue: sym.Exchange, Attention: true}
-			if sym.Exchange != marketdata.ExchangeUS {
-				if c, found := master.Lookup(sym.Ticker); found {
-					w.Company = c.Name
-				}
-			}
-			items = append(items, w)
+			items = append(items, news.Watched{Ticker: sym.Ticker, Venue: sym.Exchange, Attention: true})
 			fromScanner++
 		}
 	}

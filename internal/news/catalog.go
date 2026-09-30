@@ -32,20 +32,8 @@ import (
 // rather than impersonating a browser.
 const catalogUserAgent = "TradeSys/1.0 (+https://github.com/tradesys/dashboard)"
 
-func GoogleNewsSearch(query, hl, gl string) string {
-	// A caller that names no locale gets the US one. This defaulted to en-IN
-	// when the app was India-first, which meant a query written for US markets
-	// was answered out of the Indian news index unless every call site
-	// remembered to say otherwise -- and several did not.
-	if hl == "" {
-		hl, gl = "en-US", "US"
-	}
-	params := url.Values{
-		"q":    {query},
-		"hl":   {hl},
-		"gl":   {gl},
-		"ceid": {gl + ":" + hl[:2]},
-	}
+func GoogleNewsSearch(query string) string {
+	params := url.Values{"q": {query}, "hl": {"en-US"}, "gl": {"US"}, "ceid": {"US:en"}}
 	return "https://news.google.com/rss/search?" + params.Encode()
 }
 
@@ -200,7 +188,7 @@ func DefaultSources() []Source {
 	}
 	for _, f := range usDiscovery {
 		out = append(out, Source{
-			ID: f.id, Name: f.name, URL: GoogleNewsSearch(f.query, "en-US", "US"),
+			ID: f.id, Name: f.name, URL: GoogleNewsSearch(f.query),
 			Method: MethodGoogleNews, Category: "discovery", Country: "US", Language: "en",
 			Trust: TrustWire, Refresh: 10 * time.Minute, Timeout: 20 * time.Second,
 			Usage: UsageDiscoveryOnly, Display: DisplayLinkOnly, Enabled: true,
@@ -306,7 +294,7 @@ func DefaultSources() []Source {
 	}
 	for _, f := range blockedWires {
 		out = append(out, Source{
-			ID: f.id, Name: f.name, URL: GoogleNewsSearch(f.query, "en-US", "US"),
+			ID: f.id, Name: f.name, URL: GoogleNewsSearch(f.query),
 			Method: MethodGoogleNews, Category: "discovery", Country: "US", Language: "en",
 			Trust: TrustWire, Refresh: 10 * time.Minute, Timeout: 20 * time.Second,
 			Usage: UsageDiscoveryOnly, Display: DisplayLinkOnly, Enabled: true,

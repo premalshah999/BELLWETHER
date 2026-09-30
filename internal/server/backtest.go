@@ -253,7 +253,7 @@ func (s *Server) runBacktest(w http.ResponseWriter, r *http.Request, a *algo.Alg
 
 			symCfg := cfg
 			if defaultCost {
-				symCfg.CostBps = backtest.DefaultCostBpsFor(sym)
+				symCfg.CostBps = backtest.DefaultCostBps
 			}
 
 			series, err := s.deps.Router.Candles(r.Context(), sym, interval, bars)

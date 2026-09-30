@@ -8,32 +8,16 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-// WatchlistSource builds a discovery source for one instrument.
-//
-// The curated catalog is broad by design — "India stocks", "India banking" —
-// which is right for finding what is happening in the market and wrong for
-// following a position. Measured against a real archive, 15 of 4,308 collected
-// items mentioned Reliance, and most of those were mutual-fund NAV
-// declarations that merely share the name.
-//
-// A watchlist is a statement about which companies matter to this operator, so
-// each one gets its own query. These sources also carry their symbol, which is
-// what lets the scheduler poll them harder when something is happening to that
-// company — the heat mechanism had nothing to act on before this existed.
-// Watched is one instrument to follow, and why.
+// Watched is one instrument to follow, and why. Each watched company gets its
+// own news query: the market-wide catalog finds what is happening, not what
+// is happening to a position. The source carries its symbol, so the scheduler
+// can poll it harder when that company becomes eventful.
 type Watched struct {
-	Ticker string
-	// Venue decides locale: which Google News edition is searched and which
-	// market words pad a bare-ticker query. The zero value is
-	// marketdata.ExchangeUS, so a Watched built without setting this is
-	// treated as American -- callers that mean an NSE/BSE instrument must
-	// say so explicitly.
-	Venue   marketdata.Exchange
+	Ticker  string
+	Venue   marketdata.Exchange // ExchangeIndex for a benchmark
 	Company string
 	// Attention marks an instrument the scanner flagged as moving with no
-	// explanation in the archive. The question then is not "keep me posted"
-	// but "what happened today", which is a different search and a different
-	// cadence.
+	// explanation in the archive: the question is "what happened today".
 	Attention bool
 }
 
@@ -43,24 +27,13 @@ func WatchlistSource(sym marketdata.Symbol, company string) Source {
 
 func watchedSource(w Watched) Source {
 	ticker, company := w.Ticker, w.Company
-	indian := w.Venue == marketdata.ExchangeNSE || w.Venue == marketdata.ExchangeBSE
-	query := watchlistQuery(ticker, company, w.Attention, indian)
+	query := watchlistQuery(ticker, company, w.Attention)
 	refresh := 4 * time.Minute
 	if w.Attention {
-		// The move already happened; the explanation is arriving now or in
-		// the next hour. Polling this at the leisurely watchlist cadence is
-		// how the answer shows up after it stopped being useful.
+		// The explanation is arriving now; the watchlist cadence is too slow.
 		refresh = 90 * time.Second
 	}
-	hl, gl, country := "en-US", "US", "US"
-	if indian {
-		hl, gl, country = "en-IN", "IN", "IN"
-	}
-	// The id carries the venue for every symbol that needs disambiguating
-	// from it (NSE/BSE), and stays bare for US, matching
-	// marketdata.Symbol{...}.String() lowercased -- the same rule the
-	// venue-qualification migration applied to every id already on record,
-	// so a source created today and one migrated from before it look alike.
+	// The id is the canonical symbol, lowercased: watch-aapl, watch-gspc.index.
 	id := "watch-" + strings.ToLower(ticker)
 	if w.Venue != marketdata.ExchangeUS {
 		id += "." + strings.ToLower(string(w.Venue))
@@ -68,11 +41,11 @@ func watchedSource(w Watched) Source {
 	return Source{
 		ID:   id,
 		Name: displayName(ticker, company, w.Attention),
-		URL:  GoogleNewsSearch(query, hl, gl),
+		URL:  GoogleNewsSearch(query),
 
 		Method:   MethodGoogleNews,
 		Category: "watchlist",
-		Country:  country,
+		Country:  "US",
 		Language: "en",
 
 		Trust: TrustMajorFin,
@@ -96,47 +69,24 @@ func watchedSource(w Watched) Source {
 	}
 }
 
-// watchlistQuery composes the search.
-//
-// The registered name alone, as an exact phrase, when one is known. Adding the
-// bare ticker as an alternative seemed harmless and was not: searching
-// "Reliance Industries" OR "RELIANCE" returned "From Rehabilitation to
-// Self-Reliance" and "Rohingya repatriation, self-reliance", and every one of
-// those was then attributed to the company because the query had named it.
-//
-// A ticker is only a good search term when it is a distinctive string, and
-// most are not — "IDEA", "TOTAL", "RELIANCE" are ordinary English words before
-// they are instruments. The exact company phrase has no such problem.
-//
-// The window is the other half of the query and was missing entirely. Measured
-// against Google News, a bare "Reliance Industries" returned 81 items of which
-// 32 were more than a week old and the oldest was 1,541 days — four-year-old
-// articles arriving on every poll, about the companies the operator cares most
-// about. The same query with a window returned 61 items, none older than two
-// days.
-func watchlistQuery(ticker, company string, attention, indian bool) string {
-	// An instrument the scanner just flagged is a question about today, so the
-	// window closes to a single day. A followed instrument is a standing
-	// interest and three days lets a weekend's news arrive.
+// watchlistQuery composes the search: the company name as an exact phrase
+// when known, because most tickers are ordinary words ("ALL", "NOW", "CAT")
+// and searching one attributes unrelated stories to the company. The time
+// window keeps years-old articles from arriving on every poll: one day for a
+// flagged move, three for a standing interest so a weekend's news arrives.
+func watchlistQuery(ticker, company string, attention bool) string {
 	window := "when:3d"
 	if attention {
 		window = "when:1d"
 	}
-
 	company = strings.TrimSpace(company)
 	if company == "" {
-		// With no name to work from, the ticker is paired with market words
-		// so it lands in a financial context rather than a linguistic one.
-		marketWords := "shares OR stock OR NASDAQ OR NYSE"
-		if indian {
-			marketWords = "shares OR stock OR NSE"
-		}
-		return fmt.Sprintf("%q (%s) %s", ticker, marketWords, window)
+		// No name: market words keep the ticker in a financial context.
+		return fmt.Sprintf("%q (shares OR stock OR NASDAQ OR NYSE) %s", ticker, window)
 	}
-	// The legal suffix is dropped: publishers write "Reliance Industries",
-	// not "Reliance Industries Limited", and the phrase must match how they
-	// write it.
-	for _, suffix := range []string{" Limited", " Ltd.", " Ltd", " Corporation", " Corp"} {
+	// Publishers write "Apple", not "Apple Inc.": drop the legal suffix.
+	for _, suffix := range []string{" Inc.", " Inc", " Corporation", " Corp.", " Corp", " & Co.", " Co.", " Co",
+		" Company", " plc", " PLC", " Ltd.", " Ltd", " Limited", ","} {
 		company = strings.TrimSuffix(company, suffix)
 	}
 	return fmt.Sprintf("%q %s", company, window)

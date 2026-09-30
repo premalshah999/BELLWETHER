@@ -382,8 +382,8 @@ func (e *Engine) record(ctx context.Context, a *algo.Algorithm, sym marketdata.S
 //
 // The shape follows the product specification exactly:
 //
-//	[ALGO] Momentum watch — RELIANCE
-//	RSI(14)=32.1 (<35), close 2,431 > SMA200 2,398, vol 1.8x avg
+//	[ALGO] Momentum watch — AAPL
+//	RSI(14)=32.1 (<35), close 243.10 > SMA200 239.80, vol 1.8x avg
 //	AI: <brief, or "AI context unavailable">
 func RenderMessage(a *Alert) Message {
 	ticker := a.Symbol

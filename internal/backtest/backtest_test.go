@@ -11,7 +11,7 @@ import (
 
 func sym(t *testing.T) marketdata.Symbol {
 	t.Helper()
-	s, err := marketdata.ParseSymbol("TEST.NSE")
+	s, err := marketdata.ParseSymbol("TEST")
 	if err != nil {
 		t.Fatalf("parse symbol: %v", err)
 	}

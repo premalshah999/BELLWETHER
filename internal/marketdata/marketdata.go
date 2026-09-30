@@ -91,9 +91,6 @@ type Series struct {
 	Candles   []Candle  `json:"candles"`
 	Source    string    `json:"source"`
 	FetchedAt time.Time `json:"fetched_at"`
-	// ResolvedSymbol is set when the data came from a different listing than
-	// the one requested; see Bars.ResolvedSymbol.
-	ResolvedSymbol string `json:"resolved_symbol,omitempty"`
 	// Stale is set when every live provider failed and this data came out of
 	// the cache past its TTL. The UI must surface this, never hide it.
 	Stale bool `json:"stale"`
@@ -118,14 +115,6 @@ var ErrNoData = errors.New("marketdata: provider has no data for symbol")
 type Bars struct {
 	// Candles are the bars, oldest first.
 	Candles []Candle
-	// ResolvedSymbol names the instrument that actually served this data,
-	// set only when it differs from the one requested. A provider may
-	// substitute a sibling listing when the requested venue has no usable
-	// history — Yahoo's BSE feed is missing for some names that trade fine on
-	// NSE. Substitution is never silent: this value is stored, returned by
-	// the API, and shown in the UI, because a BSE chart quietly drawn from
-	// NSE prices would be a lie.
-	ResolvedSymbol string
 }
 
 // Provider is the seam every upstream price source sits behind. Adapters must
@@ -171,10 +160,9 @@ func SortCandles(in []Candle) []Candle {
 // CachedSeries is candles read back out of the cache, with the provenance
 // needed to judge whether they are still fresh.
 type CachedSeries struct {
-	Candles        []Candle
-	Source         string
-	ResolvedSymbol string
-	FetchedAt      time.Time
+	Candles   []Candle
+	Source    string
+	FetchedAt time.Time
 	// RequestedLimit is the largest number of bars previously asked of a
 	// provider for this symbol and interval. Without it the cache cannot
 	// tell "we only ever wanted 30 bars" apart from "30 bars is all that

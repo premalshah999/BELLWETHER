@@ -3,77 +3,55 @@ package news
 import (
 	"testing"
 	"time"
+
+	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-func ist(t *testing.T) *time.Location {
-	t.Helper()
-	loc, err := time.LoadLocation("Asia/Kolkata")
-	if err != nil {
-		t.Skip("no tzdata")
-	}
-	return loc
-}
-
 func TestPhaseAt(t *testing.T) {
-	loc := ist(t)
-	cases := []struct {
-		name string
+	et := func(day, h, m int) time.Time { return time.Date(2026, 8, day, h, m, 0, 0, marketdata.Market) }
+	for name, tc := range map[string]struct {
 		when time.Time
 		want MarketPhase
 	}{
-		// A Tuesday.
-		{"pre-open", time.Date(2026, 8, 25, 8, 0, 0, 0, loc), PhasePreOpen},
-		{"just before open", time.Date(2026, 8, 25, 9, 14, 0, 0, loc), PhasePreOpen},
-		{"open", time.Date(2026, 8, 25, 9, 15, 0, 0, loc), PhaseOpen},
-		{"mid session", time.Date(2026, 8, 25, 12, 0, 0, 0, loc), PhaseOpen},
-		{"last minute", time.Date(2026, 8, 25, 15, 29, 0, 0, loc), PhaseOpen},
-		// Results land after the close, so this window is not a quiet one.
-		{"post close", time.Date(2026, 8, 25, 15, 30, 0, 0, loc), PhasePostClose},
-		{"evening filings", time.Date(2026, 8, 25, 19, 30, 0, 0, loc), PhasePostClose},
-		{"overnight", time.Date(2026, 8, 25, 23, 0, 0, 0, loc), PhaseOvernight},
-		{"early morning", time.Date(2026, 8, 25, 3, 0, 0, 0, loc), PhaseOvernight},
-		// A Saturday and a Sunday.
-		{"saturday", time.Date(2026, 8, 29, 12, 0, 0, 0, loc), PhaseWeekend},
-		{"sunday", time.Date(2026, 8, 30, 12, 0, 0, 0, loc), PhaseWeekend},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := PhaseAt(tc.when, loc); got != tc.want {
-				t.Errorf("PhaseAt(%s) = %s, want %s", tc.when.Format(time.Kitchen), got, tc.want)
-			}
-		})
+		// Tuesday the 25th.
+		"pre-market":       {et(25, 8, 0), PhasePreOpen},
+		"just before open": {et(25, 9, 29), PhasePreOpen},
+		"open":             {et(25, 9, 30), PhaseOpen},
+		"last minute":      {et(25, 15, 59), PhaseOpen},
+		"after hours":      {et(25, 16, 0), PhasePostClose},
+		"earnings evening": {et(25, 19, 30), PhasePostClose},
+		"overnight":        {et(25, 23, 0), PhaseOvernight},
+		"early morning":    {et(25, 3, 0), PhaseOvernight},
+		"saturday":         {et(29, 12, 0), PhaseWeekend},
+		"sunday":           {et(30, 12, 0), PhaseWeekend},
+	} {
+		if got := PhaseAt(tc.when); got != tc.want {
+			t.Errorf("%s: PhaseAt = %s, want %s", name, got, tc.want)
+		}
 	}
 }
 
-// TestGlobalSourcesStayAwakeOvernight is the rule that matters most about
-// phases: what happens in Washington at 02:00 IST is what moves the Indian
-// open, so global coverage must not be throttled when India is asleep.
-func TestGlobalSourcesStayAwakeOvernight(t *testing.T) {
-	indian := Source{Country: "IN", Category: "markets", Refresh: 3 * time.Minute}
-	global := Source{Country: "", Category: "markets", Refresh: 3 * time.Minute}
-
-	indianNight := adaptiveInterval(indian, 0, PhaseOvernight)
-	globalNight := adaptiveInterval(global, 0, PhaseOvernight)
-
-	if globalNight >= indianNight {
-		t.Errorf("global overnight interval %v should be shorter than Indian %v",
-			globalNight, indianNight)
+// Coverage runs around the clock: what happens overnight sets the open.
+func TestSourcesStayAwakeOvernight(t *testing.T) {
+	src := Source{Country: "US", Category: "markets", Refresh: 3 * time.Minute}
+	if adaptiveInterval(src, 0, PhaseOvernight) != adaptiveInterval(src, 0, PhaseOpen) {
+		t.Error("overnight cadence should match the session")
 	}
-	if globalNight != adaptiveInterval(global, 0, PhaseOpen) {
-		t.Error("global cadence should not change with the Indian session")
+	if adaptiveInterval(src, 0, PhaseWeekend) <= adaptiveInterval(src, 0, PhaseOpen) {
+		t.Error("the weekend should ease off")
 	}
 }
 
 func TestLaneBoundsAreRespected(t *testing.T) {
 	// A filings source configured absurdly slowly is still polled fast.
-	filings := Source{Category: "filings", Country: "IN", Refresh: 6 * time.Hour, Usage: UsageOfficial}
+	filings := Source{Category: "filings", Country: "US", Refresh: 6 * time.Hour, Usage: UsageOfficial}
 	got := adaptiveInterval(filings, 0, PhaseOpen)
 	if _, hi := LaneFast.Bounds(); got > hi {
 		t.Errorf("filings interval = %v, want at most the fast ceiling %v", got, hi)
 	}
 
 	// A quarterly disclosure configured absurdly fast is still polled slowly.
-	shareholding := Source{Category: "shareholding", Country: "IN", Refresh: time.Second, Usage: UsageOfficial}
+	shareholding := Source{Category: "shareholding", Country: "US", Refresh: time.Second, Usage: UsageOfficial}
 	got = adaptiveInterval(shareholding, 0, PhaseOpen)
 	if lo, _ := LaneSlow.Bounds(); got < lo {
 		t.Errorf("shareholding interval = %v, want at least the slow floor %v", got, lo)
@@ -83,7 +61,7 @@ func TestLaneBoundsAreRespected(t *testing.T) {
 // TestQuietFeedBacksOff covers the adaptation: a feed returning nothing is
 // asked less often, but drifts rather than jumping to its ceiling.
 func TestQuietFeedBacksOff(t *testing.T) {
-	src := Source{Category: "markets", Country: "IN", Refresh: 3 * time.Minute}
+	src := Source{Category: "markets", Country: "US", Refresh: 3 * time.Minute}
 
 	prev := adaptiveInterval(src, 0, PhaseOpen)
 	for empty := 1; empty <= 6; empty++ {

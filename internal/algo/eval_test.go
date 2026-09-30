@@ -10,7 +10,7 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-var testSymbol = marketdata.MustParseSymbol("RELIANCE.BSE")
+var testSymbol = marketdata.MustParseSymbol("XOM")
 
 // bars builds a candle series from closes. Highs and lows straddle the close
 // so volatility indicators have something to work with.
@@ -106,7 +106,7 @@ func TestEveryOperatorAgainstAConstant(t *testing.T) {
 	for _, tc := range tests {
 		name := "close " + tc.op + " " + formatNumber(tc.value)
 		t.Run(name, func(t *testing.T) {
-			src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+			src := `{"name":"t","symbols":["XOM"],"interval":"1d",
                      "all":[{"indicator":"close","op":"` + tc.op + `","value":` + trimFloat(tc.value) + `}],
                      "cooldown_hours":1,"notify":{}}`
 			got := evaluate(t, src, candles)
@@ -192,7 +192,7 @@ func TestCrossoverSemantics(t *testing.T) {
 			candles := bars(tc.closes...)
 			thr := trimFloat(tc.threshold)
 
-			crossSrc := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+			crossSrc := `{"name":"t","symbols":["XOM"],"interval":"1d",
                           "all":[{"indicator":"close","op":"` + tc.op + `","value":` + thr + `}],
                           "cooldown_hours":1,"notify":{}}`
 			if got := evaluate(t, crossSrc, candles).Status; got != tc.wantCross {
@@ -204,7 +204,7 @@ func TestCrossoverSemantics(t *testing.T) {
 			if tc.op == OpCrossesBelow {
 				plainOp = "<"
 			}
-			plainSrc := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+			plainSrc := `{"name":"t","symbols":["XOM"],"interval":"1d",
                           "all":[{"indicator":"close","op":"` + plainOp + `","value":` + thr + `}],
                           "cooldown_hours":1,"notify":{}}`
 			if got := evaluate(t, plainSrc, candles).Status; got != tc.wantIsSide {
@@ -215,7 +215,7 @@ func TestCrossoverSemantics(t *testing.T) {
 }
 
 func TestCrossoverNeedsAPreviousBar(t *testing.T) {
-	src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+	src := `{"name":"t","symbols":["XOM"],"interval":"1d",
              "all":[{"indicator":"close","op":"crosses_above","value":5}],
              "cooldown_hours":1,"notify":{}}`
 	got := evaluate(t, src, bars(10))
@@ -230,7 +230,7 @@ func TestCrossoverNeedsAPreviousBar(t *testing.T) {
 func TestCrossoverBetweenTwoIndicators(t *testing.T) {
 	// A golden-cross shape: a short average rising through a long one.
 	closes := append(ramp(40, 100, -1), ramp(20, 61, 4)...)
-	src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+	src := `{"name":"t","symbols":["XOM"],"interval":"1d",
              "all":[{"indicator":"sma","period":5,"op":"crosses_above",
                      "compare":{"indicator":"sma","period":20}}],
              "cooldown_hours":1,"notify":{}}`
@@ -257,7 +257,7 @@ func TestMissingDataIsNeverZero(t *testing.T) {
 	// read as 0, "close > SMA(200)" would be trivially true and this
 	// algorithm would fire on every symbol from day one.
 	candles := bars(ramp(50, 100, 1)...)
-	src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+	src := `{"name":"t","symbols":["XOM"],"interval":"1d",
              "all":[{"indicator":"close","op":">","compare":{"indicator":"sma","period":200}}],
              "cooldown_hours":1,"notify":{}}`
 
@@ -306,7 +306,7 @@ func TestInsufficientDataForEachIndicator(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.indicator, func(t *testing.T) {
-			src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+			src := `{"name":"t","symbols":["XOM"],"interval":"1d",
                      "all":[{"indicator":"` + tc.indicator + `"` + tc.params + `,"op":">","value":0}],
                      "cooldown_hours":1,"notify":{}}`
 			got := evaluate(t, src, bars(ramp(tc.bars, 100, 1)...))
@@ -318,7 +318,7 @@ func TestInsufficientDataForEachIndicator(t *testing.T) {
 }
 
 func TestNoCandlesIsInsufficientNotFalse(t *testing.T) {
-	src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+	src := `{"name":"t","symbols":["XOM"],"interval":"1d",
              "all":[{"indicator":"close","op":">","value":0}],
              "cooldown_hours":1,"notify":{}}`
 	got := evaluate(t, src, nil)
@@ -337,7 +337,7 @@ func TestNonFiniteInputDoesNotTrigger(t *testing.T) {
 		candles := bars(10, 20, 30)
 		candles[len(candles)-1].Close = bad
 
-		src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+		src := `{"name":"t","symbols":["XOM"],"interval":"1d",
                  "all":[{"indicator":"close","op":">","value":0}],
                  "cooldown_hours":1,"notify":{}}`
 		got := evaluate(t, src, candles)
@@ -393,7 +393,7 @@ func TestAnyGroupFiresDespiteAnUnknownSibling(t *testing.T) {
 	// One branch is definitely satisfied; the other needs history we lack.
 	// The answer is still definitely yes.
 	candles := bars(ramp(50, 100, 1)...)
-	src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+	src := `{"name":"t","symbols":["XOM"],"interval":"1d",
              "any":[{"indicator":"close","op":">","value":10},
                     {"indicator":"close","op":">","compare":{"indicator":"sma","period":200}}],
              "cooldown_hours":1,"notify":{}}`
@@ -408,7 +408,7 @@ func TestAllGroupRejectsDespiteAnUnknownSibling(t *testing.T) {
 	// One branch is definitely false, so the AND is false whatever the
 	// unknown branch would have been.
 	candles := bars(ramp(50, 100, 1)...)
-	src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+	src := `{"name":"t","symbols":["XOM"],"interval":"1d",
              "all":[{"indicator":"close","op":"<","value":10},
                     {"indicator":"close","op":">","compare":{"indicator":"sma","period":200}}],
              "cooldown_hours":1,"notify":{}}`
@@ -432,7 +432,7 @@ func TestNestedGroups(t *testing.T) {
 	}{
 		{
 			name: "all with a nested any, one branch true",
-			src: `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+			src: `{"name":"t","symbols":["XOM"],"interval":"1d",
                    "all":[{"indicator":"close","op":"<","value":60},
                           {"any":[{"indicator":"close","op":">","value":999},
                                   {"indicator":"volume","op":">","value":4000}]}],
@@ -441,7 +441,7 @@ func TestNestedGroups(t *testing.T) {
 		},
 		{
 			name: "all with a nested any, no branch true",
-			src: `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+			src: `{"name":"t","symbols":["XOM"],"interval":"1d",
                    "all":[{"indicator":"close","op":"<","value":60},
                           {"any":[{"indicator":"close","op":">","value":999},
                                   {"indicator":"volume","op":">","value":9999}]}],
@@ -450,7 +450,7 @@ func TestNestedGroups(t *testing.T) {
 		},
 		{
 			name: "any with a nested all, all satisfied",
-			src: `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+			src: `{"name":"t","symbols":["XOM"],"interval":"1d",
                    "any":[{"indicator":"close","op":">","value":999},
                           {"all":[{"indicator":"close","op":"<","value":60},
                                   {"indicator":"volume","op":">","value":4000}]}],
@@ -459,7 +459,7 @@ func TestNestedGroups(t *testing.T) {
 		},
 		{
 			name: "any with a nested all, one member fails",
-			src: `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+			src: `{"name":"t","symbols":["XOM"],"interval":"1d",
                    "any":[{"indicator":"close","op":">","value":999},
                           {"all":[{"indicator":"close","op":"<","value":60},
                                   {"indicator":"volume","op":">","value":9999}]}],
@@ -510,7 +510,7 @@ func TestMultiplierOnCompare(t *testing.T) {
 			v[len(v)-1] = tc.lastVolume
 			candles := barsWithVolume(closes, v)
 
-			src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+			src := `{"name":"t","symbols":["XOM"],"interval":"1d",
                      "all":[{"indicator":"volume","op":">",
                              "compare":{"indicator":"vol_avg","period":20,"mult":1.5}}],
                      "cooldown_hours":1,"notify":{}}`
@@ -526,7 +526,7 @@ func TestAbsentMultiplierDoesNotZeroTheOperand(t *testing.T) {
 	// Mult defaults to 1, not to its zero value. Getting this wrong would
 	// make every "compare" operand read as zero.
 	candles := bars(ramp(30, 100, 1)...)
-	src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+	src := `{"name":"t","symbols":["XOM"],"interval":"1d",
              "all":[{"indicator":"close","op":">","compare":{"indicator":"sma","period":20}}],
              "cooldown_hours":1,"notify":{}}`
 
@@ -545,7 +545,7 @@ func TestAbsentMultiplierDoesNotZeroTheOperand(t *testing.T) {
 func TestOffset(t *testing.T) {
 	candles := bars(ramp(30, 100, 1)...)
 	// close must exceed SMA(20) plus 50, which it does not on a gentle ramp.
-	src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+	src := `{"name":"t","symbols":["XOM"],"interval":"1d",
              "all":[{"indicator":"close","op":">","compare":{"indicator":"sma","period":20,"offset":50}}],
              "cooldown_hours":1,"notify":{}}`
 	if got := evaluate(t, src, candles); got.Status != StatusNotMet {
@@ -559,7 +559,7 @@ func TestOffset(t *testing.T) {
 
 func TestSnapshotRecordsEveryCondition(t *testing.T) {
 	candles := barsWithVolume(ramp(30, 100, 2), constantSlice(30, 1000))
-	src := `{"name":"Momentum watch","symbols":["RELIANCE.BSE"],"interval":"1d",
+	src := `{"name":"Momentum watch","symbols":["XOM"],"interval":"1d",
              "all":[{"indicator":"rsi","period":14,"op":">","value":10},
                     {"indicator":"close","op":">","compare":{"indicator":"sma","period":20}},
                     {"indicator":"volume","op":">=","compare":{"indicator":"vol_avg","period":20,"mult":1.0}}],
@@ -599,7 +599,7 @@ func TestSnapshotRecordsEveryCondition(t *testing.T) {
 
 func TestSummaryReadsLikeTheSpecExample(t *testing.T) {
 	candles := barsWithVolume(ramp(30, 100, 2), constantSlice(30, 1000))
-	src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+	src := `{"name":"t","symbols":["XOM"],"interval":"1d",
              "all":[{"indicator":"close","op":">","compare":{"indicator":"sma","period":20}}],
              "cooldown_hours":1,"notify":{}}`
 
@@ -661,7 +661,7 @@ func TestRequiredBars(t *testing.T) {
 
 func TestEvaluationIsDeterministic(t *testing.T) {
 	candles := barsWithVolume(ramp(300, 100, 0.7), constantSlice(300, 1000))
-	src := `{"name":"t","symbols":["RELIANCE.BSE"],"interval":"1d",
+	src := `{"name":"t","symbols":["XOM"],"interval":"1d",
              "all":[{"indicator":"rsi","period":14,"op":">","value":20},
                     {"indicator":"close","op":">","compare":{"indicator":"sma","period":200}},
                     {"any":[{"indicator":"macd","op":">","compare":{"indicator":"macd_signal"}},
@@ -737,15 +737,10 @@ func constantSlice(n int, v float64) []float64 {
 // trimFloat renders a float as compact JSON-safe literal text.
 func trimFloat(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
 
-// TestSessionVWAPBucketsBySymbolVenue is the regression for the bug fixed in
-// Evaluate: session-based indicators used to bucket by the Evaluator's own
-// shared display timezone, so a US symbol's SessionVWAP reset by IST rather
-// than by ET. These two bars sit on different ET calendar days but the same
-// IST calendar day (04:00Z/06:00Z straddle ET's 05:00Z local-midnight
-// boundary, which falls midday in IST): a US symbol must see its session
-// reset before the second bar, an NSE symbol evaluating the identical
-// candles must not.
-func TestSessionVWAPBucketsBySymbolVenue(t *testing.T) {
+// Session indicators bucket by the market's own day (ET), not the evaluator's
+// display timezone: these bars share a UTC date but straddle ET midnight
+// (05:00Z), so the session VWAP must reset before the second bar.
+func TestSessionVWAPBucketsByMarketDay(t *testing.T) {
 	candles := []marketdata.Candle{
 		{Time: time.Date(2026, 1, 1, 4, 0, 0, 0, time.UTC),
 			Open: 100, High: 100, Low: 100, Close: 100, Volume: 100},
@@ -754,16 +749,9 @@ func TestSessionVWAPBucketsBySymbolVenue(t *testing.T) {
 	}
 	const src = `{"name":"t","symbols":["X"],"interval":"1h",
 		"all":[{"indicator":"session_vwap","op":">","value":180}],"notify":{}}`
-
-	us := NewEvaluator(time.UTC).Evaluate(mustAlgo(t, src), marketdata.MustParseSymbol("AAPL"), candles)
-	if !us.Triggered() {
-		t.Errorf("US symbol: session_vwap should have reset before the second bar (ET midnight falls between them), giving ~200 > 180; got status=%s reason=%q",
-			us.Status, us.Reason)
-	}
-
-	nse := NewEvaluator(time.UTC).Evaluate(mustAlgo(t, src), marketdata.MustParseSymbol("RELIANCE.NSE"), candles)
-	if nse.Triggered() {
-		t.Errorf("NSE symbol: session_vwap should still be accumulating across both bars (same IST calendar day), giving ~150, not > 180; got status=%s reason=%q",
-			nse.Status, nse.Reason)
+	got := NewEvaluator(time.UTC).Evaluate(mustAlgo(t, src), marketdata.MustParseSymbol("AAPL"), candles)
+	if !got.Triggered() {
+		t.Errorf("session_vwap should have reset at ET midnight, giving ~200 > 180; got status=%s reason=%q",
+			got.Status, got.Reason)
 	}
 }

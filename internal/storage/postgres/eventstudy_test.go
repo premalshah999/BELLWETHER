@@ -36,14 +36,14 @@ func TestEventTypeSymbolPairsAndCounts(t *testing.T) {
 
 	discovered2 := discovered.Add(48 * time.Hour)
 	e2ID, _, err := db.UpsertEvent(ctx, news.Event{
-		Fingerprint: "eventstudy-test-2", Type: "EARNINGS", Headline: "RELIANCE earnings",
+		Fingerprint: "eventstudy-test-2", Type: "EARNINGS", Headline: "Exxon earnings",
 		DiscoveredAt: discovered2, UpdatedAt: discovered2,
 	}, "eventstudy-test-2")
 	if err != nil {
 		t.Fatalf("upsert event 2: %v", err)
 	}
 	if err := db.UpsertEventEntities(ctx, e2ID, []news.EventEntity{
-		{Symbol: "RELIANCE.NSE", Relationship: news.RelPrimary},
+		{Symbol: "XOM", Relationship: news.RelPrimary},
 	}); err != nil {
 		t.Fatalf("attach entity 2: %v", err)
 	}
@@ -77,8 +77,8 @@ func TestEventTypeSymbolPairsAndCounts(t *testing.T) {
 	if got := bySymbol["AAPL"]; !got.Equal(discovered) {
 		t.Errorf("AAPL discovered_at = %v, want %v", got, discovered)
 	}
-	if got := bySymbol["RELIANCE.NSE"]; !got.Equal(discovered2) {
-		t.Errorf("RELIANCE.NSE discovered_at = %v, want %v", got, discovered2)
+	if got := bySymbol["XOM"]; !got.Equal(discovered2) {
+		t.Errorf("XOM discovered_at = %v, want %v", got, discovered2)
 	}
 
 	counts, err := db.EventTypeCounts(ctx)

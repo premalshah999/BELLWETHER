@@ -15,10 +15,9 @@ type Template struct {
 	Algorithm *Algorithm `json:"algorithm"`
 }
 
-// defaultSymbols seed each template: a US megacap and a large-cap NSE name,
-// both in the watchlist's own seed list, so a freshly seeded algorithm
-// evaluates against data the operator can already see.
-var defaultSymbols = []string{"AAPL", "RELIANCE.NSE"}
+// defaultSymbols seed each template from the watchlist's own seed list, so a
+// freshly seeded algorithm evaluates against data the operator can see.
+var defaultSymbols = []string{"AAPL", "MSFT"}
 
 // Templates returns the prebuilt algorithms. Each one is validated at startup
 // by TestTemplatesAreValid, so a broken template cannot ship.

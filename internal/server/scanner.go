@@ -59,7 +59,7 @@ func (s *Server) handleRunScan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "scanner_unavailable", "the market scanner is not configured")
 		return
 	}
-	res, err := s.deps.Scanner.Run(r.Context(), nil)
+	res, err := s.deps.Scanner.Run(r.Context())
 	if err != nil {
 		s.deps.Log.Warn("manual scan failed", "err", err)
 		writeError(w, http.StatusBadGateway, "scan_failed", "the scan could not be completed: "+err.Error())

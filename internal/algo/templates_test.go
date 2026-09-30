@@ -82,7 +82,7 @@ func TestTemplatesEvaluateWithoutError(t *testing.T) {
 	}
 
 	e := NewEvaluator(time.UTC)
-	sym := marketdata.MustParseSymbol("RELIANCE.BSE")
+	sym := marketdata.MustParseSymbol("XOM")
 
 	for _, tpl := range Templates() {
 		t.Run(tpl.Key, func(t *testing.T) {

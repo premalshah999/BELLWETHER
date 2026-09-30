@@ -82,25 +82,17 @@ func NewPoller(store Store, symbols SymbolSource, opts ...PollerOption) *Poller 
 	return p
 }
 
-// defaultCompanyNames seeds a few well-known Indian tickers whose bare symbol
-// is ambiguous in a news search.
+// defaultCompanyNames name a few large caps, whose news searches read
+// better by name than by ticker.
 func defaultCompanyNames() map[string]string {
 	return map[string]string{
-		"RELIANCE":  "Reliance Industries",
-		"TCS":       "Tata Consultancy Services",
-		"INFY":      "Infosys",
-		"HDFCBANK":  "HDFC Bank",
-		"ICICIBANK": "ICICI Bank",
-		"SBIN":      "State Bank of India",
-		"ITC":       "ITC Limited",
-		"WIPRO":     "Wipro",
-		"AAPL":      "Apple Inc",
-		"MSFT":      "Microsoft",
-		"NVDA":      "Nvidia",
-		"GOOGL":     "Alphabet Inc",
-		"AMZN":      "Amazon.com",
-		"TSLA":      "Tesla Inc",
-		"META":      "Meta Platforms",
+		"AAPL":  "Apple Inc",
+		"MSFT":  "Microsoft",
+		"NVDA":  "Nvidia",
+		"GOOGL": "Alphabet Inc",
+		"AMZN":  "Amazon.com",
+		"TSLA":  "Tesla Inc",
+		"META":  "Meta Platforms",
 	}
 }
 
@@ -174,7 +166,7 @@ func (p *Poller) PollAll(ctx context.Context) (PollSummary, error) {
 }
 
 func (p *Poller) pollSymbol(ctx context.Context, sym marketdata.Symbol) (added, fetched int, err error) {
-	feedURL := GoogleNewsFeed(sym.String(), p.companyNames[sym.Ticker], sym.IsIndian())
+	feedURL := GoogleNewsFeed(sym.String(), p.companyNames[sym.Ticker])
 
 	body, err := p.fetch(ctx, feedURL)
 	if err != nil {

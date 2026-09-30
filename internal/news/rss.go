@@ -170,27 +170,13 @@ func sourceFor(explicit, link, feedTitle string) string {
 	return "unknown"
 }
 
-// parseFeedTime accepts the many date formats feeds emit in practice. An
-// unparseable date yields the zero time, never "now".
-func parseFeedTime(s string) time.Time { return parseFeedTimeIn(s, time.UTC) }
-
-// parseFeedTimeIn parses a feed timestamp, using loc for formats that carry no
-// zone of their own.
-//
-// The default matters more than it looks. A zoneless "25-Aug-2026 19:28:37"
-// from NSE is Indian Standard Time, and reading it as UTC would date every
-// filing 5h30m before it was published — enough to reorder a day's events and
-// to make the ingestion latency metric report negative numbers.
-func parseFeedTimeIn(s string, loc *time.Location) time.Time {
+// parseFeedTime accepts the many date formats feeds emit in practice, reading
+// a zoneless one as UTC. An unparseable date yields the zero time, never "now".
+func parseFeedTime(s string) time.Time {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return time.Time{}
 	}
-	if loc == nil {
-		loc = time.UTC
-	}
-	// Formats carrying an explicit zone are parsed first, so an explicit
-	// offset always wins over the caller's default.
 	layouts := []string{
 		time.RFC1123Z,
 		time.RFC1123,
@@ -207,17 +193,17 @@ func parseFeedTimeIn(s string, loc *time.Location) time.Time {
 		}
 	}
 
-	// Zoneless formats, interpreted in loc.
+	// Zoneless formats.
 	for _, layout := range []string{
 		"2006-01-02 15:04:05",
 		"2006-01-02T15:04:05",
-		"02-Jan-2006 15:04:05", // NSE corporate filings
+		"02-Jan-2006 15:04:05",
 		"02-Jan-2006 15:04",
 		"02-Jan-2006",
 		"02 Jan 2006 15:04:05",
 		"2006-01-02",
 	} {
-		if t, err := time.ParseInLocation(layout, s, loc); err == nil {
+		if t, err := time.Parse(layout, s); err == nil {
 			return t.UTC()
 		}
 	}

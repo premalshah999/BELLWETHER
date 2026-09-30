@@ -12,7 +12,7 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 		PromptSystem: nil,
 		PromptAlertContext: map[string]any{
 			"AlgorithmName": "Momentum watch",
-			"Symbol":        "RELIANCE.BSE",
+			"Symbol":        "XOM",
 			"Summary":       "RSI(14)=32.10 < 35",
 			"Price":         "2,431.00",
 			"News": []map[string]string{
@@ -24,7 +24,7 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 			"Body":      "The company has secured an order worth Rs. 250 crore for composite cylinders, to be executed over eighteen months.",
 			"EventType": "CONTRACT",
 			"Companies": "TIMETECHNO",
-			"Source":    "NSE Corporate Announcements",
+			"Source":    "SEC 8-K filings",
 			"Official":  true,
 			"Published": "2026-08-31T12:01:00Z",
 		},
@@ -46,7 +46,7 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 			}},
 		},
 		PromptDeepResearch: map[string]any{
-			"Query": "Reliance retail demerger", "Symbols": "RELIANCE",
+			"Query": "Exxon Pioneer merger", "Symbols": "XOM",
 			"History":  []map[string]string{{"Question": "How is Reliance doing?", "Answer": "Refining margins improved."}},
 			"Universe": []map[string]string{{"Industry": "Construction Materials", "Symbols": "ULTRACEMCO, ACC"}},
 			"Count":    2, "Scrapers": "google_news, gdelt",
@@ -71,7 +71,7 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 			}},
 		},
 		PromptNewsDigest: map[string]any{
-			"Symbol": "RELIANCE.BSE", "Company": "Reliance Industries",
+			"Symbol": "XOM", "Company": "Reliance Industries",
 			"Articles": []map[string]string{{"ID": "a1", "Title": "T", "Source": "S", "Age": "1h ago"}},
 		},
 		PromptExplainMove: map[string]any{

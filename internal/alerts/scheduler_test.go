@@ -1,38 +1,22 @@
 package alerts
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-// TestDefaultSchedulesDailyCoversBothVenues is the regression for the whole
-// reason defaultSchedules moved from one spec per interval to several: a
-// single fixed-zone daily check cannot track two markets whose sessions
-// don't share a timezone (NSE's IST session and the US's DST-shifting ET
-// one), and a user-defined algorithm can legitimately name symbols on both
-// venues at once, so the fix widens the check set rather than splitting it
-// by venue the way the market scanner's cron does.
-func TestDefaultSchedulesDailyCoversBothVenues(t *testing.T) {
-	specs := defaultSchedules()[marketdata.Interval1d]
-	if len(specs) < 2 {
-		t.Fatalf("Interval1d has %d spec(s), want at least 2 (NSE-tuned and US-tuned)", len(specs))
-	}
-	var haveNSE, haveUS bool
-	for _, s := range specs {
-		if s == "CRON_TZ=America/New_York 15 8,11,15 * * 1-5" {
-			haveUS = true
+// Daily and weekly checks are anchored to New York, so they track the US
+// session whatever DISPLAY_TZ is.
+func TestDefaultSchedulesAreAnchoredToNewYork(t *testing.T) {
+	for _, iv := range []marketdata.Interval{marketdata.Interval1d, marketdata.Interval1wk} {
+		for _, spec := range defaultSchedules()[iv] {
+			if !strings.HasPrefix(spec, "CRON_TZ=America/New_York ") {
+				t.Errorf("%s spec %q is not anchored to New York", iv, spec)
+			}
 		}
-		if !haveUS && s != "" {
-			haveNSE = true // the bare (DISPLAY_TZ) spec
-		}
-	}
-	if !haveUS {
-		t.Errorf("specs = %v, want a CRON_TZ=America/New_York entry", specs)
-	}
-	if !haveNSE {
-		t.Errorf("specs = %v, want a plain (DISPLAY_TZ) entry too", specs)
 	}
 }
 

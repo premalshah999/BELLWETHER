@@ -187,11 +187,9 @@ func (r *Router) report(ctx context.Context, o Outcome) {
 // isRoutineDecline reports whether a provider's error means "not me" rather
 // than "I am broken".
 //
-// The distinction drives health reporting, and getting it wrong is visible:
-// Twelve Data's free tier does not carry Indian listings, so every RELIANCE
-// lookup returns a 404. That is the provider working correctly and saying it
-// has nothing — not a fault — and counting it as one turns its status dot red
-// for an operator whose only mistake was watching an Indian stock.
+// It drives health reporting: a provider that has nothing for a symbol (an
+// index Twelve Data does not carry) is working correctly, and counting that
+// as a fault would turn its status dot red.
 func isRoutineDecline(err error) bool {
 	return errors.Is(err, ErrNotSupported) ||
 		errors.Is(err, ErrBudgetExhausted) ||
@@ -245,7 +243,7 @@ func (r *Router) candles(ctx context.Context, sym Symbol, iv Interval, limit int
 	if fresh && covers {
 		return Series{
 			Symbol: sym, Interval: iv, Candles: cached.Candles,
-			Source: cached.Source, ResolvedSymbol: cached.ResolvedSymbol,
+			Source:    cached.Source,
 			FetchedAt: cached.FetchedAt,
 		}, nil
 	}
@@ -277,10 +275,6 @@ func (r *Router) candles(ctx context.Context, sym Symbol, iv Interval, limit int
 		}
 
 		r.report(ctx, Outcome{Provider: p.Name(), OK: true})
-		if bars.ResolvedSymbol != "" {
-			r.log.Info("provider substituted a listing",
-				"provider", p.Name(), "requested", sym, "served", bars.ResolvedSymbol)
-		}
 		if err := r.cache.SaveCandles(ctx, sym, iv, p.Name(), bars, limit); err != nil {
 			// Losing the write-through is bad for the next request but must
 			// not spoil this one.
@@ -288,7 +282,7 @@ func (r *Router) candles(ctx context.Context, sym Symbol, iv Interval, limit int
 		}
 		return Series{
 			Symbol: sym, Interval: iv, Candles: bars.Candles,
-			Source: p.Name(), ResolvedSymbol: bars.ResolvedSymbol, FetchedAt: r.now(),
+			Source: p.Name(), FetchedAt: r.now(),
 		}, nil
 	}
 
@@ -299,7 +293,7 @@ func (r *Router) candles(ctx context.Context, sym Symbol, iv Interval, limit int
 			"age", r.now().Sub(cached.FetchedAt).Truncate(time.Second), "errors", errors.Join(errs...))
 		return Series{
 			Symbol: sym, Interval: iv, Candles: cached.Candles,
-			Source: cached.Source, ResolvedSymbol: cached.ResolvedSymbol,
+			Source:    cached.Source,
 			FetchedAt: cached.FetchedAt, Stale: true,
 		}, nil
 	}

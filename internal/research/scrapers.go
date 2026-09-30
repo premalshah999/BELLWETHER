@@ -54,9 +54,6 @@ func httpGet(ctx context.Context, client *http.Client, rawURL string) ([]byte, e
 // headline only.
 type GoogleNewsScraper struct {
 	Client *http.Client
-	// Region scopes the search. Indian coverage is the default because that
-	// is what this application is about.
-	HL, GL string
 }
 
 func (g *GoogleNewsScraper) Name() string { return "google_news" }
@@ -67,11 +64,7 @@ func (g *GoogleNewsScraper) Name() string { return "google_news" }
 func (g *GoogleNewsScraper) Trust() int { return news.TrustMajorFin }
 
 func (g *GoogleNewsScraper) Search(ctx context.Context, query string, limit int) ([]Finding, error) {
-	hl, gl := g.HL, g.GL
-	if hl == "" {
-		hl, gl = "en-US", "US"
-	}
-	feedURL := news.GoogleNewsSearch(query, hl, gl)
+	feedURL := news.GoogleNewsSearch(query)
 
 	body, err := httpGet(ctx, g.client(), feedURL)
 	if err != nil {
@@ -220,7 +213,7 @@ func (p *PublisherScraper) Search(ctx context.Context, query string, limit int) 
 		window = "14d"
 	}
 	scoped := fmt.Sprintf("site:%s %s when:%s", p.Domain, query, window)
-	feedURL := news.GoogleNewsSearch(scoped, "en-US", "US")
+	feedURL := news.GoogleNewsSearch(scoped)
 
 	client := p.Client
 	if client == nil {

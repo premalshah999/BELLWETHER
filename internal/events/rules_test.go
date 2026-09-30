@@ -161,40 +161,26 @@ func TestMeasuredKeywordGaps(t *testing.T) {
 	}
 }
 
-// TestUnactionable separates foreign coverage that reaches Indian equities
-// from foreign coverage that does not.
+// Entity-free items are dropped only when they are another market's session
+// or retail-signal noise; US market and macro coverage stays.
 func TestUnactionable(t *testing.T) {
-	drop := []string{
-		"US stocks today: US stocks close higher on tech rebound",
-		// Escaped the old filter by mentioning inflation. A US index wrap is
-		// a US index wrap whatever else it mentions.
-		"Dow Jones| Nasdaq | S&P 500 | US Stock Market Today |Highlights: US stocks rebound ahead of Nvidia earnings, inflation data",
-		"Apple launches faster Mac mini, Mac Studio to tap AI boom",
-		"Alibaba launches Wan3.0 AI video model after $10 billion share sale",
-		"Dow Jones | Nasdaq | S&P 500 Highlights",
-		"Franklin's Araghi Says Nvidia Holders Want Map, Not Just a Beat",
+	for _, h := range []string{
+		"FTSE 100 closes lower as miners slide",
+		"Nikkei hits record on weak yen",
 		"RSI Alert: Polestar Automotive Now Oversold",
 		"Danaos Corp stock hits 52-week high at 152.63 USD",
 		"Amazon.com Trades at Significant Discount to Intrinsic Value",
-	}
-	keep := []string{
-		// Foreign, and squarely relevant: these reach Indian companies
-		// through inputs, trade and rates.
-		"Crude oil prices slide 4% as markets look past Iran sanctions",
-		"Canada slaps retaliatory tariffs on US goods worth $20 billion",
-		"European LNG prices surge to highest level since 2023",
-		"Apple expands India manufacturing with third supplier",
-		"Four India-based companies bear the brunt of US Iran sanctions",
-		// Domestic, obviously.
-		"RBI holds repo rate at 6.5%",
-		"Reliance declares interim dividend",
-	}
-	for _, h := range drop {
+	} {
 		if !Unactionable(h, "") {
 			t.Errorf("%q should be filtered as unactionable", h)
 		}
 	}
-	for _, h := range keep {
+	for _, h := range []string{
+		"Wall Street slides as the Fed signals higher rates for longer",
+		"S&P 500 notches a record close on jobs data",
+		"Crude oil prices slide 4% as markets look past Iran sanctions",
+		"Canada slaps retaliatory tariffs on US goods worth $20 billion",
+	} {
 		if Unactionable(h, "") {
 			t.Errorf("%q should be kept", h)
 		}

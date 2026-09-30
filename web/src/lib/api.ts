@@ -2,9 +2,9 @@
  * Typed client for the TradeSys API.
  *
  * Every response the backend can produce is modelled here, including its
- * provenance fields — `source`, `stale`, `resolved_symbol` — because the UI is
- * required to tell operators where a number came from rather than presenting
- * cached or substituted data as live.
+ * provenance fields — `source`, `stale` — because the UI is required to tell
+ * operators where a number came from rather than presenting cached data as
+ * live.
  */
 
 export interface ApiErrorBody {
@@ -130,7 +130,6 @@ export interface WatchlistItem {
   change_percent?: number;
   spark?: number[];
   source?: string;
-  resolved_symbol?: string;
   stale: boolean;
   error?: string;
 }
@@ -151,7 +150,6 @@ export interface CandlesResponse {
   currency: string;
   candles: Candle[];
   source: string;
-  resolved_symbol?: string;
   fetched_at: string;
   stale: boolean;
 }

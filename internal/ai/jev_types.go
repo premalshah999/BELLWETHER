@@ -6,11 +6,9 @@ import "github.com/tradesys/dashboard/internal/events"
 //
 // A choice is only as good as the descriptions it chooses between: Jev reads
 // these to decide which option the state fits, so each one says what the type
-// is and, where two are easily confused, what separates them. Written for US
-// markets. The types that only ever described an Indian exchange filing still
-// appear -- the validator accepts them, and keeping the question and the
-// validator on one list is what stops them disagreeing -- but they are
-// described in terms that make them rare, which they should be.
+// is and, where two are easily confused, what separates them. Types that
+// rarely apply to a US filing stay on the list, described so they are rarely
+// chosen: the question and the validator must share one list.
 var typeCriteria = map[events.Type]string{
 	events.TypeEarnings:    "Reported quarterly or annual results: revenue, profit, EPS actually announced.",
 	events.TypeGuidance:    "A forecast of future results raised, cut, reaffirmed or withdrawn. Not results already reported.",

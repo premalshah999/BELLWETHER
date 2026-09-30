@@ -14,20 +14,10 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-// vendorTicker mirrors scanner.vendorTicker: the price sidecar's dialect for
-// a canonical symbol. Duplicated rather than shared because the two packages
-// must not import each other, and the mapping is three lines.
+// vendorTicker is the price sidecar's spelling of a symbol; indices have no
+// fundamentals.
 func vendorTicker(sym marketdata.Symbol) (vendor string, ok bool) {
-	switch sym.Exchange {
-	case marketdata.ExchangeUS:
-		return sym.Ticker, true
-	case marketdata.ExchangeNSE:
-		return sym.Ticker + ".NS", true
-	case marketdata.ExchangeBSE:
-		return sym.Ticker + ".BO", true
-	default:
-		return "", false
-	}
+	return sym.Ticker, sym.Exchange == marketdata.ExchangeUS
 }
 
 // Client fetches fundamentals from the price sidecar.

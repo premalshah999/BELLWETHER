@@ -207,7 +207,7 @@ func risingCandles(n int) []marketdata.Candle {
 func alwaysFires(id int64, symbols ...string) *algo.Algorithm {
 	one := 1.0
 	if len(symbols) == 0 {
-		symbols = []string{"RELIANCE.BSE"}
+		symbols = []string{"XOM"}
 	}
 	a := &algo.Algorithm{
 		ID: id, Name: "Always", Symbols: symbols, Interval: "1d",
@@ -226,7 +226,7 @@ func alwaysFires(id int64, symbols ...string) *algo.Algorithm {
 func neverFires(id int64) *algo.Algorithm {
 	huge := 1e12
 	a := &algo.Algorithm{
-		ID: id, Name: "Never", Symbols: []string{"RELIANCE.BSE"}, Interval: "1d",
+		ID: id, Name: "Never", Symbols: []string{"XOM"}, Interval: "1d",
 		All:           []algo.Node{{Indicator: "close", Op: ">", Value: &huge}},
 		CooldownHours: 24,
 		Notify:        algo.NotifyConfig{Telegram: true},
@@ -288,7 +288,7 @@ func TestFiresAndDelivers(t *testing.T) {
 	}
 
 	a := h.alerts.at(0)
-	if a.Symbol != "RELIANCE.BSE" {
+	if a.Symbol != "XOM" {
 		t.Errorf("symbol = %q", a.Symbol)
 	}
 	if a.Summary == "" {
@@ -427,7 +427,7 @@ func TestCooldownExpires(t *testing.T) {
 }
 
 func TestCooldownIsPerSymbol(t *testing.T) {
-	h := newHarness(t, alwaysFires(1, "RELIANCE.BSE", "AAPL", "TCS.BSE"))
+	h := newHarness(t, alwaysFires(1, "XOM", "AAPL", "IBM"))
 	ctx := context.Background()
 
 	if _, err := h.engine.RunInterval(ctx, marketdata.Interval1d); err != nil {
@@ -566,7 +566,7 @@ func TestMarketDataFailureDoesNotFire(t *testing.T) {
 
 func TestInsufficientDataIsSkippedNotFired(t *testing.T) {
 	deep := &algo.Algorithm{
-		ID: 1, Name: "Deep", Symbols: []string{"RELIANCE.BSE"}, Interval: "1d",
+		ID: 1, Name: "Deep", Symbols: []string{"XOM"}, Interval: "1d",
 		All: []algo.Node{{
 			Indicator: "close", Op: ">",
 			Compare: &algo.Operand{Indicator: "sma", Period: 200},
@@ -704,13 +704,13 @@ func TestNoAIContextWhenNotRequested(t *testing.T) {
 func TestRenderMessageMatchesTheSpecShape(t *testing.T) {
 	a := &Alert{
 		AlgorithmName: "Momentum watch",
-		Symbol:        "RELIANCE.BSE",
+		Symbol:        "XOM",
 		Summary:       "RSI(14)=32.10 < 35, close=2431.00 > SMA(200)=2398.00",
 		AIContext:     "Reliance fell with the broader index today.",
 	}
 	msg := RenderMessage(a)
 
-	if msg.Title != "[ALGO] Momentum watch — RELIANCE" {
+	if msg.Title != "[ALGO] Momentum watch — XOM" {
 		t.Errorf("title = %q", msg.Title)
 	}
 	if !strings.Contains(msg.Body, "RSI(14)=32.10") {
@@ -721,10 +721,9 @@ func TestRenderMessageMatchesTheSpecShape(t *testing.T) {
 	}
 }
 
-func TestRenderMessageStripsTheVenueFromTheTitle(t *testing.T) {
+func TestRenderMessageStripsTheSuffixFromTheTitle(t *testing.T) {
 	for _, tc := range []struct{ symbol, want string }{
-		{"RELIANCE.BSE", "RELIANCE"},
-		{"TCS.NSE", "TCS"},
+		{"GSPC.INDEX", "GSPC"},
 		{"AAPL", "AAPL"},
 	} {
 		msg := RenderMessage(&Alert{AlgorithmName: "X", Symbol: tc.symbol})

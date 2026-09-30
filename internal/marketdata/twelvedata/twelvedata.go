@@ -1,10 +1,8 @@
 // Package twelvedata adapts the Twelve Data REST API to marketdata.Provider.
 //
-// It exists because Yahoo's endpoint blocks datacenter IP ranges outright, and
-// this dashboard runs on a rented server. Twelve Data answers from the same IP,
-// carries both NSE and BSE listings, and its free tier is generous enough
-// (roughly 800 requests a day) to be a real primary source rather than a
-// stopgap.
+// It is the first fallback behind the yfinance sidecar: it answers from a
+// datacenter IP that Yahoo may refuse, and its free tier (about 800 requests a
+// day) is enough to carry the app through a sidecar outage.
 package twelvedata
 
 import (
@@ -96,25 +94,14 @@ func (c *Client) Usage(ctx context.Context) (used, limit int, err error) {
 	return used, c.dailyLimit, err
 }
 
-// vendorParams renders a canonical symbol in Twelve Data's dialect.
-//
-// Twelve Data identifies an Indian listing by a bare ticker plus an exchange
-// parameter — RELIANCE trades on both NSE and BSE under the same ticker, so
-// the exchange is what disambiguates it.
+// vendorParams renders a symbol in Twelve Data's dialect: a bare US ticker.
+// Indices are left to the providers that carry them.
 func vendorParams(sym marketdata.Symbol) (url.Values, error) {
-	v := url.Values{"symbol": {sym.Ticker}}
-	switch sym.Exchange {
-	case marketdata.ExchangeUS:
-		// No exchange: Twelve Data resolves US tickers on its own.
-	case marketdata.ExchangeNSE:
-		v.Set("exchange", "NSE")
-	case marketdata.ExchangeBSE:
-		v.Set("exchange", "BSE")
-	default:
+	if sym.Exchange != marketdata.ExchangeUS {
 		return nil, fmt.Errorf("%w: twelvedata has no mapping for exchange %q",
 			marketdata.ErrNotSupported, sym.Exchange)
 	}
-	return v, nil
+	return url.Values{"symbol": {sym.Ticker}}, nil
 }
 
 // vendorInterval maps our interval onto Twelve Data's spelling.
@@ -166,7 +153,7 @@ func (c *Client) get(ctx context.Context, path string, params url.Values) ([]byt
 		return nil, err
 	}
 	params.Set("apikey", c.apiKey)
-	// UTC throughout: bar timestamps are stored in UTC and displayed in IST.
+	// UTC throughout: bar timestamps are stored in UTC.
 	params.Set("timezone", "UTC")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+params.Encode(), nil)
@@ -222,8 +209,6 @@ func (c *Client) Candles(ctx context.Context, sym marketdata.Symbol, iv marketda
 	if len(candles) > limit {
 		candles = candles[len(candles)-limit:]
 	}
-	// Twelve Data carries NSE and BSE directly, so no venue substitution is
-	// ever needed.
 	return marketdata.Bars{Candles: candles}, nil
 }
 

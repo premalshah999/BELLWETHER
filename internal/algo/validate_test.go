@@ -24,7 +24,7 @@ func findError(err error, field string) *ValidationError {
 
 const validAlgo = `{
   "name": "Momentum watch",
-  "symbols": ["RELIANCE.BSE", "TCS.BSE"],
+  "symbols": ["XOM", "IBM"],
   "interval": "1d",
   "all": [
     {"indicator": "rsi", "period": 14, "op": "<", "value": 35},
@@ -44,7 +44,7 @@ func TestParseSpecExample(t *testing.T) {
 	if a.Name != "Momentum watch" {
 		t.Errorf("name = %q", a.Name)
 	}
-	if len(a.Symbols) != 2 || a.Symbols[0] != "RELIANCE.BSE" {
+	if len(a.Symbols) != 2 || a.Symbols[0] != "XOM" {
 		t.Errorf("symbols = %v", a.Symbols)
 	}
 	if len(a.All) != 3 {

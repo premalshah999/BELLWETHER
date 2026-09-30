@@ -72,14 +72,13 @@ type watchlistItem struct {
 	Note     string    `json:"note"`
 	AddedAt  time.Time `json:"added_at"`
 
-	Price          *float64  `json:"price,omitempty"`
-	Change         *float64  `json:"change,omitempty"`
-	ChangePercent  *float64  `json:"change_percent,omitempty"`
-	Spark          []float64 `json:"spark,omitempty"`
-	Source         string    `json:"source,omitempty"`
-	ResolvedSymbol string    `json:"resolved_symbol,omitempty"`
-	Stale          bool      `json:"stale"`
-	Error          string    `json:"error,omitempty"`
+	Price         *float64  `json:"price,omitempty"`
+	Change        *float64  `json:"change,omitempty"`
+	ChangePercent *float64  `json:"change_percent,omitempty"`
+	Spark         []float64 `json:"spark,omitempty"`
+	Source        string    `json:"source,omitempty"`
+	Stale         bool      `json:"stale"`
+	Error         string    `json:"error,omitempty"`
 }
 
 type addWatchlistRequest struct {
@@ -88,16 +87,13 @@ type addWatchlistRequest struct {
 }
 
 type candlesResponse struct {
-	Symbol   string              `json:"symbol"`
-	Interval string              `json:"interval"`
-	Currency string              `json:"currency"`
-	Candles  []marketdata.Candle `json:"candles"`
-	Source   string              `json:"source"`
-	// ResolvedSymbol is set when the provider served a different listing than
-	// the one requested, so the UI can say which venue the prices came from.
-	ResolvedSymbol string    `json:"resolved_symbol,omitempty"`
-	FetchedAt      time.Time `json:"fetched_at"`
-	Stale          bool      `json:"stale"`
+	Symbol    string              `json:"symbol"`
+	Interval  string              `json:"interval"`
+	Currency  string              `json:"currency"`
+	Candles   []marketdata.Candle `json:"candles"`
+	Source    string              `json:"source"`
+	FetchedAt time.Time           `json:"fetched_at"`
+	Stale     bool                `json:"stale"`
 }
 
 type quoteResponse struct {

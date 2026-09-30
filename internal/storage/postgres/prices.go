@@ -19,7 +19,7 @@ func (d *DB) LoadCandles(ctx context.Context, sym marketdata.Symbol, interval ma
 		limit = 500
 	}
 	rows, err := d.db.QueryContext(ctx, `
-SELECT ts, open, high, low, close, volume, source, resolved_symbol, fetched_at
+SELECT ts, open, high, low, close, volume, source, fetched_at
 FROM candles
 WHERE symbol = $1 AND interval = $2
 ORDER BY ts DESC
@@ -36,13 +36,12 @@ LIMIT $3`, sym.String(), string(interval), limit)
 	)
 	for rows.Next() {
 		var (
-			c              marketdata.Candle
-			source         string
-			resolvedSymbol string
-			fetchedAt      time.Time
+			c         marketdata.Candle
+			source    string
+			fetchedAt time.Time
 		)
 		if err := rows.Scan(&c.Time, &c.Open, &c.High, &c.Low, &c.Close, &c.Volume,
-			&source, &resolvedSymbol, &fetchedAt); err != nil {
+			&source, &fetchedAt); err != nil {
 			return marketdata.CachedSeries{}, fmt.Errorf("postgres: scan candle: %w", err)
 		}
 		c.Time = c.Time.UTC()
@@ -50,7 +49,6 @@ LIMIT $3`, sym.String(), string(interval), limit)
 		// The newest bar's provenance is the most useful label.
 		if out.Source == "" {
 			out.Source = source
-			out.ResolvedSymbol = resolvedSymbol
 		}
 		if oldest.IsZero() || fetchedAt.Before(oldest) {
 			oldest = fetchedAt
@@ -94,13 +92,12 @@ func (d *DB) SaveCandles(ctx context.Context, sym marketdata.Symbol, interval ma
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-INSERT INTO candles (symbol, interval, ts, open, high, low, close, volume, source, resolved_symbol, fetched_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+INSERT INTO candles (symbol, interval, ts, open, high, low, close, volume, source, fetched_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (symbol, interval, ts) DO UPDATE SET
     open = excluded.open, high = excluded.high, low = excluded.low,
     close = excluded.close, volume = excluded.volume,
-    source = excluded.source, resolved_symbol = excluded.resolved_symbol,
-    fetched_at = excluded.fetched_at`)
+    source = excluded.source, fetched_at = excluded.fetched_at`)
 	if err != nil {
 		return fmt.Errorf("postgres: prepare save candles: %w", err)
 	}
@@ -110,7 +107,7 @@ ON CONFLICT (symbol, interval, ts) DO UPDATE SET
 	for _, c := range bars.Candles {
 		if _, err := stmt.ExecContext(ctx,
 			sym.String(), string(interval), c.Time.UTC(),
-			c.Open, c.High, c.Low, c.Close, c.Volume, source, bars.ResolvedSymbol, now); err != nil {
+			c.Open, c.High, c.Low, c.Close, c.Volume, source, now); err != nil {
 			return fmt.Errorf("postgres: save candle %s: %w", c.Time, err)
 		}
 	}

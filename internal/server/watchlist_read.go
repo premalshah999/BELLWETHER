@@ -113,15 +113,13 @@ func (s *Server) fillWatchlistItem(ctx context.Context, item *watchlistItem, sym
 		return
 	}
 	s.fillWatchlistItemFromSeries(item, marketdata.CachedSeries{
-		Candles: series.Candles, Source: series.Source,
-		ResolvedSymbol: series.ResolvedSymbol, FetchedAt: series.FetchedAt,
+		Candles: series.Candles, Source: series.Source, FetchedAt: series.FetchedAt,
 	})
 	item.Stale = series.Stale
 }
 
 func (s *Server) fillWatchlistItemFromSeries(item *watchlistItem, series marketdata.CachedSeries) {
 	item.Source = series.Source
-	item.ResolvedSymbol = series.ResolvedSymbol
 	item.Spark = make([]float64, 0, len(series.Candles))
 	for _, c := range series.Candles {
 		item.Spark = append(item.Spark, c.Close)

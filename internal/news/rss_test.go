@@ -152,30 +152,24 @@ func TestGoogleNewsFeedURL(t *testing.T) {
 		name     string
 		symbol   string
 		company  string
-		indian   bool
 		contains []string
 	}{
 		{
-			name:   "indian symbol with a company name",
-			symbol: "RELIANCE.BSE", company: "Reliance Industries", indian: true,
-			contains: []string{"Reliance+Industries", "gl=IN", "ceid=IN%3Aen"},
-		},
-		{
 			name:   "us symbol with a company name",
-			symbol: "AAPL", company: "Apple Inc", indian: false,
+			symbol: "AAPL", company: "Apple Inc",
 			contains: []string{"Apple+Inc", "gl=US", "ceid=US%3Aen"},
 		},
 		{
 			// Without a company name the bare ticker is ambiguous, so the
 			// query is qualified with "stock".
 			name:   "unknown company falls back to the ticker",
-			symbol: "XYZ.NSE", company: "", indian: true,
+			symbol: "XYZ", company: "",
 			contains: []string{"XYZ+stock"},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := GoogleNewsFeed(tc.symbol, tc.company, tc.indian)
+			got := GoogleNewsFeed(tc.symbol, tc.company)
 			for _, want := range tc.contains {
 				if !strings.Contains(got, want) {
 					t.Errorf("feed URL %q does not contain %q", got, want)

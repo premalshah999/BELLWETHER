@@ -115,15 +115,8 @@ func seedFor(sym marketdata.Symbol) int64 {
 	return h
 }
 
-// basePrice puts Indian names in a plausible rupee range and US names in a
-// plausible dollar range, so charts look right at a glance.
-func basePrice(sym marketdata.Symbol) float64 {
-	seed := seedFor(sym)
-	if sym.IsIndian() {
-		return 500 + float64(seed%3000)
-	}
-	return 40 + float64(seed%400)
-}
+// basePrice is a plausible dollar price, so charts look right at a glance.
+func basePrice(sym marketdata.Symbol) float64 { return 40 + float64(seedFor(sym)%400) }
 
 // Candles generates a seeded random walk ending at the most recent bar
 // boundary.

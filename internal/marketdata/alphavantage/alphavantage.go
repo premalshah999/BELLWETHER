@@ -174,8 +174,6 @@ func (c *Client) Candles(ctx context.Context, sym marketdata.Symbol, iv marketda
 	if limit > 0 && len(candles) > limit {
 		candles = candles[len(candles)-limit:]
 	}
-	// Alpha Vantage carries BSE and NSE listings directly, so it never needs
-	// to substitute a venue.
 	return marketdata.Bars{Candles: candles}, nil
 }
 

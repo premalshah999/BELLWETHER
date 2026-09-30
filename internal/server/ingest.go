@@ -142,8 +142,7 @@ func (s *Server) handleIngestSources(w http.ResponseWriter, r *http.Request) {
 //
 // It exists because adaptive scheduling is otherwise invisible: an operator
 // seeing stale news needs to distinguish "the source is broken" from "the
-// scheduler decided this feed is quiet" from "it is 3am and Indian sources are
-// deliberately slow". Those have very different remedies.
+// scheduler decided this feed is quiet". Those have very different remedies.
 type pipelineView struct {
 	Phase   string `json:"phase"`
 	PhaseAt string `json:"phase_as_of"`

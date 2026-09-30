@@ -115,11 +115,11 @@ func runRefreshCalendar() error {
 	}
 	defer store.Close()
 
-	_, usListings, err := company.LoadEmbeddedUS()
+	master, err := company.Load()
 	if err != nil {
-		return fmt.Errorf("calendar: load US listings: %w", err)
+		return fmt.Errorf("calendar: load listings: %w", err)
 	}
-	universe := buildScanUniverse(usListings)
+	universe := buildScanUniverse(master)
 
 	client := &scanner.Client{
 		BaseURL: cfg.YFinanceURL,

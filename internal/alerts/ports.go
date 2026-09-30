@@ -56,7 +56,7 @@ type Notifier interface {
 
 // Message is a rendered notification.
 type Message struct {
-	// Title is the first line, e.g. "[ALGO] Momentum watch — RELIANCE".
+	// Title is the first line, e.g. "[ALGO] Momentum watch — AAPL".
 	Title string
 	// Body is the pre-rendered detail.
 	Body string

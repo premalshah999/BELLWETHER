@@ -13,48 +13,20 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-// defaultSchedules map an interval to the cron expression(s) that check it.
-// Most intervals get exactly one; a daily algorithm gets several, because a
-// single fixed-zone spec cannot track two markets whose sessions do not
-// share a timezone.
-//
-// These are deliberately not "as often as the interval". A daily algorithm
-// does not need evaluating every minute, and evaluating an intraday one every
-// minute would keep the market data cache permanently cold. Cooldowns then
-// prevent repeat notifications regardless of how often a rule is checked.
-//
-// A plain expression is interpreted in the operator's display timezone, so
-// "30 3 * * *" means 03:30 IST, not 03:30 UTC. A spec carrying its own
-// CRON_TZ=<zone> prefix (robfig/cron's per-job timezone override -- the same
-// mechanism the market scanner's venue-scoped cron entries use) runs in that
-// zone instead, which is what lets a check land at a fixed point in a
-// market's own session regardless of what DISPLAY_TZ is set to or how DST
-// has shifted the gap between that zone and it.
+// defaultSchedules is when each interval's algorithms are evaluated: not as
+// often as the interval (a daily rule needs no minute checks, and evaluating
+// intraday rules every minute keeps the price cache cold). Daily and weekly
+// checks are pinned to New York with CRON_TZ, so they land before the open,
+// mid-session and before the close whatever DISPLAY_TZ is and through
+// daylight-saving changes; cooldowns make the repeat checks free.
 func defaultSchedules() map[marketdata.Interval][]string {
 	return map[marketdata.Interval][]string{
 		marketdata.Interval1m:  {"*/2 * * * *"},
 		marketdata.Interval5m:  {"*/5 * * * *"},
 		marketdata.Interval15m: {"*/15 * * * *"},
 		marketdata.Interval1h:  {"5 * * * *"},
-		// Daily rules are checked a few times through each session an
-		// algorithm's symbols might trade in, so a trigger reaches the
-		// operator the same trading day rather than the next morning.
-		//
-		// A single algorithm can name symbols on both venues at once (the
-		// rule language has no per-venue restriction), so this does not
-		// split by venue the way the market scanner's cron does -- it
-		// widens instead: one set of checks anchored to NSE's session
-		// (unqualified, so it runs in DISPLAY_TZ) and one anchored to
-		// US market hours via CRON_TZ=America/New_York, which -- unlike a
-		// fixed IST offset -- keeps tracking the US open and close
-		// correctly through EDT/EST's own DST changes. Every daily
-		// algorithm is evaluated by both sets regardless of which venue its
-		// symbols are actually on; cooldowns make the extra checks free.
-		marketdata.Interval1d: {
-			"20 4,7,10,14,18,21 * * *",                    // NSE-tuned: pre-open, mid-session, pre-close
-			"CRON_TZ=America/New_York 15 8,11,15 * * 1-5", // US-tuned: pre-open, mid-session, pre-close
-		},
-		marketdata.Interval1wk: {"30 4 * * 1"},
+		marketdata.Interval1d:  {"CRON_TZ=America/New_York 15 8,11,15 * * 1-5"},
+		marketdata.Interval1wk: {"CRON_TZ=America/New_York 30 8 * * 1"},
 	}
 }
 
@@ -78,13 +50,6 @@ type SchedulerOption func(*Scheduler)
 // WithSchedulerLogger sets the logger.
 func WithSchedulerLogger(l *slog.Logger) SchedulerOption {
 	return func(s *Scheduler) { s.log = l }
-}
-
-// WithSchedule replaces every cron expression for one interval with a single
-// one, for a caller that wants exactly one check rather than the default
-// set.
-func WithSchedule(iv marketdata.Interval, spec string) SchedulerOption {
-	return func(s *Scheduler) { s.schedules[iv] = []string{spec} }
 }
 
 // NewScheduler builds a scheduler running in the given location.
