@@ -1234,6 +1234,8 @@ export interface FundSummary {
   name: string;
   manager: string;
   style: string;
+  /** From the shipped list rather than followed by name. */
+  curated: boolean;
   period?: string;
   filed?: string;
   total_value: number;
@@ -1241,6 +1243,25 @@ export interface FundSummary {
   top: FundMove[];
   new_positions: number;
   exited_positions: number;
+}
+
+export interface FundQuery {
+  q?: string;
+  kind?: FundMove["kind"] | "all";
+  sort?: "value" | "change" | "change_pct" | "shares";
+  dir?: "asc" | "desc";
+  offset?: number;
+  limit?: number;
+}
+
+export interface FundPage {
+  filing: { period: string; filed: string; total_value: number; positions: number };
+  moves: FundMove[];
+  matched: number;
+  offset: number;
+  limit: number;
+  counts: Partial<Record<FundMove["kind"], number>>;
+  sectors: { sector: string; value: number; pct: number }[];
 }
 
 export interface SmartMoneyOverview {
@@ -1410,7 +1431,17 @@ export const api = {
     if (opts.side) p.set("side", opts.side);
     return request<{ trades: InsiderTrade[] }>(`/api/smartmoney/insiders?${p}`);
   },
-  fund: (cik: string) => request<{ filing: { period: string; filed: string; total_value: number; positions: number }; moves: FundMove[] }>(`/api/smartmoney/funds/${cik}`),
+  fund: (cik: string, opts: FundQuery = {}) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(opts)) if (v !== undefined && v !== "") p.set(k, String(v));
+    return request<FundPage>(`/api/smartmoney/funds/${cik}?${p}`);
+  },
+  funds: () => request<{ funds: FundSummary[] }>("/api/smartmoney/funds"),
+  searchFunds: (q: string) =>
+    request<{ results: { cik: string; name: string; followed: boolean }[] }>(`/api/smartmoney/funds/search?q=${encodeURIComponent(q)}`),
+  followFund: (body: { cik: string; manager?: string; style?: string }) =>
+    request<FundSummary>("/api/smartmoney/funds", { method: "POST", body: JSON.stringify(body) }),
+  unfollowFund: (cik: string) => request<void>(`/api/smartmoney/funds/${cik}`, { method: "DELETE" }),
   symbolSmartMoney: (symbol: string) =>
     request<{ symbol: string; trades: InsiderTrade[]; funds: FundMove[]; congress: unknown[] }>(`/api/smartmoney/symbol/${encodeURIComponent(symbol)}`),
   congressFilings: (opts: { symbol?: string; limit?: number } = {}) => {

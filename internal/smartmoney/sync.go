@@ -9,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -22,6 +24,9 @@ type Syncer struct {
 	// Universe maps an issuer CIK (no leading zeros) to its ticker. Only
 	// filings about these companies are fetched.
 	Universe map[string]string
+	// FIGIKey is an optional OpenFIGI key: forty times the keyless rate for
+	// turning 13F CUSIPs into tickers.
+	FIGIKey string
 }
 
 // SyncInsiders reads the daily EDGAR indexes for the last `days` days and
@@ -91,40 +96,107 @@ func (s *Syncer) readForm4(ctx context.Context, e IndexEntry, symbol string) (in
 }
 
 // SyncFunds stores the two most recent 13F filings of every followed fund,
-// so each has a quarter to compare against.
+// so each has a quarter to compare against. The shipped list is written
+// first, so a new release's managers appear without any action.
 func (s *Syncer) SyncFunds(ctx context.Context) (int, error) {
-	added := 0
 	for _, f := range Funds {
+		f.Curated = true
 		if err := s.Store.UpsertFund(ctx, f); err != nil {
-			return added, err
-		}
-		body, err := s.SEC.Get(ctx, "https://data.sec.gov/submissions/CIK"+f.CIK+".json")
-		if err != nil {
-			s.Log.Warn("13f: submissions unavailable", "fund", f.Name, "err", err)
-			continue
-		}
-		subs, err := ParseSubmissions(body)
-		if err != nil {
-			s.Log.Warn("13f: submissions unreadable", "fund", f.Name, "err", err)
-			continue
-		}
-		for _, filing := range subs.Latest13F(2) {
-			exists, err := s.Store.FundFilingExists(ctx, filing.Accession)
-			if err != nil {
-				return added, err
-			}
-			if exists {
-				continue
-			}
-			filing.CIK = f.CIK
-			if err := s.readFund13F(ctx, filing); err != nil {
-				s.Log.Warn("13f: filing not read", "fund", f.Name, "accession", filing.Accession, "err", err)
-				continue
-			}
-			added++
+			return 0, err
 		}
 	}
+	funds, err := s.Store.FollowedFunds(ctx)
+	if err != nil {
+		return 0, err
+	}
+	added := 0
+	for _, f := range funds {
+		n, err := s.SyncFund(ctx, f)
+		if err != nil {
+			if ctx.Err() != nil {
+				return added, ctx.Err()
+			}
+			s.Log.Warn("13f: fund not synced", "fund", f.Name, "err", err)
+		}
+		added += n
+	}
 	return added, nil
+}
+
+// SyncFund stores one fund's two most recent 13Fs, if not already stored.
+func (s *Syncer) SyncFund(ctx context.Context, f Fund) (int, error) {
+	body, err := s.SEC.Get(ctx, "https://data.sec.gov/submissions/CIK"+f.CIK+".json")
+	if err != nil {
+		return 0, fmt.Errorf("submissions unavailable: %w", err)
+	}
+	subs, err := ParseSubmissions(body)
+	if err != nil {
+		return 0, fmt.Errorf("submissions unreadable: %w", err)
+	}
+	added := 0
+	for _, filing := range subs.Latest13F(2) {
+		exists, err := s.Store.FundFilingExists(ctx, filing.Accession)
+		if err != nil {
+			return added, err
+		}
+		if exists {
+			continue
+		}
+		filing.CIK = f.CIK
+		if err := s.readFund13F(ctx, filing); err != nil {
+			s.Log.Warn("13f: filing not read", "fund", f.Name, "accession", filing.Accession, "err", err)
+			continue
+		}
+		added++
+	}
+	return added, nil
+}
+
+// Filer is a 13F filer found by name.
+type Filer struct {
+	CIK  string `json:"cik"`
+	Name string `json:"name"`
+}
+
+// SearchFilers finds SEC filers by name through EDGAR's entity search.
+func (s *Syncer) SearchFilers(ctx context.Context, query string) ([]Filer, error) {
+	body, err := s.SEC.Get(ctx, "https://efts.sec.gov/LATEST/search-index?keysTyped="+url.QueryEscape(query))
+	if err != nil {
+		return nil, err
+	}
+	var res struct {
+		Hits struct {
+			Hits []struct {
+				ID     string `json:"_id"`
+				Source struct {
+					Entity string `json:"entity"`
+				} `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+	if err := json.Unmarshal(body, &res); err != nil {
+		return nil, err
+	}
+	var out []Filer
+	for _, h := range res.Hits.Hits {
+		cik := fmt.Sprintf("%010s", strings.TrimLeft(h.ID, "0"))
+		out = append(out, Filer{CIK: cik, Name: strings.TrimSpace(h.Source.Entity)})
+	}
+	return out, nil
+}
+
+// Has13F reports whether a filer has filed a 13F holdings report, and its
+// registered name.
+func (s *Syncer) Has13F(ctx context.Context, cik string) (bool, string, error) {
+	body, err := s.SEC.Get(ctx, "https://data.sec.gov/submissions/CIK"+cik+".json")
+	if err != nil {
+		return false, "", err
+	}
+	subs, err := ParseSubmissions(body)
+	if err != nil {
+		return false, "", err
+	}
+	return len(subs.Latest13F(1)) > 0, subs.Name, nil
 }
 
 func (s *Syncer) readFund13F(ctx context.Context, f FundFiling) error {
@@ -160,8 +232,13 @@ func (s *Syncer) readFund13F(ctx context.Context, f FundFiling) error {
 	return s.Store.SaveFundFiling(ctx, f, holdings)
 }
 
-// resolveCUSIPs fills Symbol on each holding: from the cache first, then
-// OpenFIGI for the rest, ten per request under its keyless rate limit.
+// inlineCUSIPBudget bounds how many unknown CUSIPs a filing resolves before
+// it is stored; the rest are resolved in the background, so a manager with
+// thousands of positions is readable at once, by issuer name, until then.
+const inlineCUSIPBudget = 50
+
+// resolveCUSIPs fills Symbol on each holding it can: from the cache, then
+// OpenFIGI for up to inlineCUSIPBudget of the rest, largest positions first.
 func (s *Syncer) resolveCUSIPs(ctx context.Context, hs []Holding) error {
 	var cusips []string
 	for _, h := range hs {
@@ -171,39 +248,72 @@ func (s *Syncer) resolveCUSIPs(ctx context.Context, hs []Holding) error {
 	if err != nil {
 		return err
 	}
+	sort.Slice(hs, func(i, j int) bool { return hs[i].Value > hs[j].Value })
 	var missing []string
-	for _, c := range cusips {
-		if _, ok := known[c]; !ok {
-			missing = append(missing, c)
+	for _, h := range hs {
+		if _, ok := known[h.CUSIP]; !ok {
+			missing = append(missing, h.CUSIP)
 		}
 	}
-	found := map[string]string{}
-	for i := 0; i < len(missing); i += 10 {
-		batch := missing[i:min(i+10, len(missing))]
-		got, err := s.figi(ctx, batch)
-		if err != nil {
-			return err
-		}
-		for c, sym := range got {
-			found[c] = sym
-			known[c] = sym
-		}
-		// Keyless OpenFIGI allows 25 requests a minute.
-		select {
-		case <-time.After(2600 * time.Millisecond):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	if len(found) > 0 {
-		if err := s.Store.SaveCUSIPSymbols(ctx, found); err != nil {
-			return err
-		}
+	found, err := s.lookupCUSIPs(ctx, missing[:min(len(missing), inlineCUSIPBudget)])
+	for c, sym := range found {
+		known[c] = sym
 	}
 	for i := range hs {
 		hs[i].Symbol = known[hs[i].CUSIP]
 	}
-	return nil
+	return err
+}
+
+// ResolvePendingCUSIPs looks up stored holdings' CUSIPs that were never
+// resolved, for up to the time budget. Holdings read their ticker through
+// the CUSIP table, so each one found shows at once.
+func (s *Syncer) ResolvePendingCUSIPs(ctx context.Context, budget time.Duration) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	total := 0
+	for {
+		pending, err := s.Store.UnresolvedCUSIPs(ctx, 500)
+		if err != nil || len(pending) == 0 {
+			return total, err
+		}
+		found, err := s.lookupCUSIPs(ctx, pending)
+		total += len(found)
+		if err != nil {
+			if ctx.Err() != nil {
+				return total, nil
+			}
+			return total, err
+		}
+	}
+}
+
+// lookupCUSIPs asks OpenFIGI for tickers, saving each batch as it arrives so
+// an interrupted run keeps its progress.
+func (s *Syncer) lookupCUSIPs(ctx context.Context, cusips []string) (map[string]string, error) {
+	batch, gap := 10, 2600*time.Millisecond // keyless: 25 requests a minute, 10 each
+	if s.FIGIKey != "" {
+		batch, gap = 100, 250*time.Millisecond // keyed: 25 requests per 6 seconds, 100 each
+	}
+	found := map[string]string{}
+	for i := 0; i < len(cusips); i += batch {
+		got, err := s.figi(ctx, cusips[i:min(i+batch, len(cusips))])
+		if err != nil {
+			return found, err
+		}
+		if err := s.Store.SaveCUSIPSymbols(ctx, got); err != nil {
+			return found, err
+		}
+		for c, sym := range got {
+			found[c] = sym
+		}
+		select {
+		case <-time.After(gap):
+		case <-ctx.Done():
+			return found, ctx.Err()
+		}
+	}
+	return found, nil
 }
 
 func (s *Syncer) figi(ctx context.Context, cusips []string) (map[string]string, error) {
@@ -222,6 +332,9 @@ func (s *Syncer) figi(ctx context.Context, cusips []string) (map[string]string, 
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if s.FIGIKey != "" {
+		req.Header.Set("X-OPENFIGI-APIKEY", s.FIGIKey)
+	}
 	resp, err := s.HTTP.Do(req)
 	if err != nil {
 		return nil, err

@@ -95,6 +95,9 @@ type Config struct {
 	// rather than being registered and failing every request; see
 	// buildSECSources' caller.
 	SECUserAgent string
+	// OpenFIGIKey is optional: it raises the rate at which 13F holdings'
+	// CUSIPs become tickers about fortyfold.
+	OpenFIGIKey string
 
 	LogLevel slog.Level
 }
@@ -146,6 +149,7 @@ func Load(envFile string) (*Config, error) {
 		StreamInterval: envDuration("STREAM_INTERVAL", 5*time.Second),
 		SessionSecret:  envStr("SESSION_SECRET", ""),
 		SECUserAgent:   envStr("SEC_USER_AGENT", ""),
+		OpenFIGIKey:    envStr("OPENFIGI_API_KEY", ""),
 	}
 
 	// The cheap tier defaults to the main model so a single-model deployment

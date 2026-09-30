@@ -15,14 +15,14 @@ func TestStringArrayRoundTrip(t *testing.T) {
 	}{
 		{"empty", []string{}},
 		{"simple", []string{"XOM", "ACN", "INTC"}},
-		{"ampersand symbol", []string{"M&M", "L&T"}},
+		{"ampersand symbol", []string{"AT&T", "P&G"}},
 		{"embedded comma", []string{"Metals & Mining", "Oil Gas & Consumable Fuels"}},
 		{"quotes", []string{`say "hello"`, `back\slash`}},
 		{"braces", []string{"{weird}", "a,b"}},
 		{"empty element", []string{"", "AFTER"}},
 		{"whitespace", []string{"has space", "has\ttab"}},
 		{"literal null word", []string{"NULL", "REAL"}},
-		{"unicode", []string{"रिलायंस", "Bharti Airtel"}},
+		{"unicode", []string{"Société Générale", "日本"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

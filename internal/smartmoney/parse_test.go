@@ -1,6 +1,8 @@
 package smartmoney
 
 import (
+	"archive/zip"
+	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -102,5 +104,50 @@ func TestLatest13FSkipsAmendments(t *testing.T) {
 	got := s.Latest13F(2)
 	if len(got) != 2 || got[0].Accession != "b" || got[1].Accession != "d" {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestParseInsiderDatasetKeepsOpenMarketTradesInKnownIssuers(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	write := func(name, body string) {
+		w, _ := zw.Create(name)
+		_, _ = w.Write([]byte(body))
+	}
+	write("SUBMISSION.tsv", "ACCESSION_NUMBER\tFILING_DATE\tDOCUMENT_TYPE\tISSUERCIK\tISSUERNAME\tISSUERTRADINGSYMBOL\tAFF10B5ONE\n"+
+		"A-1\t02-JAN-2026\t4\t0000320193\tApple Inc.\taapl\tfalse\n"+
+		"A-2\t02-JAN-2026\t4\t0000000001\tUnknown Co\tZZZZ\tfalse\n"+
+		"A-3\t03-JAN-2026\t3\t0000320193\tApple Inc.\tAAPL\tfalse\n")
+	write("REPORTINGOWNER.tsv", "ACCESSION_NUMBER\tRPTOWNERCIK\tRPTOWNERNAME\tRPTOWNER_RELATIONSHIP\tRPTOWNER_TITLE\n"+
+		"A-1\t0001\tCook Timothy\tDirector,Officer\tCEO\n"+
+		"A-1\t0002\tSecond Owner\tDirector\t\n")
+	write("NONDERIV_TRANS.tsv", "ACCESSION_NUMBER\tSECURITY_TITLE\tTRANS_DATE\tTRANS_CODE\tTRANS_SHARES\tTRANS_PRICEPERSHARE\tTRANS_ACQUIRED_DISP_CD\tSHRS_OWND_FOLWNG_TRANS\tDIRECT_INDIRECT_OWNERSHIP\n"+
+		"A-1\tCommon\t31-DEC-2025\tM\t100\t0\tA\t1100\tD\n"+
+		"A-1\tCommon\t31-DEC-2025\tS\t1000\t250.5\tD\t100\tD\n"+
+		"A-2\tCommon\t31-DEC-2025\tP\t10\t5\tA\t10\tD\n")
+	_ = zw.Close()
+
+	known := func(s string) (string, bool) { return s, s == "AAPL" }
+	trades, err := ParseInsiderDataset(buf.Bytes(), known)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trades) != 1 {
+		t.Fatalf("got %d trades, want only the open-market sale in a known issuer: %+v", len(trades), trades)
+	}
+	tr := trades[0]
+	if tr.Symbol != "AAPL" || tr.Code != "S" || tr.Acquired || tr.Line != 1 || tr.OwnerName != "Cook Timothy" ||
+		!tr.IsOfficer || !tr.IsDirector || tr.OfficerTitle != "CEO" || tr.Value == nil || *tr.Value != 250500 {
+		t.Errorf("trade = %+v", tr)
+	}
+}
+
+func TestInsiderDatasetURLsNewestFirst(t *testing.T) {
+	page := []byte(`<a href="/files/structureddata/data/insider-transactions-data-sets/2025q4_form345.zip">` +
+		`<a href="/files/datastandardsinnovation/data/insider-transactions-data-sets/2026q2_form345.zip">` +
+		`<a href="/files/structureddata/data/insider-transactions-data-sets/2026q1_form345.zip">`)
+	got := InsiderDatasetURLs(page)
+	if len(got) != 3 || !strings.HasSuffix(got[0], "2026q2_form345.zip") || !strings.HasSuffix(got[2], "2025q4_form345.zip") {
+		t.Errorf("urls = %v", got)
 	}
 }

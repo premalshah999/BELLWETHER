@@ -61,6 +61,8 @@ func main() {
 	// route for what is otherwise an unauthenticated write path.
 	syncCongress := flag.Bool("sync-congress", false,
 		"fetch new House Clerk PTR filings for the current year, then exit")
+	backfillInsiders := flag.Int("backfill-insiders", 0,
+		"load the newest N quarters of SEC's insider transaction datasets, then exit")
 	backfillEarnings := flag.Bool("backfill-earnings", false,
 		"store past earnings announcements for the whole universe, then exit")
 	refreshCal := flag.Bool("refresh-calendar", false,
@@ -120,6 +122,13 @@ func main() {
 	if *syncCongress {
 		if err := runSyncCongress(); err != nil {
 			slog.Error("congress sync failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *backfillInsiders > 0 {
+		if err := runBackfillInsiders(*backfillInsiders); err != nil {
+			slog.Error("insider backfill failed", "err", err)
 			os.Exit(1)
 		}
 		return
@@ -534,8 +543,12 @@ func run() error {
 		log.Info("failed research turns abandoned by a previous process", "count", n)
 	}
 
+	smartMoney, err := newSmartMoneySyncer(cfg, store, log)
+	if err != nil {
+		log.Warn("smart money sync disabled", "err", err)
+	}
 	aiCron := startAISchedules(ctx, cfg, log, aiService, newsPoller, eventProcessor, store,
-		marketScanner, fundamentalsRunner, newsArchive)
+		marketScanner, fundamentalsRunner, newsArchive, companyMaster, smartMoney)
 	defer func() { <-aiCron.Stop().Done() }()
 
 	srv := &http.Server{
@@ -561,6 +574,7 @@ func run() error {
 			Companies:     companyMaster,
 			Processor:     eventProcessor,
 			Research:      researchEngine,
+			SmartMoney:    smartMoney,
 			Searcher:      searcher,
 			Log:           log,
 			Version:       version,

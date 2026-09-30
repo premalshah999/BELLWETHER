@@ -15,7 +15,9 @@ import (
 	"github.com/tradesys/dashboard/internal/fundamentals"
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
+	"github.com/tradesys/dashboard/internal/news/company"
 	"github.com/tradesys/dashboard/internal/scanner"
+	"github.com/tradesys/dashboard/internal/smartmoney"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
@@ -38,6 +40,8 @@ func startAISchedules(
 	marketScanner *scanner.Runner,
 	fundamentalsRunner *fundamentals.Runner,
 	newsArchive *postgres.Archive,
+	master *company.Master,
+	sm *smartmoney.Syncer,
 ) *cron.Cron {
 	c := cron.New(cron.WithLocation(marketdata.Market), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger), cron.Recover(cron.DefaultLogger)))
 
@@ -204,14 +208,32 @@ func startAISchedules(
 	// read every half hour on weekdays (today and the previous three days,
 	// which also retries anything a transient error missed). 13Fs change
 	// quarterly, so the fund pass runs once a day.
-	if sm, err := newSmartMoneySyncer(cfg, store, log); err != nil {
-		log.Warn("smart money sync disabled", "err", err)
-	} else if sm != nil {
+	if sm != nil {
 		addWithin("insider trades sync", "*/30 6-23 * * 1-5", 25*time.Minute, func(runCtx context.Context) {
 			if n, err := sm.SyncInsiders(runCtx, 4); err != nil {
 				log.Warn("insider trades sync failed", "err", err)
 			} else if n > 0 {
 				log.Info("insider trades synced", "trades", n)
+			}
+		})
+		// SEC publishes each quarter's insider dataset a few weeks after it
+		// ends; the newest one is reloaded monthly, which skips filings
+		// already read one by one.
+		if master != nil {
+			addWithin("insider dataset", "0 4 3 * *", 2*time.Hour, func(runCtx context.Context) {
+				if n, err := sm.BackfillInsiders(runCtx, 1, insiderSymbolOf(master)); err != nil {
+					log.Warn("insider dataset load failed", "err", err)
+				} else {
+					log.Info("insider dataset loaded", "trades", n)
+				}
+			})
+		}
+		// Tickers for 13F holdings no one has resolved yet, largest first.
+		addWithin("cusip resolver", "10 * * * *", 25*time.Minute, func(runCtx context.Context) {
+			if n, err := sm.ResolvePendingCUSIPs(runCtx, 20*time.Minute); err != nil {
+				log.Warn("cusip resolution failed", "err", err)
+			} else if n > 0 {
+				log.Info("cusips resolved", "count", n)
 			}
 		})
 		addWithin("fund holdings sync", "20 7 * * *", time.Hour, func(runCtx context.Context) {

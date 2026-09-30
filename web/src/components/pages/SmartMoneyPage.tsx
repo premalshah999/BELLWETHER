@@ -1,18 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, Search, Users, X } from "lucide-react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, ExternalLink, Plus, Search, Users, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, type FundMove, type FundSummary, type InsiderTrade } from "../../lib/api";
+import { api, ApiError, type FundMove, type FundQuery, type FundSummary, type InsiderTrade } from "../../lib/api";
 import { useUrlState } from "../../lib/url";
 import { BarList, money } from "../charts/BarList";
-import { Drawer, PageHeader, Segmented, Select, SkeletonRows } from "../ui/controls";
+import { PageHeader, Segmented, Select, SkeletonRows } from "../ui/controls";
 import { CongressPage } from "./CongressPage";
 import { formatDate } from "../../lib/format";
 
 const TABS = [
   { value: "overview", label: "Overview" },
   { value: "insiders", label: "Insiders" },
-  { value: "funds", label: "Famous investors" },
+  { value: "funds", label: "Funds" },
   { value: "congress", label: "Congress" },
 ] as const;
 type Tab = (typeof TABS)[number]["value"];
@@ -39,8 +39,9 @@ export function SmartMoneyPage({ onSelect }: { onSelect: (symbol: string) => voi
   const { tab: routeTab } = useParams();
   const tab: Tab = (TABS.find((t) => t.value === routeTab)?.value ?? "overview") as Tab;
   const [win, setWin] = useUrlState<(typeof WINDOWS)[number]["value"]>("days", "90");
-  const [fund, setFund] = useState<FundSummary | null>(null);
+  const [fundCIK, setFundCIK] = useUrlState("fund", "");
   const days = Number(win);
+  const openFund = (f: FundSummary | { cik: string }) => navigate(`/smartmoney/funds?fund=${f.cik}`);
 
   const toChart = (s: string) => {
     onSelect(s);
@@ -51,7 +52,7 @@ export function SmartMoneyPage({ onSelect }: { onSelect: (symbol: string) => voi
     queryKey: ["smartmoney", days],
     queryFn: () => api.smartMoneyOverview(days),
     staleTime: 5 * 60_000,
-    enabled: tab === "overview" || tab === "funds",
+    enabled: tab === "overview",
   });
 
   return (
@@ -69,16 +70,18 @@ export function SmartMoneyPage({ onSelect }: { onSelect: (symbol: string) => voi
           <CongressPage onSelect={onSelect} embedded />
         ) : tab === "insiders" ? (
           <InsidersTab days={days} onSymbol={toChart} />
+        ) : tab === "funds" ? (
+          fundCIK ? (
+            <FundDetail cik={fundCIK} onBack={() => setFundCIK("")} onSymbol={toChart} />
+          ) : (
+            <FundsTab onOpen={openFund} />
+          )
         ) : isLoading || !data ? (
           <SkeletonRows count={8} height={60} />
-        ) : tab === "funds" ? (
-          <FundGrid funds={data.funds} onOpen={setFund} />
         ) : (
-          <Overview data={data} onSymbol={toChart} onFund={setFund} />
+          <Overview data={data} onSymbol={toChart} onFund={openFund} />
         )}
       </div>
-
-      <FundDrawer fund={fund} onClose={() => setFund(null)} onSymbol={(s) => { setFund(null); toChart(s); }} />
     </div>
   );
 }
@@ -304,11 +307,22 @@ function MoveTable({ moves, onSymbol, showFund }: { moves: FundMove[]; onSymbol:
   );
 }
 
-function FundCards({ funds, onOpen }: { funds: FundSummary[]; onOpen: (f: FundSummary) => void }) {
+function FundCards({ funds, onOpen, onUnfollow }: { funds: FundSummary[]; onOpen: (f: FundSummary) => void; onUnfollow?: (cik: string) => void }) {
   return (
     <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {funds.map((f) => (
-        <li key={f.cik}>
+        <li key={f.cik} className="group relative">
+          {onUnfollow && (
+            <button
+              type="button"
+              onClick={() => onUnfollow(f.cik)}
+              title="Stop following"
+              aria-label={`Stop following ${f.manager}`}
+              className="absolute right-2 top-2 z-10 hidden h-6 w-6 items-center justify-center rounded-md text-text-muted hover:bg-bg-panel-hover hover:text-semantic-down group-hover:flex"
+            >
+              <X size={13} />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onOpen(f)}
@@ -349,49 +363,295 @@ function FundCards({ funds, onOpen }: { funds: FundSummary[]; onOpen: (f: FundSu
   );
 }
 
-function FundGrid({ funds, onOpen }: { funds: FundSummary[]; onOpen: (f: FundSummary) => void }) {
+const STYLE_ORDER = ["All", "Value", "Growth", "Activist", "Macro", "Quant", "Multi-strategy", "Index", "Sovereign"];
+
+/**
+ * The fund directory: every manager followed, searchable, plus any 13F filer
+ * on SEC found by name and followed with one click.
+ */
+function FundsTab({ onOpen }: { onOpen: (f: FundSummary | { cik: string }) => void }) {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({ queryKey: ["funds"], queryFn: api.funds, staleTime: 5 * 60_000 });
+  const [filter, setFilter] = useState("");
+  const [style, setStyle] = useState("All");
+  const [sort, setSort] = useState<"aum" | "name" | "new">("aum");
+  const funds = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    const list = (data?.funds ?? []).filter(
+      (f) =>
+        (style === "All" || f.style.toLowerCase().includes(style.toLowerCase())) &&
+        (!needle || `${f.manager} ${f.name} ${f.style}`.toLowerCase().includes(needle)),
+    );
+    return [...list].sort((a, b) =>
+      sort === "name" ? a.manager.localeCompare(b.manager) : sort === "new" ? b.new_positions - a.new_positions : b.total_value - a.total_value,
+    );
+  }, [data, filter, style, sort]);
+  const unfollow = useMutation({
+    mutationFn: (cik: string) => api.unfollowFund(cik),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["funds"] }),
+  });
+
   return (
-    <div className="px-5 pb-10 md:px-8">
-      <FundCards funds={funds} onOpen={onOpen} />
+    <div className="flex flex-col gap-5 px-5 pb-10 md:px-8">
+      <FindFiler followed={new Set((data?.funds ?? []).map((f) => f.cik))} onOpen={onOpen} />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-64">
+          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder={`Filter ${data?.funds.length ?? ""} followed funds…`}
+            aria-label="Filter followed funds"
+            className="h-[34px] w-full rounded-md border border-border-subtle bg-bg-field pl-8 pr-3 text-meta outline-none focus:border-brand"
+          />
+        </div>
+        <Select label="Style" value={style} onChange={setStyle} options={STYLE_ORDER.map((v) => ({ value: v, label: v === "All" ? "All styles" : v }))} />
+        <Select
+          label="Sort"
+          value={sort}
+          onChange={(v) => setSort(v as typeof sort)}
+          options={[
+            { value: "aum", label: "Largest first" },
+            { value: "new", label: "Most new positions" },
+            { value: "name", label: "Name" },
+          ]}
+        />
+        <span className="text-meta text-text-muted">{funds.length} shown</span>
+      </div>
+      {isLoading ? <SkeletonRows count={6} height={120} /> : <FundCards funds={funds} onOpen={onOpen} onUnfollow={(cik) => unfollow.mutate(cik)} />}
     </div>
   );
 }
 
-function FundDrawer({ fund, onClose, onSymbol }: { fund: FundSummary | null; onClose: () => void; onSymbol: (s: string) => void }) {
-  const [show, setShow] = useState<"all" | "changes">("changes");
-  const { data, isLoading } = useQuery({
-    queryKey: ["fund", fund?.cik],
-    queryFn: () => api.fund(fund!.cik),
-    enabled: !!fund,
+/** Search SEC for any 13F filer and follow it. */
+function FindFiler({ followed, onOpen }: { followed: Set<string>; onOpen: (f: { cik: string }) => void }) {
+  const qc = useQueryClient();
+  const [q, setQ] = useState("");
+  const [asked, setAsked] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const found = useQuery({
+    queryKey: ["fund-search", asked],
+    queryFn: () => api.searchFunds(asked),
+    enabled: asked.length >= 2,
     staleTime: 10 * 60_000,
   });
-  const moves = useMemo(() => {
-    const all = data?.moves ?? [];
-    return show === "all" ? all.filter((m) => m.kind !== "exited") : all.filter((m) => m.kind !== "held").sort((a, b) => Math.abs(b.value - b.prev_value) - Math.abs(a.value - a.prev_value));
-  }, [data, show]);
+  const follow = useMutation({
+    mutationFn: (cik: string) => api.followFund({ cik }),
+    onSuccess: (f) => {
+      setNote(`Following ${f.name}. Its latest two 13Fs are being read; this takes a minute, longer for very large portfolios.`);
+      qc.invalidateQueries({ queryKey: ["funds"] });
+      qc.invalidateQueries({ queryKey: ["fund-search"] });
+    },
+    onError: (e) => setNote(e instanceof ApiError ? e.message : "Could not follow that filer."),
+  });
   return (
-    <Drawer open={!!fund} onClose={onClose} label={fund?.name ?? "Fund"} width={760}>
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle px-5">
-        <span className="text-meta text-text-muted">{fund?.name}</span>
-        <button type="button" onClick={onClose} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-panel-hover hover:text-text-primary">
-          <X size={17} />
+    <section className="rounded-xl border border-border-subtle bg-bg-card px-5 py-4">
+      <h2 className="text-[15px] font-semibold text-text-primary">Follow any investor</h2>
+      <p className="mt-0.5 text-meta text-text-muted">
+        Every institution managing over $100 million files a 13F with the SEC each quarter. Search by name — a hedge fund, a
+        family office, an endowment, a bank.
+      </p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          setNote(null);
+          setAsked(q.trim());
+        }}
+        className="mt-3 flex max-w-xl gap-2"
+      >
+        <div className="relative flex-1">
+          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="e.g. Greenlight Capital, Jana Partners, Yale"
+            aria-label="Search SEC filers"
+            className="h-[34px] w-full rounded-md border border-border-subtle bg-bg-field pl-8 pr-3 text-meta outline-none focus:border-brand"
+          />
+        </div>
+        <button type="submit" className="action-primary">
+          Search SEC
         </button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {fund && (
-          <div className="px-5 pb-3 pt-5">
-            <h2 className="text-[22px] font-semibold tracking-[-0.01em] text-text-primary">{fund.manager}</h2>
-            <p className="mt-1 text-ui text-text-secondary">
-              {money(fund.total_value)} across {fund.positions} positions, as of {date(fund.period)} (filed {date(fund.filed)}).
-            </p>
-            <div className="mt-4">
-              <Segmented label="Show" value={show} onChange={setShow} options={[{ value: "changes", label: "What changed" }, { value: "all", label: "Full portfolio" }]} />
+      </form>
+      {note && <p className="mt-2 text-meta text-text-secondary">{note}</p>}
+      {found.isFetching && <p className="mt-2 text-meta text-text-muted">Searching…</p>}
+      {found.isError && <p className="mt-2 text-meta text-semantic-down">{(found.error as Error).message}</p>}
+      {found.data && (
+        <ul className="mt-3 divide-y divide-border-subtle rounded-md border border-border-subtle">
+          {found.data.results.length === 0 && <li className="px-3 py-2 text-meta text-text-muted">No SEC filer matches “{asked}”.</li>}
+          {found.data.results.map((r) => (
+            <li key={r.cik} className="flex items-center gap-3 px-3 py-2">
+              <span className="min-w-0 flex-1 truncate text-ui text-text-primary">{r.name}</span>
+              <span className="font-num text-micro text-text-muted">CIK {r.cik.replace(/^0+/, "")}</span>
+              {followed.has(r.cik) || r.followed ? (
+                <button type="button" onClick={() => onOpen(r)} className="text-meta text-brand hover:underline">
+                  Open
+                </button>
+              ) : (
+                <button type="button" disabled={follow.isPending} onClick={() => follow.mutate(r.cik)} className="action-secondary h-7 px-2.5 text-meta">
+                  <Plus size={13} /> Follow
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+const MOVE_FILTERS: { value: NonNullable<FundQuery["kind"]>; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "new", label: "New" },
+  { value: "added", label: "Added" },
+  { value: "trimmed", label: "Trimmed" },
+  { value: "exited", label: "Sold out" },
+  { value: "held", label: "Unchanged" },
+];
+
+const PAGE = 100;
+
+/**
+ * One manager's whole portfolio, however large: searched, filtered by what
+ * changed, sorted and paged on the server, with the sector mix on top.
+ */
+function FundDetail({ cik, onBack, onSymbol }: { cik: string; onBack: () => void; onSymbol: (s: string) => void }) {
+  const [q, setQ] = useUrlState("q", "");
+  const [draft, setDraft] = useState(q);
+  const [kind, setKind] = useUrlState<NonNullable<FundQuery["kind"]>>("kind", "all");
+  const [sort, setSort] = useUrlState<NonNullable<FundQuery["sort"]>>("sort", "value");
+  const [offset, setOffset] = useState(0);
+  const funds = useQuery({ queryKey: ["funds"], queryFn: api.funds, staleTime: 5 * 60_000 });
+  const fund = funds.data?.funds.find((f) => f.cik === cik);
+  const { data, isLoading, isError, error, isFetching } = useQuery({
+    queryKey: ["fund", cik, q, kind, sort, offset],
+    queryFn: () => api.fund(cik, { q, kind, sort, offset, limit: PAGE }),
+    placeholderData: keepPreviousData,
+    staleTime: 10 * 60_000,
+  });
+  const reset = <T,>(set: (v: T) => void) => (v: T) => {
+    setOffset(0);
+    set(v);
+  };
+  const counts = data?.counts ?? {};
+  const all = Object.values(counts).reduce((a, n) => a + (n ?? 0), 0);
+
+  return (
+    <div className="flex flex-col gap-5 px-5 pb-10 md:px-8">
+      <button type="button" onClick={onBack} className="inline-flex w-fit items-center gap-1.5 text-meta text-text-secondary hover:text-text-primary">
+        <ArrowLeft size={14} /> All funds
+      </button>
+      <header>
+        <h2 className="text-[24px] font-semibold tracking-[-0.01em] text-text-primary">{fund?.manager ?? "Fund"}</h2>
+        {data && (
+          <p className="mt-1 text-ui text-text-secondary">
+            {fund?.name ? `${fund.name} · ` : ""}
+            {money(data.filing.total_value)} across {data.filing.positions.toLocaleString()} positions, as of {date(data.filing.period)} (filed{" "}
+            {date(data.filing.filed)}).{" "}
+            <a
+              href={`https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cik}&type=13F-HR&dateb=&owner=include&count=40`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-brand hover:underline"
+            >
+              13F filings <ExternalLink size={12} />
+            </a>
+          </p>
+        )}
+      </header>
+
+      {isError ? (
+        <p className="text-ui text-text-secondary">
+          {error instanceof ApiError && error.status === 404
+            ? "This fund's first 13F is still being read. Check back in a minute."
+            : (error as Error).message}
+        </p>
+      ) : isLoading || !data ? (
+        <SkeletonRows count={10} height={40} />
+      ) : (
+        <>
+          {data.sectors.length > 0 && (
+            <section>
+              <h3 className="text-meta font-medium text-text-secondary">Where the money is</h3>
+              <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-bg-chip">
+                {data.sectors.slice(0, 8).map((s, i) => (
+                  <span key={s.sector} title={`${s.sector} ${s.pct.toFixed(1)}%`} className="h-full" style={{ width: `${s.pct}%`, background: "var(--brass)", opacity: 1 - i * 0.1 }} />
+                ))}
+              </div>
+              <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                {data.sectors.slice(0, 8).map((s, i) => (
+                  <li key={s.sector} className="flex items-center gap-1.5 text-meta text-text-secondary">
+                    <span className="h-2 w-2 rounded-full" style={{ background: "var(--brass)", opacity: 1 - i * 0.1 }} />
+                    {s.sector} <span className="font-num text-text-muted">{s.pct.toFixed(1)}%</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                reset(setQ)(draft.trim());
+              }}
+              className="relative w-64"
+            >
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Search holdings by name or ticker…"
+                aria-label="Search holdings"
+                className="h-[34px] w-full rounded-md border border-border-subtle bg-bg-field pl-8 pr-8 text-meta outline-none focus:border-brand"
+              />
+              {draft && (
+                <button type="button" aria-label="Clear" onClick={() => { setDraft(""); reset(setQ)(""); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
+                  <X size={13} />
+                </button>
+              )}
+            </form>
+            <Segmented
+              label="Moves"
+              value={kind}
+              onChange={reset(setKind)}
+              options={MOVE_FILTERS.map((f) => ({ value: f.value, label: `${f.label} ${f.value === "all" ? all : counts[f.value as FundMove["kind"]] ?? 0}` }))}
+            />
+            <Select
+              label="Sort"
+              value={sort}
+              onChange={(v) => reset(setSort)(v as NonNullable<FundQuery["sort"]>)}
+              options={[
+                { value: "value", label: "Largest position" },
+                { value: "change", label: "Biggest dollar change" },
+                { value: "change_pct", label: "Biggest % change" },
+                { value: "shares", label: "Most shares" },
+              ]}
+            />
+            {isFetching && <span className="text-meta text-text-muted">updating…</span>}
+          </div>
+
+          <div className="rounded-xl border border-border-subtle bg-bg-card">
+            <MoveTable moves={data.moves} onSymbol={onSymbol} />
+            <div className="flex items-center justify-between border-t border-border-subtle px-5 py-3 text-meta text-text-secondary">
+              <span>
+                {data.matched === 0
+                  ? "Nothing matches."
+                  : `${(data.offset + 1).toLocaleString()}–${Math.min(data.offset + PAGE, data.matched).toLocaleString()} of ${data.matched.toLocaleString()}`}
+              </span>
+              <span className="flex gap-2">
+                <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))} className="action-secondary h-8 px-3 disabled:opacity-40">
+                  Previous
+                </button>
+                <button type="button" disabled={offset + PAGE >= data.matched} onClick={() => setOffset(offset + PAGE)} className="action-secondary h-8 px-3 disabled:opacity-40">
+                  Next
+                </button>
+              </span>
             </div>
           </div>
-        )}
-        {isLoading ? <SkeletonRows count={8} height={40} /> : <MoveTable moves={moves} onSymbol={onSymbol} />}
-      </div>
-    </Drawer>
+        </>
+      )}
+    </div>
   );
 }
 

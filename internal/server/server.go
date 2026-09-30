@@ -21,6 +21,7 @@ import (
 	"github.com/tradesys/dashboard/internal/news/company"
 	"github.com/tradesys/dashboard/internal/research"
 	"github.com/tradesys/dashboard/internal/scanner"
+	"github.com/tradesys/dashboard/internal/smartmoney"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 	"github.com/tradesys/dashboard/internal/stream"
 )
@@ -119,8 +120,11 @@ type Deps struct {
 	// Searcher finds instruments by name. Nil when no provider supports it,
 	// in which case the UI falls back to typing an exact symbol.
 	Searcher marketdata.SymbolSearcher
-	Log      *slog.Logger
-	Version  string
+	// SmartMoney reads SEC for insider and fund filings. Nil without an SEC
+	// contact, in which case following a new fund is unavailable.
+	SmartMoney *smartmoney.Syncer
+	Log        *slog.Logger
+	Version    string
 	// Now is injectable for deterministic tests.
 	Now func() time.Time
 }
@@ -289,6 +293,10 @@ func (s *Server) routes() {
 			r.Get("/congress/filings", s.handleCongressFilings)
 			r.Get("/smartmoney/overview", s.handleSmartMoneyOverview)
 			r.Get("/smartmoney/insiders", s.handleInsiderTrades)
+			r.Get("/smartmoney/funds", s.handleFunds)
+			r.With(s.webLimiter.middleware).Get("/smartmoney/funds/search", s.handleSearchFunds)
+			r.With(s.webLimiter.middleware).Post("/smartmoney/funds", s.handleFollowFund)
+			r.Delete("/smartmoney/funds/{cik}", s.handleUnfollowFund)
 			r.Get("/smartmoney/funds/{cik}", s.handleFund)
 			r.Get("/smartmoney/symbol/{symbol}", s.handleSymbolSmartMoney)
 			r.Get("/calendar", s.handleCalendar)

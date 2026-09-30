@@ -201,6 +201,8 @@ export function EventStudyPage() {
             <p className="max-w-3xl text-meta leading-relaxed text-text-muted">
               {type === "EARNINGS_SURPRISE"
                 ? "Each case is timed from the official announcement, so a report after the close reacts the next session. "
+                : type.startsWith("INSIDER_")
+                ? "Each case is timed from the evening of the day the Form 4 was filed, so the reaction is always the next session. "
                 : "Each case is timed from when Bellwether discovered the event, never from when it happened or was published, because that is the only moment a decision could have acted on it. "}
               Returns are measured against {result.benchmark}.
             </p>
@@ -212,11 +214,18 @@ export function EventStudyPage() {
 }
 
 function kindLabel(type: string) {
-  return type === "EARNINGS_SURPRISE" ? "Earnings vs. estimates, 5-year history" : typeLabel(type);
+  const history: Record<string, string> = {
+    EARNINGS_SURPRISE: "Earnings vs. estimates, 5-year history",
+    INSIDER_BUYING: "Insider buying, $50k+ (SEC Form 4 history)",
+    INSIDER_SELLING: "Insider selling, $250k+, not pre-planned",
+  };
+  return history[type] ?? typeLabel(type);
 }
 
 function groupHeading(type: string) {
-  return type === "EARNINGS_SURPRISE" ? "By size of the surprise" : "By how the event was read for the company";
+  if (type === "EARNINGS_SURPRISE") return "By size of the surprise";
+  if (type.startsWith("INSIDER_")) return "By who traded";
+  return "By how the event was read for the company";
 }
 
 function tone(v: number, significant: boolean) {
@@ -229,6 +238,8 @@ function eventPhrase(type: string): string {
   const known: Record<string, string> = {
     EARNINGS: "an earnings report",
     EARNINGS_SURPRISE: "an earnings report",
+    INSIDER_BUYING: "an insider's open-market purchase",
+    INSIDER_SELLING: "a discretionary insider sale",
     GUIDANCE: "a guidance change",
     BUYBACK: "a buyback announcement",
     DIVIDEND: "a dividend announcement",

@@ -28,7 +28,20 @@ const (
 	// earningsKind is the study of earnings announcements with their EPS
 	// surprise, drawn from the backfilled history rather than the news archive.
 	earningsKind = "EARNINGS_SURPRISE"
+	// The insider studies read SEC Form 4 history: open-market purchases of
+	// $50,000 or more, and discretionary sales of $250,000 or more.
+	insiderBuyKind  = "INSIDER_BUYING"
+	insiderSellKind = "INSIDER_SELLING"
 )
+
+var roleGroups = []string{"CEO, CFO or president", "other officer", "director", "10% owner", "other"}
+
+// filedKnown is when a Form 4 filed on a date is taken as known: the evening
+// of that date in New York, so the reaction is always the next session.
+func filedKnown(d time.Time) time.Time {
+	y, m, day := d.Date()
+	return time.Date(y, m, day, 20, 0, 0, 0, marketdata.Market)
+}
 
 // surpriseGroups orders the earnings study's groups from best to worst.
 var surpriseGroups = []string{"big beat (10%+)", "beat (2-10%)", "in line (±2%)", "miss (2-10%)", "big miss (10%+)"}
@@ -79,9 +92,19 @@ func (s *Server) handleEventStudyTypes(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+	var extra []postgres.EventTypeCount
 	if n, err := s.deps.Store.EarningsCount(r.Context()); err == nil && n > 0 {
-		counts = append([]postgres.EventTypeCount{{EventType: earningsKind, Count: n}}, counts...)
+		extra = append(extra, postgres.EventTypeCount{EventType: earningsKind, Count: n})
 	}
+	if buys, sells, err := s.deps.Store.InsiderStudyCounts(r.Context()); err == nil {
+		if buys > 0 {
+			extra = append(extra, postgres.EventTypeCount{EventType: insiderBuyKind, Count: buys})
+		}
+		if sells > 0 {
+			extra = append(extra, postgres.EventTypeCount{EventType: insiderSellKind, Count: sells})
+		}
+	}
+	counts = append(extra, counts...)
 	writeJSON(w, http.StatusOK, map[string]any{"types": counts})
 }
 
@@ -186,6 +209,21 @@ func (s *Server) studyEvents(ctx context.Context, kind string) (map[string][]stu
 			out[e.Symbol] = append(out[e.Symbol], studyEvent{at: e.AnnouncedAt, group: surpriseGroup(*e.SurprisePct)})
 		}
 		return out, len(rows), surpriseGroups, nil
+	}
+
+	if kind == insiderBuyKind || kind == insiderSellKind {
+		code, floor := "P", 50_000.0
+		if kind == insiderSellKind {
+			code, floor = "S", 250_000.0
+		}
+		rows, err := s.deps.Store.InsiderStudyEvents(ctx, code, floor)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+		for _, e := range rows {
+			out[e.Symbol] = append(out[e.Symbol], studyEvent{at: filedKnown(e.FiledAt), group: e.Role})
+		}
+		return out, len(rows), roleGroups, nil
 	}
 
 	pairs, err := s.deps.Store.EventTypeSymbolPairs(ctx, kind)
