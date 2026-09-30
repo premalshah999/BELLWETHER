@@ -91,6 +91,7 @@ type Turn struct {
 	// Measurements are computed from the price series rather than retrieved.
 	// Independent of the model, so they survive a failed synthesis.
 	Measurements []MarketStats    `json:"measurements,omitempty"`
+	Analyses     []Analysis       `json:"analyses,omitempty"`
 	Providers    []ProviderReport `json:"providers,omitempty"`
 
 	Model     string    `json:"model,omitempty"`

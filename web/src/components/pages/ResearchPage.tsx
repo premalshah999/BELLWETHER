@@ -5,6 +5,7 @@ import { api, type MarketStats, type ResearchTurn } from "../../lib/api";
 import { formatAgo } from "../../lib/format";
 import { usePersisted } from "../../lib/layout";
 import { Drawer, PageHeader, Segmented } from "../ui/controls";
+import { AnalysisPanel } from "../research/AnalysisPanel";
 
 const SUGGESTIONS = [
   "What changed in NVIDIA’s latest earnings, and how are export limits affecting it?",
@@ -564,7 +565,10 @@ function Turn({
           </ul>
         </details>
       )}
-      {!!turn.measurements?.length && <Measured stats={turn.measurements} />}
+      {(turn.analyses ?? []).map((a) => (
+        <AnalysisPanel key={a.symbol} a={a} />
+      ))}
+      {!turn.analyses?.length && !!turn.measurements?.length && <Measured stats={turn.measurements} />}
 
       {turn.answer && (
         <p className="mt-3 whitespace-pre-wrap text-ui leading-relaxed text-text-secondary">
@@ -575,7 +579,7 @@ function Turn({
       {(turn.sections ?? []).map((sec, i) => (
         <section key={i} className="mt-4">
           {sec.heading && (
-            <h4 className="mb-1 text-ui font-medium text-text-primary">
+            <h4 className="mb-1.5 text-[15px] font-semibold text-text-primary">
               {sec.heading}
             </h4>
           )}

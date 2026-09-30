@@ -83,9 +83,13 @@ type Config struct {
 	TelegramAPIBaseURL string
 
 	// AI
-	LLMBaseURL            string
-	LLMModel              string
-	LLMCheapModel         string
+	LLMBaseURL    string
+	LLMModel      string
+	LLMCheapModel string
+	// LLMResearchModel writes deep-research briefs; empty uses LLMModel.
+	LLMResearchModel string
+	// LLMResearchEffort is the reasoning effort asked of it: low, high, max.
+	LLMResearchEffort     string
 	LLMAPIKey             string
 	LLMMonthlyTokenBudget int
 	// LLMExtraBody is merged into every chat-completions request body. It is
@@ -154,6 +158,8 @@ func Load(envFile string) (*Config, error) {
 		LLMBaseURL:             envStr("LLM_BASE_URL", ""),
 		LLMModel:               envStr("LLM_MODEL", ""),
 		LLMCheapModel:          envStr("LLM_CHEAP_MODEL", ""),
+		LLMResearchModel:       envStr("LLM_RESEARCH_MODEL", ""),
+		LLMResearchEffort:      envStr("LLM_RESEARCH_EFFORT", "high"),
 		LLMAPIKey:              envStr("LLM_API_KEY", ""),
 		LLMMonthlyTokenBudget:  envInt("LLM_MONTHLY_TOKEN_BUDGET", 2_000_000),
 		SearXNGURL:             envStr("SEARXNG_URL", ""),

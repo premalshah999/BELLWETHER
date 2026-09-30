@@ -79,7 +79,7 @@ FROM research_conversations WHERE id = $1`, id).Scan(
 	rows, err := d.db.QueryContext(ctx, `
 SELECT id, conversation_id, seq, question, search_query, answer,
        findings, companies, gaps, followups, sources, providers, measurements,
-       sections,
+       sections, analyses,
        model, degraded, note, elapsed_ms, created_at,
        status::text, stage, progress, started_at, finished_at, error
 FROM research_turns WHERE conversation_id = $1 ORDER BY seq`, id)
@@ -93,13 +93,13 @@ FROM research_turns WHERE conversation_id = $1 ORDER BY seq`, id)
 			t                                    research.Turn
 			findings, companies, gaps, followups []byte
 			sources, providers, progress         []byte
-			measurements, sections               []byte
+			measurements, sections, analyses     []byte
 			status                               string
 			startedAt, finishedAt                sql.NullTime
 		)
 		if err := rows.Scan(&t.ID, &t.ConversationID, &t.Seq, &t.Question, &t.SearchQuery,
 			&t.Answer, &findings, &companies, &gaps, &followups, &sources, &providers,
-			&measurements, &sections,
+			&measurements, &sections, &analyses,
 			&t.Model, &t.Degraded, &t.Note, &t.ElapsedMS, &t.CreatedAt,
 			&status, &t.Stage, &progress, &startedAt, &finishedAt, &t.Error); err != nil {
 			return c, fmt.Errorf("postgres: scan turn: %w", err)
@@ -119,6 +119,7 @@ FROM research_turns WHERE conversation_id = $1 ORDER BY seq`, id)
 		_ = json.Unmarshal(sources, &t.Sources)
 		_ = json.Unmarshal(measurements, &t.Measurements)
 		_ = json.Unmarshal(sections, &t.Sections)
+		_ = json.Unmarshal(analyses, &t.Analyses)
 		_ = json.Unmarshal(providers, &t.Providers)
 		c.Turns = append(c.Turns, t)
 	}
@@ -200,6 +201,7 @@ func (d *DB) CompleteTurn(ctx context.Context, t *research.Turn) error {
 	providers, _ := json.Marshal(orEmpty(t.Providers))
 	measurements, _ := json.Marshal(orEmpty(t.Measurements))
 	sections, _ := json.Marshal(orEmpty(t.Sections))
+	analyses, _ := json.Marshal(orEmpty(t.Analyses))
 
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -211,13 +213,13 @@ func (d *DB) CompleteTurn(ctx context.Context, t *research.Turn) error {
 UPDATE research_turns SET
     search_query = $2, answer = $3, findings = $4::jsonb, companies = $5::jsonb,
     gaps = $6::jsonb, followups = $7::jsonb, sources = $8::jsonb, providers = $9::jsonb,
-    measurements = $14::jsonb, sections = $15::jsonb,
+    measurements = $14::jsonb, sections = $15::jsonb, analyses = $16::jsonb,
     model = $10, degraded = $11, note = $12, elapsed_ms = $13,
     status = 'done', stage = 'done', finished_at = now()
 WHERE id = $1`,
 		t.ID, t.SearchQuery, t.Answer, findings, companies, gaps, followups,
 		sources, providers, t.Model, t.Degraded, t.Note, t.ElapsedMS,
-		measurements, sections); err != nil {
+		measurements, sections, analyses); err != nil {
 		return fmt.Errorf("postgres: complete turn: %w", err)
 	}
 

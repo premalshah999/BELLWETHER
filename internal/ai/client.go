@@ -193,6 +193,12 @@ type Request struct {
 	Messages    []Message
 	Temperature float64
 	MaxTokens   int
+	// Model overrides the configured model for this one call, for features
+	// that need a stronger model than the default. Spend guards price it.
+	Model string
+	// Extra is merged into this request's body after the configured extras,
+	// for per-call vendor parameters such as reasoning effort.
+	Extra map[string]any
 }
 
 // ErrTruncated is returned when the model hit its token ceiling before
@@ -299,10 +305,7 @@ func (c *Client) report(ctx context.Context, o Outcome) {
 // complete is the round trip itself. Every path out of it is an outcome the
 // caller above classifies; it does no reporting of its own.
 func (c *Client) complete(ctx context.Context, req Request) (Response, error) {
-	model := c.model
-	if req.Cheap {
-		model = c.cheapModel
-	}
+	model := c.modelFor(req)
 
 	body, err := c.encodeRequest(chatRequest{
 		Model:       model,
@@ -310,7 +313,7 @@ func (c *Client) complete(ctx context.Context, req Request) (Response, error) {
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
 		Stream:      false,
-	})
+	}, req.Extra)
 	if err != nil {
 		return Response{}, err
 	}
@@ -447,8 +450,8 @@ func (c *Client) record(ctx context.Context, feature string, out Response) {
 }
 
 // encodeRequest marshals the request, merging any vendor-specific extras.
-func (c *Client) encodeRequest(req chatRequest) ([]byte, error) {
-	if len(c.extraBody) == 0 {
+func (c *Client) encodeRequest(req chatRequest, extra ...map[string]any) ([]byte, error) {
+	if len(c.extraBody) == 0 && len(extra) == 0 {
 		body, err := json.Marshal(req)
 		if err != nil {
 			return nil, fmt.Errorf("ai: encode request: %w", err)
@@ -468,6 +471,11 @@ func (c *Client) encodeRequest(req chatRequest) ([]byte, error) {
 	}
 	for k, v := range c.extraBody {
 		if _, taken := merged[k]; !taken {
+			merged[k] = v
+		}
+	}
+	for _, x := range extra {
+		for k, v := range x {
 			merged[k] = v
 		}
 	}
@@ -570,6 +578,9 @@ func (c *Client) checkDailyCap(ctx context.Context, req Request) error {
 
 // modelFor is the model a request will be sent to.
 func (c *Client) modelFor(req Request) string {
+	if req.Model != "" {
+		return req.Model
+	}
 	if req.Cheap {
 		return c.cheapModel
 	}

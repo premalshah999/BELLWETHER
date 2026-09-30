@@ -95,6 +95,10 @@ func main() {
 		"fetch new House Clerk PTR filings for the current year, then exit")
 	refreshCal := flag.Bool("refresh-calendar", false,
 		"refresh the forward corporate calendar for the whole universe, then exit")
+	syncSmartMoney := flag.Int("sync-smartmoney", 0,
+		"fetch insider trades for the last N days and followed funds' 13Fs, then exit")
+	mergeDuplicates := flag.Int("merge-duplicates", 0,
+		"clean headlines and merge duplicate events from the last N days, then exit")
 	rolloverNews := flag.Bool("rollover-news", false,
 		"move aged news to the archive database now, then exit")
 	reclaimSpace := flag.Bool("reclaim-space", false,
@@ -167,6 +171,20 @@ func main() {
 	if *refreshCal {
 		if err := runRefreshCalendar(); err != nil {
 			slog.Error("calendar refresh failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *syncSmartMoney > 0 {
+		if err := runSyncSmartMoney(*syncSmartMoney); err != nil {
+			slog.Error("smart money sync failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *mergeDuplicates > 0 {
+		if err := runMergeDuplicatesCmd(*mergeDuplicates); err != nil {
+			slog.Error("duplicate merge failed", "err", err)
 			os.Exit(1)
 		}
 		return
@@ -543,7 +561,8 @@ func run() error {
 		ai.WithScoreStore(store),
 		ai.WithWatchlist(store),
 		ai.WithAlerts(store),
-		ai.WithJev(jevClient))
+		ai.WithJev(jevClient),
+		ai.WithResearchModel(cfg.LLMResearchModel, cfg.LLMResearchEffort))
 
 	if !cfg.LLMConfigured() {
 		log.Info("no LLM configured; AI features will report as unconfigured and everything else runs normally")
@@ -587,7 +606,7 @@ func run() error {
 	}
 	defer scheduler.Stop()
 
-	researchEngine := buildResearchEngine(cfg, store, companyMaster, router, log)
+	researchEngine := buildResearchEngine(cfg, store, newsArchive, companyMaster, router, log)
 
 	// A process that died mid-research leaves a turn in 'running' forever,
 	// which the interface would show as a question permanently in progress.
