@@ -194,7 +194,6 @@ func (d *DB) AddToWatchlist(ctx context.Context, id int64, symbols []string) (ad
 		if raw == "" {
 			continue
 		}
-		raw = d.qualify(ctx, raw)
 		sym, perr := marketdata.ParseSymbol(raw)
 		if perr != nil {
 			rejected = append(rejected, raw)
@@ -290,61 +289,4 @@ func (d *DB) WatchlistEntries(ctx context.Context, id int64) ([]storage.Watchlis
 		out = append(out, e)
 	}
 	return out, rows.Err()
-}
-
-// qualify gives a bare ticker the exchange it almost certainly meant.
-//
-// ParseSymbol reads an unsuffixed symbol as US, which is the right default
-// for the parser and the wrong one here. Bulk paste exists because operators
-// arrive with a spreadsheet column of NSE tickers, and those columns do not
-// carry suffixes: pasting "TCS" next to an existing "TCS.NSE" put the same
-// company on the list twice, once as an Indian listing and once as a US one
-// that does not exist.
-//
-// The index constituents are the authority, so this only ever promotes a
-// ticker the NSE actually lists. AAPL, MSFT and the rest are not constituents
-// and stay US, which is what an operator typing them means.
-func (d *DB) qualify(ctx context.Context, raw string) string {
-	if strings.Contains(raw, ".") {
-		return raw
-	}
-	ticker := strings.ToUpper(strings.TrimSpace(raw))
-
-	// listings is the full referenceable universe, both venues, not just the
-	// ~750/504-name scan subset -- a ticker worth watching is not necessarily
-	// one the scanner covers.
-	var onNSE, onUS bool
-	err := d.db.QueryRowContext(ctx, `
-		SELECT
-		    EXISTS (SELECT 1 FROM listings WHERE symbol = $1 || '.NSE'),
-		    EXISTS (SELECT 1 FROM listings WHERE symbol = $1 AND venue = 'US')`,
-		ticker).Scan(&onNSE, &onUS)
-	if err != nil {
-		// A lookup failure falls back to the parser's own default rather than
-		// rejecting the symbol: being wrong about the exchange is recoverable,
-		// refusing to add anything is not.
-		return raw
-	}
-	switch {
-	case onNSE && !onUS:
-		return ticker + ".NSE"
-	case onUS && !onNSE:
-		return ticker
-	case onNSE && onUS:
-		// A genuine collision (ABB, INFY): the same ticker names two
-		// different instruments, one per venue. There is no way to guess
-		// which one an operator meant from the bare string alone -- ideally
-		// this would be reported back as ambiguous and let them pick, but
-		// AddToWatchlist's three-way added/skipped/rejected contract has no
-		// fourth bucket for it yet. Left bare (US) rather than defaulting to
-		// NSE, matching this build's US-first default; add the venue suffix
-		// explicitly (INFY.NSE) to reach the other one.
-		return ticker
-	default:
-		// Neither master recognizes it. Left bare rather than rejected --
-		// ParseSymbol's own default (US) is a reasonable guess, and an
-		// operator watching something not yet in either reference file
-		// should not be blocked by that gap.
-		return raw
-	}
 }

@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/tradesys/dashboard/internal/config"
 	"github.com/tradesys/dashboard/internal/congress"
+	"github.com/tradesys/dashboard/internal/news/company"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
@@ -92,7 +94,7 @@ func syncCongressFilings(ctx context.Context, store *postgres.DB, client *http.C
 			continue
 		}
 
-		symbols, unresolved := resolveCongressTickers(ctx, store, tickers)
+		symbols, unresolved := resolveCongressTickers(tickers)
 		stored := congress.StoredFiling{
 			Filing:                  f,
 			Chamber:                 "house",
@@ -121,15 +123,13 @@ func syncCongressFilings(ctx context.Context, store *postgres.DB, client *http.C
 	return saved, nil
 }
 
-// resolveCongressTickers checks every ticker the PDF extraction found
-// against the listed universe. A ticker that does not resolve is not
-// dropped -- it is kept as unresolved so a reviewer can see what the
-// extractor found and could not place, rather than that information simply
-// disappearing.
-func resolveCongressTickers(ctx context.Context, store *postgres.DB, tickers []string) (symbols, unresolved []string) {
+// resolveCongressTickers keeps the tickers that name a real US listing. The
+// rest stay visible as unresolved, so a reviewer sees what the extractor
+// found and could not place.
+func resolveCongressTickers(tickers []string) (symbols, unresolved []string) {
 	for _, t := range tickers {
-		if sym, ok, err := store.ResolveUSTicker(ctx, t); err == nil && ok {
-			symbols = append(symbols, sym)
+		if company.IsUSTicker(t) {
+			symbols = append(symbols, strings.ToUpper(t))
 		} else {
 			unresolved = append(unresolved, t)
 		}

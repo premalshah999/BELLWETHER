@@ -196,12 +196,12 @@ func TestParseLevel(t *testing.T) {
 }
 
 func TestMarketDataOrderIsNormalised(t *testing.T) {
-	setEnv(t, map[string]string{"MARKETDATA_ORDER": " YAHOO , TwelveData , Synthetic "})
+	setEnv(t, map[string]string{"MARKETDATA_ORDER": " YFINANCE , TwelveData , Synthetic "})
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"yahoo", "twelvedata", "synthetic"}
+	want := []string{"yfinance", "twelvedata", "synthetic"}
 	for i, w := range want {
 		if cfg.MarketDataOrder[i] != w {
 			t.Errorf("MarketDataOrder[%d] = %q, want %q", i, cfg.MarketDataOrder[i], w)

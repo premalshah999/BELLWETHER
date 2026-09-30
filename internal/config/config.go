@@ -20,12 +20,8 @@ type Config struct {
 	Addr                 string
 	AllowUnauthenticated bool
 
-	// Storage
-	//
-	// DatabaseURL selects Postgres, which is the production path. DBPath is
-	// the legacy SQLite file, kept only so the migration command can read it.
+	// DatabaseURL is the Postgres database.
 	DatabaseURL string
-	DBPath      string
 
 	// NewsArchiveURL is a second Postgres that holds aged news.
 	//
@@ -144,7 +140,6 @@ func Load(envFile string) (*Config, error) {
 		TypeSafeAPIKey:         envStr("TYPESAFE_API_KEY", ""),
 		JevModel:               envStr("JEV_MODEL", ""),
 		JevInputPriceUSD:       envFloat("JEV_INPUT_PRICE_USD", 0.042),
-		DBPath:                 envStr("DB_PATH", "./data/tradesys.db"),
 		AlphaVantageKey:        envStr("ALPHAVANTAGE_API_KEY", ""),
 		AlphaVantageDailyLimit: envInt("ALPHAVANTAGE_DAILY_LIMIT", 25),
 		TwelveDataKey:          envStr("TWELVEDATA_API_KEY", ""),
@@ -199,9 +194,9 @@ func Load(envFile string) (*Config, error) {
 	}
 	for _, p := range c.MarketDataOrder {
 		switch p {
-		case "yfinance", "yahoo", "twelvedata", "alphavantage", "synthetic":
+		case "yfinance", "twelvedata", "alphavantage", "synthetic":
 		default:
-			return nil, fmt.Errorf("config: MARKETDATA_ORDER contains unknown provider %q (want yfinance, yahoo, twelvedata, alphavantage, or synthetic)", p)
+			return nil, fmt.Errorf("config: MARKETDATA_ORDER contains unknown provider %q (want yfinance, twelvedata, alphavantage, or synthetic)", p)
 		}
 	}
 

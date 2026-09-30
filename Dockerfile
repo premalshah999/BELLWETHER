@@ -36,8 +36,7 @@ COPY --from=web /build/web/dist ./web/dist
 
 ARG VERSION=docker
 
-# CGO is off because modernc.org/sqlite is pure Go: the result is a static
-# binary that runs on an image with no libc at all.
+# Every dependency is pure Go, so CGO is off and the binary is static.
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags "-s -w -X main.version=${VERSION}" \
     -o /out/tradesys ./cmd/tradesys

@@ -33,10 +33,9 @@ cmd/tradesys/          wiring: the only package that names a concrete adapter
 internal/
   config/              environment loading and validation
   marketdata/          Provider interface, Router, Symbol, Candle, Quote
-    yahoo/ yfin/ twelvedata/ alphavantage/ fixture/
+    yfin/ twelvedata/ alphavantage/ fixture/
   storage/             persistence ports
     postgres/          production store; migrations embedded here
-    sqlite/            one-time importer for pre-Postgres installs
   news/                lane-based ingestion: fetch → normalize → dedupe
     company/           the listed-instrument master (SEC-derived US universe)
   events/              type taxonomy, sector inference, SEC / Federal Register parsers

@@ -13,6 +13,7 @@ import (
 
 	"github.com/tradesys/dashboard/internal/events"
 	"github.com/tradesys/dashboard/internal/news"
+	"github.com/tradesys/dashboard/internal/news/company"
 )
 
 // EventStore is what the classifier needs from storage.
@@ -20,11 +21,6 @@ type EventStore interface {
 	ListUnclassifiedEvents(ctx context.Context, limit int) ([]news.Event, error)
 	EventFacts(ctx context.Context, eventID int64) (map[string]string, error)
 	SaveEventClassification(ctx context.Context, c events.Classification) error
-	// ResolveTicker reports the single venue a bare ticker belongs to, or
-	// ok=false if it names nothing or names something on both venues (ABB,
-	// INFY) -- a model-supplied entity has no other signal to break that tie
-	// with, so it is dropped rather than guessed.
-	ResolveTicker(ctx context.Context, ticker string) (venue string, ok bool, err error)
 }
 
 // classifyBatchSize is how many events go into one request.
@@ -245,28 +241,14 @@ func (s *Service) classifyBatch(ctx context.Context, store EventStore, batch []n
 			if ticker == "" {
 				continue
 			}
-			// A model-supplied symbol is a guess, not a citation, so it is
-			// only trusted when the listed universe confirms it -- and
-			// confirms it unambiguously. Storing it bare would either
-			// silently reintroduce the pre-migration namespace collision or
-			// (for a name on neither venue) attach the classification to an
-			// instrument that does not exist.
-			venue, ok, rerr := store.ResolveTicker(ctx, ticker)
-			if rerr != nil {
-				s.log.Warn("could not resolve model-supplied ticker", "ticker", ticker, "err", rerr)
+			// A model-supplied symbol is a guess, not a citation: keep it only
+			// when it names a real listing.
+			if !company.IsUSTicker(ticker) {
+				s.log.Debug("dropped unknown model-supplied ticker", "ticker", ticker, "event", src.ID)
 				continue
-			}
-			if !ok {
-				s.log.Debug("dropped unresolvable or ambiguous model-supplied ticker",
-					"ticker", ticker, "event", src.ID)
-				continue
-			}
-			sym := ticker
-			if venue != "US" {
-				sym = ticker + "." + venue
 			}
 			c.Entities = append(c.Entities, events.EntityReading{
-				Symbol:         sym,
+				Symbol:         ticker,
 				Relationship:   normalizeRelationship(ent.Relationship),
 				Direction:      normalizeDirection(ent.Direction),
 				ImpactStrength: clamp01(ent.ImpactStrength),

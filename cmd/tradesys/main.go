@@ -84,8 +84,6 @@ func main() {
 	// authentication, so it must not be reachable from the internet.
 	reprocess := flag.Bool("reprocess", false,
 		"discard all derived events and rebuild them from stored raw items, then exit")
-	migrateFrom := flag.String("migrate-from", "",
-		"copy an existing SQLite database at this path into Postgres, then exit")
 
 	// The daily cron job (see startAISchedules) is the normal path; this
 	// exists for an operator who wants a backfill or a resync run right
@@ -135,20 +133,6 @@ func main() {
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "\n  %v\n\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	if *migrateFrom != "" {
-		cfg, err := config.Load(".env")
-		if err != nil {
-			slog.Error("migration failed", "err", err)
-			os.Exit(1)
-		}
-		log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
-		if err := runDataMigration(context.Background(), log, *migrateFrom, cfg.DatabaseURL); err != nil {
-			log.Error("migration failed", "err", err)
 			os.Exit(1)
 		}
 		return
@@ -300,12 +284,8 @@ func run() error {
 	// is a normal Tuesday, not an outage.
 	var newsArchive *postgres.Archive
 	if cfg.NewsArchiveURL != "" {
-		opt, optErr := venueMigrationOption()
-		if optErr != nil {
-			return optErr
-		}
 		newsArchive, err = postgres.OpenArchive(ctx, store, cfg.NewsArchiveURL, cfg.NewsHotWindow,
-			postgres.WithLogger(log), opt)
+			postgres.WithLogger(log))
 		if err != nil {
 			log.Error("news archive unavailable; running on the primary alone", "err", err)
 			newsArchive = nil
@@ -324,7 +304,7 @@ func run() error {
 		// cached, the health dots show every provider as unconfigured, and
 		// the dashboard says so plainly.
 		log.Warn("no market data providers are configured; serving cached prices only",
-			"fix", "set TWELVEDATA_API_KEY or ALPHAVANTAGE_API_KEY, keep yahoo in MARKETDATA_ORDER, or set ENABLE_SYNTHETIC_FALLBACK=true")
+			"fix", "set YFINANCE_URL, TWELVEDATA_API_KEY or ALPHAVANTAGE_API_KEY, or ENABLE_SYNTHETIC_FALLBACK=true")
 	}
 
 	tracker := health.New(store, deps, health.WithLogger(log))
@@ -682,22 +662,12 @@ func run() error {
 	return nil
 }
 
-// openStore connects to Postgres.
-//
-// There is no fallback to SQLite. A silent fallback is worse than a failure
-// here: it would let the application start against an empty local file when
-// the database was merely unreachable, and the first anyone would know of it
-// is an empty dashboard that looks like a data problem rather than a
-// connectivity one.
+// openStore connects to Postgres and migrates it.
 func openStore(ctx context.Context, cfg *config.Config, log *slog.Logger) (*postgres.DB, error) {
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is not set; Postgres is required")
 	}
-	migrationOpt, err := venueMigrationOption()
-	if err != nil {
-		return nil, fmt.Errorf("prepare venue migration: %w", err)
-	}
-	store, err := postgres.Open(ctx, cfg.DatabaseURL, postgres.WithLogger(log), migrationOpt)
+	store, err := postgres.Open(ctx, cfg.DatabaseURL, postgres.WithLogger(log))
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}

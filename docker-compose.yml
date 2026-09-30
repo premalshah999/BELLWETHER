@@ -17,7 +17,6 @@ services:
       # port mapping and the volume mount below depend on them.
       HTTP_ADDR: ":8080"
       ALLOW_UNAUTHENTICATED: ${ALLOW_UNAUTHENTICATED:-false}
-      DB_PATH: "/data/tradesys.db"
       # Postgres is reached over the compose network. Credentials come from
       # .env so the same file configures both this service and the database.
       DATABASE_URL: "postgres://${POSTGRES_USER:-tradesys}:${POSTGRES_PASSWORD:-tradesys}@postgres:5432/${POSTGRES_DB:-tradesys}?sslmode=disable"
@@ -39,11 +38,6 @@ services:
         condition: service_healthy
       yfinance:
         condition: service_started
-
-    volumes:
-      # The SQLite file and its WAL siblings live here. Back the app up by
-      # copying this volume.
-      - tradesys-data:/data
 
     restart: unless-stopped
 
@@ -342,6 +336,5 @@ services:
 volumes:
   tradesys-backups:
   tradesys-pgdata:
-  tradesys-data:
   caddy-data:
   caddy-config:

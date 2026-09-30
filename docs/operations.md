@@ -79,7 +79,6 @@ All reuse the exact code path their scheduled job runs.
 | `-reprocess` | discard derived events and rebuild them from stored raw items, after a classification rule changes |
 | `-rollover-news` | move aged news to the archive database now rather than at 02:30 ET |
 | `-reclaim-space` | with `-rollover-news`: return freed space to the OS. Takes an exclusive lock per table; ingestion stalls while it runs |
-| `-migrate-from <path>` | one-time import from a pre-Postgres SQLite install |
 
 ## Backups
 

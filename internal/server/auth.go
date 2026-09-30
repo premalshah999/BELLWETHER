@@ -224,14 +224,7 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// Development stores without key support are used by local tests.
-		// A persistent deployment requires a key unless explicitly opened.
-		store, ok := s.keyStore()
-		if !ok {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if n, err := store.CountActiveKeys(r.Context()); err == nil && n == 0 && s.deps.Config != nil && s.deps.Config.AllowUnauthenticated {
+		if s.openAccess(r.Context()) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -261,6 +254,17 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), profileKey{}, profile)))
 	})
+}
+
+// openAccess is the development opt-in: ALLOW_UNAUTHENTICATED is set and no
+// key has been issued yet. A deployment with keys always requires one.
+func (s *Server) openAccess(ctx context.Context) bool {
+	store, ok := s.keyStore()
+	if !ok || s.deps.Config == nil || !s.deps.Config.AllowUnauthenticated {
+		return false
+	}
+	n, err := store.CountActiveKeys(ctx)
+	return err == nil && n == 0
 }
 
 // keyStore returns the credential store, when one is wired.

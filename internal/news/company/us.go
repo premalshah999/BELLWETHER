@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 )
 
 //go:embed data/us_tickers.csv
@@ -235,3 +236,20 @@ func LoadEmbeddedUSMaster() (*Master, error) {
 	}
 	return m, nil
 }
+
+// usTickerSet is every SEC-registered ticker, loaded once on first use.
+var usTickerSet = sync.OnceValue(func() map[string]bool {
+	tickers, _, err := LoadEmbeddedUS()
+	if err != nil {
+		panic(err) // the file is compiled in; failing to read it is a build defect
+	}
+	set := make(map[string]bool, len(tickers))
+	for _, t := range tickers {
+		set[strings.ToUpper(t.Symbol)] = true
+	}
+	return set
+})
+
+// IsUSTicker reports whether t is a real SEC-registered ticker, so a symbol
+// a model or a PDF extractor produced is kept only when it names a listing.
+func IsUSTicker(t string) bool { return usTickerSet()[strings.ToUpper(strings.TrimSpace(t))] }

@@ -2,10 +2,8 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -15,70 +13,20 @@ import (
 	"github.com/tradesys/dashboard/internal/storage"
 )
 
-// noopGoMigration satisfies the "0019_venue_qualify.go" entry that
-// migrations/go_migrations.manifest requires of every caller of Open. The
-// real migration lives in cmd/tradesys (it needs the embedded company
-// masters, which this package must not import — see postgres.go's
-// WithGoMigration doc), so integration tests here register a stand-in that
-// only needs to prove the mechanism itself: ordering, ledger entry, and the
-// hard failure when a manifest entry is never registered are covered by
-// TestGoMigration below, against a bare connection rather than testDB's
-// schema. Tests that need real venue-qualified fixture data build their own
-// symbols directly in the canonical form (e.g. "RELIANCE.NSE"), which is
-// what every writer produces once the real migration has run in production.
-func noopGoMigration(context.Context, *sql.Tx) error { return nil }
-
-// goMigrationNameForTests must match migrations/go_migrations.manifest
-// exactly -- that file, not this constant, is the authority on what Open
-// requires.
-const goMigrationNameForTests = "0019_venue_qualify.go"
-
-// testDB connects to a real Postgres and gives the test its own schema.
-//
-// Each test runs in an isolated schema rather than a shared one, so tests can
-// run in parallel and a failure leaves its data behind for inspection without
-// affecting anything else. TEST_DATABASE_URL keeps this out of the default
-// build: a unit test suite that needs a database is one that stops running.
+// testDB gives the test a migrated schema of its own, so tests run in
+// parallel and a failure leaves its rows behind for inspection.
 func testDB(t *testing.T) *DB {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("set TEST_DATABASE_URL to run Postgres integration tests")
 	}
-	ctx := context.Background()
-
-	admin, err := Open(ctx, dsn, WithGoMigration(goMigrationNameForTests, noopGoMigration))
+	db, drop, err := OpenScratch(context.Background(), dsn)
 	if err != nil {
-		t.Fatalf("connect: %v", err)
+		t.Fatalf("open scratch schema: %v", err)
 	}
-	schema := fmt.Sprintf("test_%d_%d", time.Now().UnixNano(), os.Getpid())
-	if _, err := admin.db.ExecContext(ctx, `CREATE SCHEMA `+schema); err != nil {
-		t.Fatalf("create schema: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = admin.db.ExecContext(context.Background(), `DROP SCHEMA `+schema+` CASCADE`)
-		admin.Close()
-	})
-
-	sep := "?"
-	if containsRune(dsn, '?') {
-		sep = "&"
-	}
-	scoped, err := Open(ctx, dsn+sep+"search_path="+schema, WithGoMigration(goMigrationNameForTests, noopGoMigration))
-	if err != nil {
-		t.Fatalf("connect to schema: %v", err)
-	}
-	t.Cleanup(func() { scoped.Close() })
-	return scoped
-}
-
-func containsRune(s string, r rune) bool {
-	for _, c := range s {
-		if c == r {
-			return true
-		}
-	}
-	return false
+	t.Cleanup(drop)
+	return db
 }
 
 func rawItem(source, hash, title string, discovered time.Time) news.RawItem {
@@ -345,90 +293,5 @@ func TestUpsertEventIsIdempotent(t *testing.T) {
 	}
 	if n, _ := db.CountEvents(ctx); n != 1 {
 		t.Errorf("events = %d, want 1", n)
-	}
-}
-
-// TestGoMigrationRequiredAndAppliedOnce covers the mechanism WithGoMigration
-// adds to the migration runner: a manifested Go migration that nobody
-// registered fails Open outright (rather than silently starting with a
-// half-migrated database), and one that is registered runs exactly once,
-// ledgered exactly like an embedded .sql file.
-func TestGoMigrationRequiredAndAppliedOnce(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set TEST_DATABASE_URL to run Postgres integration tests")
-	}
-	ctx := context.Background()
-
-	admin, err := Open(ctx, dsn, WithGoMigration(goMigrationNameForTests, noopGoMigration))
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	schema := fmt.Sprintf("test_gomig_%d_%d", time.Now().UnixNano(), os.Getpid())
-	if _, err := admin.db.ExecContext(ctx, `CREATE SCHEMA `+schema); err != nil {
-		t.Fatalf("create schema: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = admin.db.ExecContext(context.Background(), `DROP SCHEMA `+schema+` CASCADE`)
-		admin.Close()
-	})
-
-	sep := "?"
-	if containsRune(dsn, '?') {
-		sep = "&"
-	}
-	scopedDSN := dsn + sep + "search_path=" + schema
-
-	// Opening a fresh schema without registering the manifested migration
-	// must fail outright, before applying anything.
-	if _, err := Open(ctx, scopedDSN); err == nil {
-		t.Fatal("expected Open to fail when a manifested Go migration is not registered")
-	} else if !strings.Contains(err.Error(), goMigrationNameForTests) {
-		t.Errorf("error = %v, want it to name the missing migration %q", err, goMigrationNameForTests)
-	}
-
-	var calls int
-	counting := func(ctx context.Context, tx *sql.Tx) error {
-		calls++
-		_, err := tx.ExecContext(ctx, `CREATE TABLE go_migration_marker (id INT)`)
-		return err
-	}
-
-	db, err := Open(ctx, scopedDSN, WithGoMigration(goMigrationNameForTests, counting))
-	if err != nil {
-		t.Fatalf("open with go migration registered: %v", err)
-	}
-	defer db.Close()
-	if calls != 1 {
-		t.Fatalf("go migration ran %d times on first apply, want 1", calls)
-	}
-
-	var applied bool
-	if err := db.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE name = $1)`, goMigrationNameForTests,
-	).Scan(&applied); err != nil {
-		t.Fatal(err)
-	}
-	if !applied {
-		t.Error("go migration was not recorded in schema_migrations")
-	}
-	var markerExists bool
-	if err := db.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'go_migration_marker')`,
-	).Scan(&markerExists); err != nil {
-		t.Fatal(err)
-	}
-	if !markerExists {
-		t.Error("go migration's own DDL was not applied")
-	}
-
-	// Re-opening the same, already-migrated schema must not re-run it.
-	db2, err := Open(ctx, scopedDSN, WithGoMigration(goMigrationNameForTests, counting))
-	if err != nil {
-		t.Fatalf("reopen: %v", err)
-	}
-	defer db2.Close()
-	if calls != 1 {
-		t.Errorf("go migration re-ran on reopen: calls = %d, want 1", calls)
 	}
 }
