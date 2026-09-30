@@ -44,8 +44,8 @@ func TestLoadEmbeddedUS(t *testing.T) {
 			t.Errorf("%s is missing its sector or CIK", l.Symbol)
 		}
 	}
-	if !IsUSTicker("brk-b") || IsUSTicker("RELIANCE") {
-		t.Error("IsUSTicker should know BRK-B and not an NSE ticker")
+	if !IsUSTicker("brk-b") || IsUSTicker("ZZZZZ") {
+		t.Error("IsUSTicker should know BRK-B and not an unlisted ticker")
 	}
 }
 
@@ -118,6 +118,52 @@ func TestOrdinaryWordsAreNotCompanies(t *testing.T) {
 	} {
 		for _, mt := range m.ResolveAbove(text, 0.85) {
 			t.Errorf("%q resolved %s via %s (%q)", text, mt.Symbol, mt.Method, mt.Matched)
+		}
+	}
+}
+
+// A registrant whose whole name is an ordinary word, a place, a person or a
+// market term must not resolve on that word. Each of these was found tagged in
+// the archive: every market wrap was a story about Dow Inc.
+func TestMarketTermsAreNotCompanies(t *testing.T) {
+	m := master(t)
+	for text, wrong := range map[string]string{
+		"Stock Market Today: Dow Rises On Surprise Inflation Data":    "DOW",
+		"These Nasdaq 100 Stocks Are Quietly Paying Real Dividends":   "NDAQ",
+		"Robinhood Unveils Crypto Futures Trading":                    "CRCW",
+		"Robinhood Stock Draws Bullish Targets":                       "BLSH",
+		"Groundfish Reserves in the Bering Sea":                       "SE",
+		"Citizens reiterates Immix Biopharma stock rating":            "CIA",
+		"The Gap Between the Rich and the Very Rich Is Getting Wider": "GAP",
+		"BioStem Technologies prices $3M private placement":           "MMM",
+		"MXL Stock Set To Snap Four-Day Winning Streak":               "SNAP",
+		"Farmers & Merchants Bancorp raises quarterly dividend":       "TBBK",
+		"OpenAI Unveils Always-On AI Agent, New $500 Paid Tier":       "PAYD",
+		"Powell says the Fed is in no hurry to cut rates":             "POWL",
+		"Commerce Department adds chip firms to entity list":          "CBSH",
+		"Under pressure, regional banks raise capital":                "UAA",
+		"Salt Lake County approves tax increase":                      "LAKE",
+	} {
+		if got := symbols(m.Resolve(text)); slices.Contains(got, wrong) {
+			t.Errorf("%q resolved %s (all: %v)", text, wrong, got)
+		}
+	}
+	// The same companies still resolve by the name the press prints.
+	for text, want := range map[string]string{
+		"3M raises its full-year forecast":                "MMM",
+		"Dow Inc. to close three plants in Europe":        "DOW",
+		"Target Corp cuts its full-year forecast":         "TGT",
+		"Gap Inc. names a new chief executive":            "GAP",
+		"Philip Morris raises guidance on Zyn demand":     "PM",
+		"Raymond James upgrades the chipmaker":            "RJF",
+		"Martin Marietta to buy quarry assets":            "MLM",
+		"Super Micro shares plunge after auditor resigns": "SMCI",
+		"Alaska Airlines grounds fleet after IT outage":   "ALK",
+		"Under Armour cuts its outlook":                   "UAA",
+		"Goldman cuts its S&P 500 target":                 "GS",
+	} {
+		if got := symbols(m.ResolveAbove(text, 0.85)); !slices.Contains(got, want) {
+			t.Errorf("%q -> %v, want %s among them", text, got, want)
 		}
 	}
 }

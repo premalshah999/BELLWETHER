@@ -13,6 +13,7 @@ var brandAliases = map[string]string{
 	"jpmorgan":             "JPM",
 	"jp morgan":            "JPM",
 	"goldman sachs":        "GS",
+	"goldman":              "GS",
 	"bofa":                 "BAC",
 	"citi":                 "C",
 	"citibank":             "C",
@@ -40,6 +41,20 @@ var brandAliases = map[string]string{
 	"alibaba":              "BABA",
 	"tsmc":                 "TSM",
 	"taiwan semiconductor": "TSM",
+	// The short form the press prints of a longer registered name.
+	"philip morris":    "PM",
+	"raymond james":    "RJF",
+	"martin marietta":  "MLM",
+	"fifth third":      "FITB",
+	"super micro":      "SMCI",
+	"supermicro":       "SMCI",
+	"bristol myers":    "BMY",
+	"alaska airlines":  "ALK",
+	"alaska air":       "ALK",
+	"under armour":     "UAA",
+	"dutch bros":       "BROS",
+	"norwegian cruise": "NCLH",
+	"carrier global":   "CARR",
 }
 
 // tickerBlocklist names tickers that are ordinary words or standard
@@ -56,14 +71,4 @@ var tickerBlocklist = map[string]bool{
 	"CLEAN": true, "CROWN": true, "DEEP": true, "DOLLAR": true, "FACT": true,
 	"FOCUS": true, "GLOBAL": true, "IDEA": true, "RAIN": true, "STAR": true,
 	"TOTAL": true, "VITAL": true,
-}
-
-// nameBlocklist names single-word company names that are also ordinary
-// words; without it "Delta" in any sentence would name a company. Multi-word
-// names ("Delta Air Lines") still match.
-var nameBlocklist = map[string]bool{
-	"delta": true, "swan": true, "orbit": true, "force": true,
-	"eagle": true, "tiger": true, "lotus": true, "prime": true,
-	"vision": true, "empire": true, "advance": true, "premier": true,
-	"summit": true, "compass": true, "pioneer": true, "atlas": true,
 }
