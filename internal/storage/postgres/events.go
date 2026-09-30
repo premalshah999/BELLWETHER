@@ -12,17 +12,10 @@ import (
 	"github.com/tradesys/dashboard/internal/news"
 )
 
-// SaveRawItems stores fetched items, ignoring ones already held.
-//
-// Uniqueness is (source_id, content_hash): a feed polled every minute must
-// converge on the same rows rather than growing without bound, while a genuine
-// correction — the publisher editing a headline — hashes differently and is
-// stored as the separate item it is.
-//
-// The whole batch is one statement using unnested arrays rather than a
-// prepared statement executed in a loop. NSE returns 1,600 items per poll, and
-// at that size the difference between one round trip and 1,600 is the
-// difference between milliseconds and seconds of held transaction.
+// SaveRawItems stores fetched items, ignoring ones already held. Uniqueness is
+// (source_id, content_hash), so re-polling converges while an edited headline
+// is stored as the separate item it is. One statement over unnested arrays,
+// not a loop: a large poll is one round trip.
 func (d *DB) SaveRawItems(ctx context.Context, items []news.RawItem) (int, error) {
 	if len(items) == 0 {
 		return 0, nil
@@ -93,14 +86,9 @@ SELECT count(*) FROM inserted`,
 const rawItemColumns = `id, source_id, content_hash, url, canonical_url, title,
        description, publisher, occurred_at, published_at, discovered_at, fetched_at`
 
-// rawItemColumnsQualified is the same list addressed through an alias, for the
-// queries that join raw_items against something else.
-//
-// Written out rather than derived from rawItemColumns by string replacement.
-// The obvious shortcut — replacing "id," with "ri.id," — also rewrites the
-// "id," inside "source_id,", producing "source_ri.id," and a query that fails
-// at runtime with a missing-FROM-clause error. That is what broke every event
-// detail view, silently, because nothing else in the codebase reads evidence.
+// rawItemColumnsQualified is the same list through an alias, written out
+// rather than derived by string replacement (which also rewrites the "id,"
+// inside "source_id,").
 const rawItemColumnsQualified = `ri.id, ri.source_id, ri.content_hash, ri.url,
        ri.canonical_url, ri.title, ri.description, ri.publisher, ri.occurred_at,
        ri.published_at, ri.discovered_at, ri.fetched_at`
@@ -211,15 +199,9 @@ func (d *DB) PruneRawItems(ctx context.Context, before time.Time) (int, error) {
 	return int(n), nil
 }
 
-// PruneOrphanRawItems deletes old items that no event depends on.
-//
-// The retention rule follows from what each table is for. Events are the
-// historical record the application exists to accumulate and are never pruned.
-// Items backing an event are its evidence — what makes a bad parse recoverable
-// — and are never pruned either. What is left is items that produced no event:
-// mutual-fund NAV declarations filtered at the door, and duplicate syndicated
-// copy whose story is held elsewhere. That is roughly a third of daily volume
-// and has no downstream reader.
+// PruneOrphanRawItems deletes old items no event depends on: filtered noise
+// and duplicate syndicated copy. Events and the items that back them are the
+// historical record and are never pruned.
 func (d *DB) PruneOrphanRawItems(ctx context.Context, before time.Time) (int, error) {
 	res, err := d.db.ExecContext(ctx, `
 DELETE FROM raw_items ri
@@ -294,15 +276,10 @@ FROM source_health ORDER BY source_id`)
 	return out, rows.Err()
 }
 
-// ClusterCandidates returns recent events a new item might belong to.
-//
-// The two kinds of candidate are fetched with separate budgets, and that
-// separation is load-bearing. A single query with "shares a symbol OR has no
-// symbols" sounds equivalent, but during a backfill the entity-less arm
-// matches hundreds of events sharing one discovery second and consumes the
-// whole result budget before any symbol match is reached. The observed effect
-// was two copies of one NSE filing — the XBRL and the PDF — becoming two
-// events, because the first had been crowded out of the second's window.
+// ClusterCandidates returns recent events a new item might belong to. Symbol
+// matches and entity-less matches are fetched with separate budgets: in one
+// query the entity-less arm can fill the whole result during a backfill and
+// crowd out the real match.
 func (d *DB) ClusterCandidates(ctx context.Context, symbols []string, titleKey string, since time.Time, limit int) ([]events.Candidate, error) {
 	if limit <= 0 {
 		limit = 200
@@ -698,13 +675,8 @@ ON CONFLICT (event_id, symbol) DO UPDATE SET
 }
 
 // ResetEvents discards every derived event and reopens the raw items that
-// produced them.
-//
-// This is the operation that makes the "never lose the original" rule pay for
-// itself. A parser fix, a taxonomy change or a clustering bug can be applied
-// retrospectively to the whole archive, because nothing derived was ever the
-// only copy. Four separate defects have been repaired this way rather than
-// being permanently baked into history.
+// produced them, so a parser or clustering fix can be applied to the whole
+// archive.
 func (d *DB) ResetEvents(ctx context.Context) (int, error) {
 	before, err := d.CountEvents(ctx)
 	if err != nil {

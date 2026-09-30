@@ -10,17 +10,9 @@ import (
 	"time"
 )
 
-// Rate limiting for the routes that cost money.
-//
-// Every model-backed endpoint on this server spends real tokens from a fixed
-// monthly budget, and the deployment has no authentication in front of it. A
-// loop against /api/ai/classify-events would exhaust a month's allowance in
-// minutes, and the first sign of it would be the morning brief refusing to
-// generate.
-//
-// This is not a security control and does not pretend to be — anyone
-// determined can change address. It is a spending control: it bounds what a
-// mistake, a crawler, or a stuck retry loop can cost.
+// Rate limiting: a per-caller token bucket on the routes that spend tokens,
+// reach other services, or accept credentials. It bounds what a loop, a
+// crawler or a guesser can cost.
 
 // visitor is one caller's token bucket.
 type visitor struct {

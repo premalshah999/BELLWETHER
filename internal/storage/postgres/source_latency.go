@@ -7,16 +7,9 @@ import (
 )
 
 // SourceLatency is one source's record on multi-source events: how often it
-// was the first of several outlets to carry a story this system later
-// clustered into one event, and by how much.
-//
-// "First" is measured by event_evidence.added_at -- when this system
-// attached that source's evidence to the event, which is this system's own
-// discovery time for that copy of the story, not the publisher's claimed
-// timestamp. That is deliberate: a source that back-dates or a feed that
-// arrives late with an old published_at should not appear faster than it
-// actually reached this system. See internal/eventstudy's package doc for
-// the same discipline applied elsewhere.
+// was first to carry a story later clustered into one event, and by how much.
+// "First" is when this system attached its evidence, not the publisher's
+// claimed time, so a back-dated feed does not look fast.
 type SourceLatency struct {
 	SourceID string
 	// Participated is how many multi-source events this source contributed

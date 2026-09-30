@@ -215,16 +215,9 @@ func (r *Registry) Get(id string) (Source, bool) {
 	return s, ok
 }
 
-// Replace swaps the dynamic portion of the catalog.
-//
-// The curated sources are fixed at build time, but watchlist sources are not:
-// adding an instrument must start following it without a restart. Only sources
-// in the named category are replaced, so a rebuild cannot accidentally drop
-// the exchange feeds.
-//
-// Returns the ids that were added and removed, which the caller logs — a
-// watchlist change silently altering what is polled would be hard to explain
-// later.
+// Replace swaps the sources in one category, which is how watchlist sources
+// change without a restart and cannot drop a curated feed. It returns the ids
+// added and removed, for the log.
 func (r *Registry) Replace(category string, sources []Source) (added, removed []string, err error) {
 	for _, s := range sources {
 		if err := s.Validate(); err != nil {

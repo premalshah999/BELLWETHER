@@ -56,15 +56,10 @@ func runSyncCongress() error {
 // given us no reason to think it can take one.
 const pdfFetchPause = 300 * time.Millisecond
 
-// syncCongressFilings fetches this year's House Clerk disclosure index,
-// finds Periodic Transaction Reports not already stored, and reads each new
-// one's PDF for the tickers and earliest transaction date it names.
-//
-// Only PTRs are fetched -- the index's other filing-type codes (annual,
-// candidate, extension, and so on) carry no trade data, so downloading
-// their PDFs would spend real requests against a government host for
-// nothing this feature surfaces. See internal/congress's package doc for
-// why the extraction itself reads at document level, not row level.
+// syncCongressFilings fetches this year's House Clerk index, finds transaction
+// reports not yet stored, and reads each one's PDF for its tickers and
+// earliest transaction date. Other filing types carry no trades and are not
+// downloaded.
 func syncCongressFilings(ctx context.Context, store *postgres.DB, client *http.Client, userAgent string, log *slog.Logger) (int, error) {
 	year := time.Now().Year()
 	filings, err := congress.FetchHouseIndex(ctx, client, userAgent, year)

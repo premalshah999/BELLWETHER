@@ -1,21 +1,12 @@
-// Package stream delivers live data to connected clients.
+// Package stream delivers live data to connected clients, replacing a dozen
+// polling timers. It separates three concerns:
 //
-// Everything in this application polled before this existed: twelve separate
-// timers on the front end, each asking for data that had usually not changed,
-// and each adding up to a minute of latency to data that had. Polling is the
-// right answer when updates are rare and clients are many; it is the wrong
-// answer for a price, where the update is the product.
-//
-// The design separates three concerns that are easy to conflate:
-//
-//   - A Source produces updates. Today that is a poller against the price
-//     sidecar; with a licensed feed it is a websocket consumer. Nothing
-//     downstream needs to know which.
-//   - The Hub fans updates out to subscribers without letting a slow
-//     subscriber affect a fast one, or affect the source.
-//   - A transport carries them to a browser. That is server-sent events,
-//     chosen over websockets because the data flows one way and SSE
-//     reconnects by itself.
+// - A Source produces updates: today a poller against the price sidecar, with
+// a licensed feed a websocket consumer.
+// - The Hub fans updates out so a slow subscriber affects neither a fast one
+// nor the source.
+// - The transport is server-sent events: the data flows one way and SSE
+// reconnects by itself.
 package stream
 
 import (

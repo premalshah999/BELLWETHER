@@ -1,16 +1,7 @@
 // Package screens turns an operator's question into a query over the last
-// scan.
-//
-// The built-in scanner answers one fixed question -- "what is behaving
-// abnormally today" -- with six hand-tuned signals and thresholds measured
-// from this universe. That question is not the only one worth asking, and the
-// thresholds that make it useful are exactly what make it useless for
-// anything else: a screen for "quietly sitting near its high" is looking for
-// instruments the scanner is built to ignore.
-//
-// A screen is therefore a list of conditions over the same measurements the
-// scanner computes, combined with all or any, sorted, and capped. Nothing
-// here is new arithmetic -- it is the existing metrics, filtered by hand.
+// scan: a list of conditions on the measurements the scanner already computes,
+// combined with all or any, sorted and capped. The scanner answers one fixed
+// question with fixed thresholds; a screen asks any other.
 package screens
 
 import (

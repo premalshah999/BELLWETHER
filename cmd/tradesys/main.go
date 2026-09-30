@@ -49,14 +49,10 @@ var version = "dev"
 var seedSymbols = []string{"AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "JPM", "XOM", "JNJ", "WMT"}
 
 func main() {
-	// -reprocess rebuilds every event from the raw items already held, then
-	// exits. It exists because the derived layer is disposable by design:
-	// when a parser or a clustering rule is corrected, history should get the
-	// correction too rather than carrying the old bug forever.
-	//
-	// It is a command-line flag rather than an HTTP route on purpose. The
-	// operation is destructive to derived data, and this build has no
-	// authentication, so it must not be reachable from the internet.
+	// -reprocess rebuilds every event from the stored raw items, so a
+	// corrected parser or clustering rule reaches history too. A flag rather
+	// than a route: it is destructive to derived data and belongs to whoever
+	// has a shell.
 	reprocess := flag.Bool("reprocess", false,
 		"discard all derived events and rebuild them from stored raw items, then exit")
 
@@ -307,18 +303,10 @@ func run() error {
 	newsPoller := news.NewPoller(store, store,
 		news.WithPollerLogger(log), news.WithObserver(tracker.Observe))
 
-	// The ingestion engine: the collection half of the intelligence layer.
-	//
-	// It runs on its own ticker rather than on the cron, because cadence is a
-	// property of each source. An exchange filing feed is worth polling every
-	// minute; a weekly shareholding disclosure is not, and a single cron
-	// expression cannot express both. The engine ticks often and asks each
-	// source whether it is due.
-	// The attention tracker sits between the two halves of the pipeline: the
-	// processor tells it what happened, and the scheduler asks it where to
-	// spend effort. It is deliberately in-memory — heat is a scheduling
-	// heuristic about the last hour, not a fact worth surviving a restart,
-	// and rebuilding it costs one polling cycle.
+	// The ingestion engine runs on its own ticker, because cadence belongs to
+	// each source. The attention tracker sits between the pipeline's halves:
+	// the processor tells it what happened and the scheduler asks where to
+	// spend effort. In memory on purpose: heat is about the last hour.
 	attention := news.NewTracker(time.Now)
 
 	companyMaster, err := company.Load()
@@ -328,15 +316,9 @@ func run() error {
 	universe := buildScanUniverse(companyMaster)
 	log.Info("scan universe ready", "symbols", len(universe.symbols))
 
-	// The market scanner: the half of the intelligence layer that does not
-	// wait to be told.
-	//
-	// Everything above this point is reactive — it polls sources and reacts
-	// to what arrives, which means an instrument becomes interesting only
-	// once somebody has written about it. The scanner inverts that. It reads
-	// price and volume across the index universe, finds what is behaving
-	// abnormally, and raises that instrument's attention directly. The price
-	// moves first; the explanation follows, sometimes by hours.
+	// The market scanner finds what is behaving abnormally from price and
+	// volume alone, without waiting for somebody to write about it: the price
+	// moves first and the explanation follows.
 	var marketScanner *scanner.Runner
 	if cfg.YFinanceURL != "" {
 		marketScanner = &scanner.Runner{
@@ -434,17 +416,10 @@ func run() error {
 		}
 	}
 
-	// The event processor: the deterministic half of the intelligence layer.
-	// It needs no LLM, so it runs whether or not one is configured.
-	//
-	// It shares the ingestion engine's registry rather than building its own.
-	// A second DefaultRegistry looks harmless — same catalog, same sources —
-	// but the watchlist and scanner sources are added at runtime to the
-	// engine's copy only. The processor discards any item whose source it
-	// does not recognise, so with a private registry every targeted search
-	// this system runs was collected, stored, and then silently dropped.
-	// Watchlist events only ever appeared after a -reprocess, which builds
-	// its registry with the watchlist included.
+	// The event processor is deterministic and needs no model. It must share
+	// the ingestion engine's registry: watchlist and scanner sources are added
+	// to that copy at runtime, and the processor discards items from a source
+	// it does not know.
 	eventProcessor := events.NewProcessor(store, companyMaster, ingestEngine.Registry(),
 		events.WithProcessorLogger(log),
 		events.WithAttentionSink(attention),

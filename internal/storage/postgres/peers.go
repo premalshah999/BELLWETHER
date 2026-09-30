@@ -29,16 +29,10 @@ type PeerStat struct {
 	// HigherIsBetter records which direction is favourable, so a caller can
 	// render "cheap" and "profitable" without hardcoding a metric list.
 	HigherIsBetter bool `json:"higher_is_better"`
-	// Unit is how the number should be read: "ratio" for a multiple such as
-	// P/E, "percent" for a figure already expressed in percent, and
-	// "fraction" for one that must be multiplied by a hundred first.
-	//
-	// Carried explicitly because the provider is not consistent and there is
-	// no way to infer it. Return on equity arrives as 0.32 meaning 32 per
-	// cent, while dividend yield arrives as 4.37 meaning 4.37 per cent.
-	// Scaling everything by a hundred turns a 4.37% yield into 437%; scaling
-	// nothing reports a 32% return on equity as 0.32%.
-	// Both are wrong in ways a reader would not catch.
+	// Unit is how to read the number: "ratio" for a multiple, "percent" for a
+	// figure already in percent, "fraction" for one to multiply by a hundred.
+	// The provider is not consistent (return on equity arrives as 0.32,
+	// dividend yield as 4.37), so it is carried explicitly.
 	Unit string `json:"unit"`
 }
 

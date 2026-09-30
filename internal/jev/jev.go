@@ -1,18 +1,10 @@
 // Package jev is a client for TypeSafe AI's System One API and its Jev model.
-//
-// Jev is not a text model. It evaluates typed questions against a piece of
-// state and returns structured answers directly -- a choice with a probability
-// for every option, a score on a rubric, or a truth value -- with no text
-// generation and no parsing on our side. That makes it the right tool for the
-// decisions this app makes thousands of times a day (what kind of event is
-// this, how much does it matter, is it an event at all) and the wrong tool for
-// anything that has to be written for a person to read. Prose stays with the
-// text model; see internal/ai.
-//
-// Wire format, authentication, limits and error codes follow TypeSafe's own
-// documentation at https://docs.typesafe.ai -- in particular the quickstart
-// and the API reference. Where the documentation is silent (the exact error
-// body, a request timeout), this package says so rather than guessing.
+// Jev is not a text model: it evaluates typed questions against a piece of
+// state and returns a choice with probabilities, a rubric score or a truth
+// value, with nothing to parse. That suits the decisions made thousands of
+// times a day (what kind of event is this, how much does it matter) and not
+// anything written for a person to read, which stays with internal/ai. The
+// wire format follows https://docs.typesafe.ai.
 package jev
 
 import (

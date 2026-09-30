@@ -64,17 +64,9 @@ func (d *DB) RemoveWatchlist(ctx context.Context, sym marketdata.Symbol) error {
 	return nil
 }
 
-// ConsumeBudget claims one unit of a provider's period allowance.
-//
-// The whole operation is a single statement rather than a read followed by a
-// write. Alpha Vantage allows twenty-five requests a day, so the difference
-// between checking-then-incrementing and incrementing-atomically is the
-// difference between staying inside that allowance and occasionally exceeding
-// it — and under the concurrent pipeline there are genuinely several fetchers
-// racing for the last request.
-//
-// The conditional update returns no row when the limit is already reached,
-// which is how exhaustion is detected without a second query.
+// ConsumeBudget claims one unit of a provider's period allowance in a single
+// conditional statement, so concurrent fetchers cannot overrun a small daily
+// limit. No row back means the limit is reached.
 func (d *DB) ConsumeBudget(ctx context.Context, provider, period string, limit int) (bool, int, error) {
 	if limit <= 0 {
 		return false, 0, nil

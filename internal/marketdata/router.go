@@ -11,22 +11,16 @@ import (
 )
 
 // Router is the only market data entry point the rest of the app uses. It
-// turns a list of unreliable providers plus a cache into a source that answers
-// something useful almost always.
+// turns unreliable providers plus a cache into a source that almost always
+// answers:
 //
-// The policy, in order:
-//
-//  1. If the cache holds data younger than the interval's TTL, serve it and
-//     make no network call at all. This is what keeps Alpha Vantage inside a
-//     25-request day.
-//  2. Otherwise try each provider in priority order. The first usable answer
-//     is written through to the cache and returned.
-//  3. If every provider declines or fails, serve whatever the cache has, no
-//     matter how old, flagged Stale so the UI can say so.
-//  4. Only when there is nothing cached at all does a request fail.
-//
-// Step 3 is the reason the dashboard degrades to a banner instead of a white
-// screen when Yahoo starts rate-limiting.
+// 1. Cached data younger than the interval's TTL is served with no network
+// call, which is what keeps a budgeted provider inside its day.
+// 2. Otherwise each provider is tried in order; the first usable answer is
+// cached and returned.
+// 3. If every provider declines or fails, whatever the cache has is served,
+// flagged Stale.
+// 4. Only with nothing cached at all does a request fail.
 type Router struct {
 	providers []Provider
 	cache     Cache

@@ -87,29 +87,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("min_importance"); v != "" {
 		filter.MinImportance = atoiDefault(v, 0)
 	}
-	// Index-only is the default for the market feed, so the parameter turns it
-	// off rather than on. A s.deps.Store who wants the whole filing queue can ask
-	// for it; a s.deps.Store who says nothing should not be given it.
-	//
-	// An explicit search is the exception, and never narrowing it is the whole
-	// point. Someone typing a query is asking for matches to that query, not
-	// for matches inside a default universe they did not choose — and the two
-	// diverge badly. Searching "reliance" over the last day returned nothing
-	// while the archive held a Reliance Jio results item, because the resolver
-	// had not attached a company to it and the index filter drops anything
-	// with no constituent on it. Empty results to a direct question are read
-	// as "there is no news", which is the one answer that was not true.
+	// Index constituents only by default, so the parameter turns it off. A
+	// search is never narrowed: someone typing a query wants matches to it,
+	// and an empty answer reads as "there is no news".
 	filter.IndexOnly = q.Get("universe") != "all" && strings.TrimSpace(filter.Query) == ""
 
-	// Sorted by publication time unless the caller asks otherwise.
-	//
-	// The feed ordered by arrival, on the argument that a publisher with a
-	// skewed clock could otherwise dominate it. That argument is real but it
-	// loses to the plainer one: a s.deps.Store asking for the latest news means the
-	// latest news, and an article published in July arriving at the top of
-	// today's feed because we happened to find it five minutes ago reads as
-	// the sort being broken. Arrival order is still available for anyone
-	// auditing what came in and when.
+	// Newest published first unless the caller asks for arrival order, which
+	// is for auditing what came in and when.
 	filter.OrderByContentAge = q.Get("order") != "arrival"
 	filter.MacroTypes = events.SectorScopeTypes()
 	// The default window is deliberately short. This is a feed of what is
@@ -185,7 +169,7 @@ func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The brief, if one has been written. Attached here as well as on the
-	// list: opening a single item is exactly when a s.deps.Store wants the note,
+	// list: opening a single item is exactly when a reader wants the note,
 	// and wiring it into only one of the two routes meant the feed showed a
 	// brief that vanished when you clicked into it.
 	if brief, err := s.deps.Store.EventBrief(r.Context(), id); err == nil {
@@ -312,18 +296,8 @@ func (s *Server) handleClassifyEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"classified": n, "requested": limit})
 }
 
-// handleSymbolEvents serves the news and filings for one instrument.
-//
-// This replaces a per-symbol Google News poll that wrote to its own table. The
-// event pipeline is strictly better for the purpose: it resolves companies
-// against the listed master rather than by keyword, it collapses the same
-// story arriving from several outlets into one row, it validates publication
-// timestamps, and it keeps history rather than a rolling window of the last
-// few items.
-//
-// The symbol arrives in market form — RELIANCE.NSE — while events are keyed by
-// the bare NSE symbol, so the exchange suffix is dropped here rather than in
-// every caller.
+// handleSymbolEvents serves the news and filings for one instrument, from the
+// same event pipeline as the feed.
 func (s *Server) handleSymbolEvents(w http.ResponseWriter, r *http.Request) {
 	sym, err := marketdata.ParseSymbol(chi.URLParam(r, "symbol"))
 	if err != nil {
@@ -433,16 +407,9 @@ type refreshResult struct {
 	Note       string `json:"note,omitempty"`
 }
 
-// handleRefreshSymbolNews polls an instrument's own source immediately.
-//
-// The scheduler normally decides when to read a source, which is right almost
-// always and wrong in one specific case: somebody is looking at a company's
-// page, expects news that has not arrived, and is told nothing more than to
-// wait. One request answers that.
-//
-// The fetch and the processing both run here, because a refresh that collected
-// items but left them unprocessed would return "3 new" and change nothing on
-// screen — which is worse than not offering the button.
+// handleRefreshSymbolNews polls an instrument's own source now, for someone
+// looking at its page and expecting news. It also processes what it fetched,
+// so "3 new" changes what is on screen.
 func (s *Server) handleRefreshSymbolNews(w http.ResponseWriter, r *http.Request) {
 	if s.deps.Ingest == nil {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "Ingestion is not running.")
@@ -489,15 +456,10 @@ func (s *Server) handleRefreshSymbolNews(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, out)
 }
 
-// sourceLabel names who reported an event, for the feed row.
-//
-// A direct feed is named by its catalogue entry ("SEC 8-K Current Filings",
-// "WSJ Markets"). A discovery source is named by the item's own publisher,
-// because the source there is a search query: a Google News result for a
-// Reuters story was reported by Reuters, and "Google News" would be the one
-// label guaranteed to be wrong. Per-symbol watchlist searches are discovery
-// too. Falls back to the publisher when the source has left the catalogue --
-// an archived event from a feed since removed still has a publisher.
+// sourceLabel names who reported an event. A direct feed is named by its
+// catalogue entry; a discovery source (a search) by the item's own publisher,
+// because "Google News" would be the one label guaranteed to be wrong. Falls
+// back to the publisher when the source has left the catalogue.
 func (s *Server) sourceLabel(e news.Event) string {
 	publisher := cleanPublisher(e.PrimaryPublisher)
 	if s.deps.Ingest == nil || e.PrimarySourceID == "" {

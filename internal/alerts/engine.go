@@ -412,15 +412,10 @@ type WatchlistResolver interface {
 	WatchlistSymbols(ctx context.Context, id int64) ([]marketdata.Symbol, error)
 }
 
-// symbolsFor is the set an algorithm should evaluate.
-//
-// The union of the symbols named on the rule and the members of every list
-// attached to it, deduplicated. Resolved at evaluation rather than stored, so
-// adding an instrument to a list immediately brings every rule watching that
-// list along with it — which is the entire reason for attaching one.
-//
-// A list that cannot be read is logged and skipped rather than failing the
-// run: a rule that also names symbols directly should still evaluate those.
+// symbolsFor is the set an algorithm evaluates: the symbols it names plus the
+// members of every list attached to it, resolved at evaluation so editing a
+// list changes what its rules watch. A list that cannot be read is skipped,
+// not fatal.
 func (e *Engine) symbolsFor(ctx context.Context, a *algo.Algorithm) []string {
 	seen := make(map[string]bool, len(a.Symbols))
 	out := make([]string, 0, len(a.Symbols))

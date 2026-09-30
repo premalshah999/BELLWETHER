@@ -87,17 +87,10 @@ func (r *Runner) AttentionSymbols() []string {
 	return append([]string(nil), r.attention...)
 }
 
-// Attention weights, in the units the tracker uses: 2.0 is its warm
-// threshold and 6.0 its hot one.
-//
-// An unexplained move earns more than an explained one, which is the
-// inversion that matters: once the archive accounts for a move there is
-// nothing left to find, while a move nobody has explained is exactly where
-// searching pays.
-//
-// weightUnexplained clears warm on its own, so a single scan is enough to
-// make the scheduler start looking harder. It stops short of hot, which is
-// reserved for the extremes that the score bonus below can reach.
+// Attention weights, in the tracker's units (2.0 is warm, 6.0 hot). An
+// unexplained move earns more than an explained one: once the archive accounts
+// for a move there is nothing left to find. weightUnexplained clears warm on
+// its own; hot is left to the score bonus.
 const (
 	weightUnexplained = 2.5
 	weightExplained   = 0.8

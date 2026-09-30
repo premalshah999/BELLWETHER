@@ -114,15 +114,9 @@ func New(cfg Config, budget BudgetStore, opts ...Option) *Client {
 		monthlyLimit: cfg.MonthlyLimit,
 		extraBody:    cfg.ExtraBody,
 		budget:       budget,
-		// Generous: a long brief on a slow endpoint legitimately takes a while.
-		// Generous, because the ceiling here is a reasoning model writing a
-		// long structured answer, not a normal API call. At a 12,000-token
-		// completion budget a research synthesis was exceeding two minutes
-		// and being cut off mid-response — which surfaced as "context
-		// deadline exceeded" and degraded the whole turn to sources-only.
-		//
-		// Per-request deadlines still apply on top of this; what this bound
-		// prevents is a hung connection, not a slow one.
+		// Generous: a reasoning model writing a long structured answer takes
+		// minutes. Per-request deadlines still apply; this only prevents a
+		// hung connection.
 		http: &http.Client{Timeout: 8 * time.Minute},
 		log:  slog.Default(),
 		now:  func() time.Time { return time.Now().UTC() },

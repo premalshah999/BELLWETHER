@@ -52,27 +52,11 @@ func pooled(u *url.URL) bool {
 	}
 }
 
-// prepareDSN adjusts a connection string for the service behind it, and
-// describes what it did so the choice is visible in the log rather than
-// buried.
-//
-// Two adjustments, both for failures that are invisible until they bite:
-//
-//  1. TLS. Neon and Supabase both refuse an unencrypted connection, but
-//     libpq's default sslmode is "prefer", which silently falls back. A DSN
-//     without sslmode therefore looks like it works and is one server-side
-//     config change away from sending credentials in the clear.
-//
-//  2. Prepared statements against a transaction-mode pooler. pgx defaults to
-//     caching prepared statements per connection; a pooler that reassigns the
-//     server connection between statements makes that cache describe a
-//     session the next statement is not running in, and the query fails with
-//     "prepared statement does not exist" -- intermittently, under load,
-//     which is the worst way to find out. pgx names QueryExecModeExec as the
-//     mode for exactly this case (see its conn.go), so a pooled DSN gets it.
-//
-// An explicit value the operator set is never overridden: if they wrote
-// sslmode or default_query_exec_mode, that is a decision and this respects it.
+// prepareDSN adjusts a connection string for a managed service and says what
+// it did. It requires TLS where the provider does (libpq's default silently
+// falls back to plaintext), and uses exec mode behind a transaction pooler,
+// where cached prepared statements fail intermittently. A value the operator
+// set explicitly is never overridden.
 func prepareDSN(dsn string) (out string, notes []string, err error) {
 	trimmed := strings.TrimSpace(dsn)
 	if trimmed == "" {

@@ -8,18 +8,10 @@ import (
 	"time"
 )
 
-// Source produces live updates for a set of instruments.
-//
-// The interface exists so that the transport, the hub and the browser do not
-// know where prices come from. Today the only implementation polls the price
-// sidecar, which is what is available without a market data licence. A
-// broker's websocket feed — Kite, Upstox, SmartAPI, or an NSE licence — is a
-// different implementation of this same interface and changes nothing above
-// it.
-//
-// Being explicit about that boundary is the point. Polling and streaming
-// differ in latency, not in shape, and building as though a real feed will
-// arrive is far cheaper than retrofitting one.
+// Source produces live updates for a set of instruments, so the hub, the
+// transport and the browser do not know where prices come from. A broker or
+// exchange websocket feed would be another implementation and change nothing
+// above it.
 type Source interface {
 	// Name identifies the source in logs and health output.
 	Name() string

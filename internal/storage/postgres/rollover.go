@@ -16,20 +16,9 @@ import (
 const rolloverBatch = 500
 
 // copyableColumns reads a table's real column list from the database,
-// excluding generated columns.
-//
-// Derived rather than written down, because writing it down was wrong. The
-// first version of this file hardcoded five column lists and four were
-// incorrect -- event_evidence's timestamp is added_at rather than
-// first_seen_at, event_entities has direction rather than impact_direction and
-// a rationale column that was missed entirely, event_facts has a num column
-// that was missed, and event_briefs was in the delete list without being in
-// the copy list at all, which would have destroyed every archived brief.
-//
-// Those are exactly the mistakes a hand-maintained column list invites, and a
-// future migration adding a column would have reintroduced them silently. The
-// generated columns are excluded because naming one in an INSERT is an error:
-// events.search_vector is GENERATED ALWAYS and Postgres computes it on write.
+// excluding generated columns (naming one in an INSERT is an error). Derived
+// rather than written down: a hand-kept list was wrong for four of five tables
+// and would go stale with the next migration.
 func (a *Archive) copyableColumns(ctx context.Context, table string) ([]string, error) {
 	rows, err := a.hot.db.QueryContext(ctx, `
         SELECT column_name
@@ -74,19 +63,12 @@ var eventChildTables = []string{
 	"event_briefs",
 }
 
-// Rollover moves aged news from the primary to the archive.
-//
-// The unit that moves is a whole event: the event row, its evidence, entities,
-// facts, sectors and brief, and the raw items its evidence points at. Nothing
-// belonging to one event is ever left on the other server, because that is the
-// entire property that makes two shards queryable with one piece of SQL.
-//
-// Both identity columns are GENERATED ALWAYS, so the inserts override the
-// system value to keep the ids the children join on.
-//
-// Idempotent: every insert is ON CONFLICT DO NOTHING and the delete only
-// follows a successful copy, so an interrupted run leaves rows on both sides
-// and the next run finishes the job rather than duplicating it.
+// Rollover moves aged news from the primary to the archive, a whole event at a
+// time: the event, its evidence, entities, facts, sectors and brief, and the
+// raw items behind them, so neither server ever holds half an event. Identity
+// columns keep their values so the children still join. Idempotent: inserts
+// are ON CONFLICT DO NOTHING and the delete follows a successful copy, so an
+// interrupted run is finished by the next.
 func (a *Archive) Rollover(ctx context.Context, now time.Time) (moved int, err error) {
 	cutoff := a.cutoff(now)
 	for {
@@ -296,23 +278,11 @@ func scanIDs(rows *sql.Rows) ([]int64, error) {
 	return out, rows.Err()
 }
 
-// ReclaimSpace rewrites the news tables so the space a rollover freed is
-// returned to the filesystem.
-//
-// This is separate from Rollover, and deliberately not scheduled, because
-// VACUUM FULL takes an ACCESS EXCLUSIVE lock: for its duration the table
-// cannot be read or written, so ingestion stalls and the feed 500s. On
-// raw_items that is tens of seconds. It is the right thing to run once, with
-// somebody watching, not at half past two unattended.
-//
-// It also needs room for a second copy of each table while it rewrites, which
-// on a managed plan that is already near its ceiling is the thing most likely
-// to fail. Sizes are logged before and after so the trade is visible.
-//
-// Without this, a rollover does not shrink the primary -- it stops it growing.
-// Postgres marks the freed pages reusable and new rows fill them, so the
-// database plateaus rather than shrinking, which is enough for a steady state
-// and not enough to get under a limit it has already crossed.
+// ReclaimSpace rewrites the news tables so the space a rollover freed returns
+// to the filesystem. Separate and unscheduled because VACUUM FULL takes an
+// exclusive lock (ingestion stalls and the feed errors while it runs) and
+// needs room for a second copy of each table. Without it a rollover stops the
+// primary growing but does not shrink it.
 func (a *Archive) ReclaimSpace(ctx context.Context) error {
 	tables := append([]string{"raw_items", "events"}, eventChildTables...)
 	for _, table := range tables {

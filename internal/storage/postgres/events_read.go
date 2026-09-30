@@ -50,36 +50,20 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) AS link ON TRUE`
 
-// contentAgeExpr is what the feed treats as an item's age: its publication
-// time, clamped to discovery whenever that is missing or implausibly later.
-//
-// Written once because events_content_age_idx (migration 0022) indexes this
-// exact expression, and because the filter and the sort must agree. They did
-// not: the window was measured on the clamped value while the order was taken
-// from a raw COALESCE, so a publisher claiming a future timestamp was held out
-// of the window by one rule and floated to the top of the feed by the other.
-// The observed skew was small -- 124 events, none off by more than four
-// minutes -- but two rules for one question is the kind of disagreement that
-// only ever grows.
-//
-// Postgres matches an expression index by its parsed tree, so any drift
-// between this constant and the migration does not fail loudly. It silently
-// restores a sequential scan over the whole archive.
+// contentAgeExpr is an item's age for the feed: its publication time, clamped
+// to discovery when missing or implausibly later. The filter and the sort both
+// use it, and events_content_age_idx (migration 0022) indexes this exact
+// expression: if the two drift apart, Postgres silently falls back to a
+// sequential scan.
 const contentAgeExpr = `CASE
                 WHEN e.published_at IS NULL THEN e.discovered_at
                 WHEN e.published_at > e.discovered_at THEN e.discovered_at
                 ELSE e.published_at
              END`
 
-// ListEvents returns events matching a filter, most recently discovered first.
-//
-// Ordering is by discovery rather than importance so the default view is a
-// timeline of what happened. Importance is a filter, not a sort: an operator
-// scanning the day wants it in order, and re-ranking by a score would make the
-// same feed look different every time the classifier ran.
-// indianSymbol matches a symbol listed in India. The product covers US
-// equities only; the archive still holds events on Indian listings from
-// before that, and every read leaves them out rather than deleting them.
+// indianSymbol matches a symbol listed in India. The archive still holds
+// events on Indian listings from before the product became US-only, and every
+// read leaves them out rather than deleting them.
 const indianSymbol = `'\.(NSE|BSE)$'`
 
 // usRelevant keeps an event unless everything tying it to a company points
@@ -158,19 +142,9 @@ func (d *DB) ListEvents(ctx context.Context, f EventFilter) ([]news.Event, error
 	}
 
 	if !f.Since.IsZero() {
-		// The window is about content age, not discovery.
-		//
-		// A watchlist search returns a publisher's back catalogue, so one poll
-		// can discover a hundred articles at once spanning years. Filtering on
-		// discovery alone put a January 2025 story into a "last 24 hours" feed
-		// — measured on one company, twelve items discovered in a single batch
-		// carried publication dates spread over nineteen months, several rated
-		// importance 8. That is the same defect as showing a March article as
-		// today's news, and it is what makes a feed untrustworthy.
-		//
-		// published_at is used only when it is not after discovery. Aggregators
-		// report their own surfacing time, and one that claims to be from the
-		// future has told us nothing about the article's age.
+		// The window is about content age, not discovery: one watchlist poll
+		// can discover a publisher's back catalogue, and a year-old story is
+		// not "last 24 hours" news.
 		add(contentAgeExpr+` >= $%d`, f.Since.UTC())
 	}
 	if f.OfficialOnly {
@@ -460,20 +434,9 @@ LIMIT $1`, limit)
 	return out, nil
 }
 
-// SearchEvents is the full-text search the research engine uses.
-//
-// It deliberately does not reuse the feed's search. websearch_to_tsquery joins
-// terms with AND, which is right for a search box — someone typing "reliance
-// dividend" wants both — but wrong for a research question. "Which Indian
-// cement companies are exposed to the coal price?" required every one of those
-// words in a single headline and returned nothing, while an OR of the content
-// words returned nineteen.
-//
-// So the question is reduced to its content words, joined with OR, and ranked:
-// documents matching more terms sort first, which is what makes recall safe.
-//
-// It is also a purpose-shaped method rather than an exposed filter, because
-// importing the storage package into research would close an import cycle.
+// SearchEvents is the full-text search research uses. Unlike the feed's search
+// it joins the question's content words with OR and ranks by how many match:
+// requiring every word of a question in one headline returns nothing.
 func (d *DB) SearchEvents(ctx context.Context, query string, since time.Time, limit int) ([]news.Event, error) {
 	terms := contentWords(query)
 	if len(terms) == 0 {

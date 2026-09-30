@@ -9,17 +9,10 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-// QuoteSource polls the market data layer for the instruments being watched.
-//
-// This is what real-time looks like without a market data licence, and it is
-// deliberately honest about that: it reports its own latency as the poll
-// interval rather than implying tick resolution. What it does give is the
-// thing that was actually missing — updates that arrive when the price moves
-// rather than when a browser next happens to ask.
-//
-// It polls only while a venue is trading. An Indian instrument at two in the
-// morning has not moved and will not move, and asking anyway is both useless
-// and rude to the upstream.
+// QuoteSource polls the market data layer for the instruments being watched,
+// which is what real time looks like without a market data licence: it reports
+// its latency as the poll interval rather than implying tick resolution. It
+// polls only while the market is trading.
 type QuoteSource struct {
 	Router *marketdata.Router
 	// Symbols returns what to watch. Read on every cycle so that adding an

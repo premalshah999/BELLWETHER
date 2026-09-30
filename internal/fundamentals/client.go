@@ -220,16 +220,9 @@ func buildCompany(ticker string, wc wireCompany) Company {
 	sanitise(s)
 	dropMixedCurrencyRatios(s)
 
-	// Market cap is frequently absent for Indian listings. Derived rather
-	// than left empty, because it is the denominator of every yield and a
-	// screen with holes in it is one an investor stops trusting.
-	//
-	// Book value is per share and in the quote currency, so shares times book
-	// value is equity and multiplying by price-to-book gives the market's
-	// valuation of it. Checked against Reliance: 13.53bn shares at ₹668.05
-	// reproduces its reported equity of ₹9.04 lakh crore exactly, and ₹17.6
-	// lakh crore of market capitalisation against a real figure of about
-	// ₹17.8 lakh crore.
+	// Market cap is the denominator of every yield, so when the provider omits
+	// it, it is derived: shares times book value per share is equity, and
+	// equity times price-to-book is the market's valuation of it.
 	if s.MarketCap == nil && s.BookValue != nil && s.PriceToBook != nil {
 		shares := s.SharesOutstanding
 		if shares == nil {
@@ -307,21 +300,11 @@ func parsePeriods(c *Company, ticker string, wc wireCompany) {
 	}
 }
 
-// plausible bounds for provider ratios.
-//
-// The upstream data for Indian listings contains figures that are not merely
-// imprecise but impossible, and they arrive with no error attached. Measured
-// across 66 companies, the provider's EV/EBITDA ranged from -141 to 1257
-// against a median of 17.8: for Infosys it reported EBITDA of about ₹448
-// crore, roughly a hundredth of the real figure, giving a multiple of 1011.
-//
-// A screen showing that is worse than a screen showing nothing, because the
-// reader has no way to tell which numbers to trust and will discount all of
-// them. So an implausible value is discarded and reported as absent, which is
-// the honest description of what we know.
-//
-// The bounds are deliberately wide. They are here to catch numbers that cannot
-// be right, not to enforce a view about what is expensive.
+// ratioBounds are plausible ranges for provider ratios. The upstream data
+// sometimes contains impossible figures with no error attached (an EV/EBITDA
+// of 1011 from a misreported EBITDA), and a screen showing one is worse than a
+// blank. The bounds are wide: they catch numbers that cannot be right, not
+// ones that are merely expensive.
 var ratioBounds = map[string]struct{ lo, hi float64 }{
 	"pe":             {0, 500},
 	"pb":             {0, 100},
@@ -346,21 +329,11 @@ func clampRatio(v *float64, kind string) *float64 {
 	return v
 }
 
-// dropMixedCurrencyRatios removes the ratios that combine a market figure
-// with a statement figure when the two are in different currencies.
-//
-// The provider makes this mistake itself, so the bad values arrive already
-// computed. Within its `info` block the per-share and price-derived figures
-// are in the quote currency while the absolute aggregates come from the
-// statements: for Infosys, EPS of 77.56 and book value of 226.41 are rupees
-// and correct, while revenue of 20.3bn and EBITDA of 4.48bn are dollars.
-//
-// So P/E, P/B and dividend yield are sound, and so are the pure statement
-// ratios like margins and return on equity, because both of their terms come
-// from the same filing. It is only the enterprise-value multiples that mix
-// the two — and those were wrong by a factor of about 85, which the
-// plausibility bounds happened to catch for Infosys and would not catch for a
-// company whose currencies are closer in magnitude.
+// dropMixedCurrencyRatios removes ratios that combine a market figure with a
+// statement figure in a different currency, which the provider computes
+// wrongly for foreign filers: price-derived figures are in the quote currency,
+// statement aggregates in the filing currency. P/E, P/B, yield, margins and
+// returns are sound; enterprise-value multiples are not.
 func dropMixedCurrencyRatios(s *Snapshot) {
 	if !s.MixedCurrency() {
 		return

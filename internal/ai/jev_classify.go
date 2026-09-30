@@ -12,21 +12,11 @@ import (
 	"github.com/tradesys/dashboard/internal/news"
 )
 
-// Confidence gates for Jev's answers.
-//
-// TypeSafe's guidance is to gate each action by what getting it wrong costs,
-// not to use one threshold for everything, and these follow that:
-//
-//   - typeConfidenceFloor: below this the deterministic type stands. The
-//     keyword rules already assigned one, so declining to override costs
-//     little, and a confident-sounding wrong label costs a lot.
-//   - directionConfidenceFloor: below this the direction is "unclear", which
-//     is what the prompt this replaces asked the model to say rather than
-//     flip a coin. Jev's calibrated confidence makes that rule mechanical.
-//   - notAnEventCeiling: a truth value below this means Jev is at least 80%
-//     sure the item is not a market event -- commentary, a quote page, a
-//     data listing. Those get importance zero, which takes them out of the
-//     default feed without deleting anything.
+// Confidence gates for Jev's answers, each set by what getting it wrong costs.
+// Below typeConfidenceFloor the deterministic type stands; below
+// directionConfidenceFloor the direction is "unclear" rather than a coin flip;
+// a truth value under notAnEventCeiling means Jev is at least 80% sure the
+// item is not a market event, which gets importance zero.
 const (
 	typeConfidenceFloor      = 0.5
 	directionConfidenceFloor = 0.5

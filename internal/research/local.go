@@ -19,18 +19,10 @@ type EventSearcher interface {
 	SearchEvents(ctx context.Context, query string, since time.Time, limit int) ([]news.Event, error)
 }
 
-// LocalScraper searches the events this system has already collected.
-//
-// Every other provider goes out to the open web and comes back with whatever
-// a general-purpose index thinks is relevant. This one searches an archive
-// built for exactly this domain: exchange filings resolved to NSE symbols,
-// deduplicated across outlets, with importance and direction attached and a
-// trustworthy discovery time on every row.
-//
-// It is also the only provider that can answer "what have we seen about this"
-// rather than "what does the web say", and the only one that costs nothing and
-// returns in milliseconds. When a question concerns an Indian listed company,
-// this is usually the best material available.
+// LocalScraper searches the events this system has already collected: filings
+// and news resolved to tickers, deduplicated across outlets, with importance,
+// direction and a trustworthy discovery time. It is the only provider that
+// answers "what have we seen about this", and it costs nothing.
 type LocalScraper struct {
 	Store EventSearcher
 	// Window bounds how far back to look. Research questions are usually

@@ -94,17 +94,10 @@ func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
 	// symbols below come from the store only.
 	bench := loadBenchmark(ctx, s, benchmarkSymbol)
 
-	// Each event symbol's own series comes from the store only, never a
-	// live fetch: an event type can span hundreds of distinct companies,
-	// and turning a read-only analytics request into hundreds of possible
-	// upstream calls would make its latency unpredictable and put load on
-	// a vendor for data this app already collects on its own schedule (the
-	// scanner's daily pass -- see internal/scanner's Result.Series). A
-	// symbol with no cached history is a real, expected gap, reported by
-	// eventstudy.Run's own coverage warning rather than papered over here.
-	//
-	// Read in parallel, bounded: one at a time, an event type spanning a few
-	// hundred companies took seconds of back-to-back round trips.
+	// Each symbol's series comes from the store, never a live fetch: an event
+	// type can span hundreds of companies. A symbol with no stored history is
+	// an expected gap, reported by the study's coverage warning. Read in
+	// parallel, bounded.
 	candlesBySymbol := map[string][]marketdata.Candle{}
 	var (
 		mu   sync.Mutex

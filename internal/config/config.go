@@ -23,22 +23,10 @@ type Config struct {
 	// DatabaseURL is the Postgres database.
 	DatabaseURL string
 
-	// NewsArchiveURL is a second Postgres that holds aged news.
-	//
-	// The news graph -- events, their evidence, their entities and the raw
-	// items behind them -- is one joined structure, and at 575 MB it outgrows
-	// the free tier of any single managed provider. It cannot be divided
-	// arbitrarily, because those joins are what every feed query is made of
-	// and Postgres cannot join across servers.
-	//
-	// So it is divided by time instead, which is the one cut that keeps each
-	// piece whole: recent news lives on the primary (DATABASE_URL), aged news
-	// is moved here, and nothing that belongs to one event is ever separated
-	// from the rest of it. Reads reach this only when the window they ask for
-	// extends past the cutoff -- the default 72-hour feed never touches it.
-	//
-	// Empty disables the archive entirely and the app keeps everything on the
-	// primary, which is the single-database deployment it had before.
+	// NewsArchiveURL is a second Postgres that holds aged news, so the archive
+	// can outgrow one provider's free tier. The news graph is divided by time,
+	// the one cut that keeps each event whole: recent news on the primary,
+	// older news here. Empty keeps everything on the primary.
 	NewsArchiveURL string
 	// NewsHotWindow is how long news stays on the primary before the rollover
 	// job moves it to the archive.

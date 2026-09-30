@@ -15,18 +15,10 @@ import (
 const catalystLookbackDays = 5
 
 // TradeCatalyst is one closed trade with the event, if any, that most
-// plausibly prompted its entry -- the most recent classified event naming
-// the trade's symbol, discovered on or before the day the position was
-// opened, within the lookback window. "Discovered", never "published" or
-// "occurred": a trade cannot have been prompted by something this system
-// did not yet know when the position was opened, which is the same
-// look-ahead discipline internal/eventstudy applies to the event archive
-// generally.
-//
-// A trade with no qualifying event is not an error -- most real trades are
-// not preceded by anything this app classified, and that absence is itself
-// the fact worth showing plainly rather than papering over with the
-// nearest unrelated headline.
+// plausibly prompted it: the latest classified event naming its symbol,
+// discovered on or before the entry day within the lookback window.
+// Discovered, never published: a trade cannot have been prompted by something
+// not yet known. Most trades have none, and that absence is shown as it is.
 type TradeCatalyst struct {
 	Trade
 	EventID           *int64

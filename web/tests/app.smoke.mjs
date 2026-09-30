@@ -103,6 +103,10 @@ function response(path) {
   if (path === "/api/ingest/pipeline") return { phase: "idle", lanes: [], due: [], sources: 0, healthy: 0, failing: 0 };
   if (path === "/api/ingest/latency") return { sources: [], days: 30 };
   if (path === "/api/stream/health") return { sources: [] };
+  if (path === "/api/smartmoney/overview") return { days: 90, top_buys: [], top_sells: [], cluster_buys: [], largest_buys: [], funds: [], fund_buys: [], insider_count: 0 };
+  if (path === "/api/smartmoney/insiders") return { trades: [] };
+  if (path.startsWith("/api/smartmoney/symbol/")) return { symbol: "AAPL", trades: [], funds: [], congress: [] };
+  if (path === "/api/web/search") return { query: "fed", kind: "news", results: [{ title: "Fed holds rates, wires report", url: "https://example.com/fed", publisher: "example.com", published_at: now, engine: "bing_news" }] };
   return {};
 }
 
@@ -110,7 +114,8 @@ const routes = [
   "/dashboard", "/charts", "/scanner/signals", "/scanner/screens", "/news",
   "/geopolitics", "/congress", "/eventstudy", "/calendar", "/positions",
   "/journal", "/research", "/algorithms/build", "/algorithms/backtest",
-  "/alerts", "/sources", "/ai",
+  "/alerts", "/sources", "/ai", "/smartmoney/overview", "/smartmoney/insiders",
+  "/smartmoney/funds", "/smartmoney/congress",
 ];
 
 const browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
@@ -144,6 +149,19 @@ try {
   await page.getByRole("heading", { name: "Needs a look" }).waitFor();
   await page.screenshot({ path: "/tmp/bellwether-overview-mobile.png", fullPage: true });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+
+  // A news search also shows what the open web has, and every clock time
+  // names its zone: New York by default, the viewer's choice after that.
+  const base = process.env.BELLWETHER_UI_URL || "http://127.0.0.1:5174";
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.goto(base + "/news?q=fed");
+  await page.getByRole("link", { name: "Fed holds rates, wires report" }).waitFor();
+  const clock = page.locator("time").first();
+  assert.match(await clock.innerText(), /\d{2}:\d{2}\sET$/, "feed times should be labelled ET by default");
+  await page.getByRole("button", { name: /All systems normal/ }).click();
+  await page.getByRole("radio", { name: "UTC", exact: true }).click();
+  assert.match(await page.locator("time").first().innerText(), /\d{2}:\d{2}\sUTC$/, "choosing UTC should relabel every time");
+
   assert.deepEqual(errors, []);
   console.log(`Application browser checks passed across ${routes.length} routes.`);
   if (unknown.size) console.log(`Unmodelled optional API calls: ${[...unknown].sort().join(", ")}`);

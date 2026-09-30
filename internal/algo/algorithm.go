@@ -1,19 +1,14 @@
 // Package algo defines the algorithm rule language: its JSON shape, its
-// validation rules, and its evaluator.
+// validation and its evaluator. A rule that misreads itself notifies people
+// about something that did not happen, so:
 //
-// This is the most safety-critical code in the application. An algorithm that
-// silently misreads its own rules will notify the operators about something
-// that did not happen, and they will act on it. Three principles follow from
-// that:
-//
-//   - Missing data is never zero. An indicator with no value yet makes a
-//     condition *unknown*, not false, and an unknown result never fires an
-//     alert. See the three-valued logic in eval.go.
-//   - Validation is total and happens before storage. A rule set that cannot
-//     be evaluated must be rejected at the point the operator writes it, with
-//     a message naming the exact field, not at 09:15 the next morning.
-//   - Every evaluation records what it saw. Each alert stores the full operand
-//     snapshot so a surprising notification can be audited afterwards.
+// - Missing data is never zero. An indicator with no value yet makes a
+// condition unknown, not false, and an unknown result never fires. See the
+// three-valued logic in eval.go.
+// - Validation is total and happens before storage, with a message naming the
+// exact field.
+// - Every evaluation records the operands it saw, so a surprising alert can be
+// audited.
 package algo
 
 import (

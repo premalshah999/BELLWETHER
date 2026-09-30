@@ -78,19 +78,11 @@ func TitleKey(title string) string {
 	return hex.EncodeToString(sum[:12])
 }
 
-// TitleSimilarity scores two headlines from 0 to 1.
-//
-// The measure is Jaccard overlap of content words, which is cheap, has no
-// model behind it, and is well suited to headlines: they are short, so the
-// token sets are small, and a shared rare word like a company name or a
-// contract value carries a lot of weight.
-//
-// It is not a semantic measure and does not pretend to be. Two stories about
-// unrelated things at the same company will score low, which is correct, and
-// two very differently worded reports of one event will also score low, which
-// is the cost of not running an embedding model. Clustering therefore requires
-// a shared entity as well as a similar headline, so the failure mode is a
-// duplicate event rather than a wrongly merged one.
+// TitleSimilarity scores two headlines from 0 to 1 by Jaccard overlap of
+// content words: cheap, no model, and well suited to short text where a shared
+// company name or contract value carries weight. It is not semantic, so
+// clustering also requires a shared entity; the failure mode is a duplicate
+// event, not a wrongly merged one.
 func TitleSimilarity(a, b string) float64 {
 	setA := tokenSet(a)
 	setB := tokenSet(b)

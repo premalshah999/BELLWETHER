@@ -88,15 +88,10 @@ type BriefStore interface {
 	SaveEventBrief(ctx context.Context, eventID int64, brief, model string) error
 }
 
-// BriefImportance is the threshold above which an event is briefed
-// automatically.
-//
-// Measured over a week of this feed: importance 7 and above is about 397
-// events a day, 8 and above about 101, 9 and above about 9. Seven is the
-// level at which the classifier is saying "a holder would want to know", and
-// at roughly 1,950 tokens a brief that is under one percent of the monthly
-// budget — so the threshold is set by what is worth reading rather than by
-// what is affordable.
+// BriefImportance is the importance at which an event is briefed
+// automatically: the level where the classifier is saying "a holder would want
+// to know", and few enough events a day that the briefs cost under one percent
+// of the budget.
 const BriefImportance = 7
 
 // BriefWindow is how far back a scheduled run will reach.

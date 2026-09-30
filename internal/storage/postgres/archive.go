@@ -10,23 +10,11 @@ import (
 	"github.com/tradesys/dashboard/internal/news"
 )
 
-// Archive is a second Postgres holding aged news.
-//
-// The news graph is one joined structure -- events, the evidence supporting
-// them, the companies they name, the facts pulled out of them, and the raw
-// items all of that was read from. Postgres cannot join across servers, so the
-// graph cannot be divided by table without breaking every feed query.
-//
-// It is divided by time instead, which is the one cut that leaves each piece
-// whole: an event and everything hanging off it always live on the same
-// server. Both servers carry the identical schema, so the same query code runs
-// against either and a read that spans the cutoff is two identical queries
-// merged rather than a distributed join.
-//
-// What that buys is capacity from two providers' free tiers without giving up
-// the joins. What it costs is that a read reaching past the cutoff is twice the
-// work -- which is why the cutoff is set well outside the window the feed
-// actually asks for.
+// Archive is a second Postgres holding aged news. Postgres cannot join across
+// servers, so the news graph is divided by time, the one cut that keeps an
+// event and everything hanging off it on one server. Both carry the same
+// schema; a read spanning the cutoff is two identical queries merged, which is
+// why the cutoff sits well outside the feed's usual window.
 type Archive struct {
 	hot    *DB
 	cold   *DB

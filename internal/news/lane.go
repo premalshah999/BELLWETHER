@@ -112,17 +112,9 @@ func (s Source) Lane() Lane {
 	return LaneNormal
 }
 
-// adaptiveInterval computes the next polling interval for a source.
-//
-// Three inputs combine: the source's configured cadence, how productive recent
-// polls have been, and the market phase. A feed that has returned nothing for
-// several consecutive polls is asked less often, and one that just produced
-// something new is asked more often — which is how a fixed catalog spends its
-// effort where things are actually happening.
-//
-// The result is always clamped to the lane's bounds, so adaptation can never
-// turn a filings feed into an hourly one, nor a quarterly disclosure into a
-// thirty-second poll.
+// adaptiveInterval computes the next polling interval from the source's
+// cadence, how productive recent polls were, and the market phase, clamped to
+// the lane's bounds so adaptation can never make a filings feed hourly.
 func adaptiveInterval(src Source, emptyPolls int, phase MarketPhase) time.Duration {
 	base := src.Refresh
 	if base <= 0 {

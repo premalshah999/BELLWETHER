@@ -10,18 +10,9 @@ import (
 	"github.com/tradesys/dashboard/internal/storage"
 )
 
-// SaveArticles upserts per-symbol articles, returning how many were new.
-//
-// Uniqueness is (symbol, url): the same story reached through two symbols'
-// feeds is stored once per symbol, because relevance and sentiment are
-// per-symbol judgements. An article already scored keeps its score — re-running
-// the digest on unchanged text would spend tokens to learn nothing.
-//
-// The count comes from the insert itself rather than from a preceding SELECT.
-// The old implementation queried existing URLs first because SQLite reports one
-// changed row for an insert and an update alike; Postgres can simply return
-// the rows it actually inserted, which removes both the extra round trip and
-// the race between the check and the write.
+// SaveArticles upserts per-symbol articles and returns how many were new.
+// Uniqueness is (symbol, url), because relevance is judged per symbol; an
+// article already scored keeps its score.
 func (d *DB) SaveArticles(ctx context.Context, articles []news.Article) (int, error) {
 	if len(articles) == 0 {
 		return 0, nil
