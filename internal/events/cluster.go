@@ -215,6 +215,13 @@ func FindCluster(title string, symbols []string, typ Type, at time.Time, candida
 				break
 			}
 		}
+		// An identical headline is the same story even when only one side has
+		// a company resolved: a syndicated copy whose outlet named the ticker
+		// and one whose outlet did not. Two sides that each name a different
+		// company stay apart.
+		if !shared && key != "" && key == c.TitleKey && len(c.Symbols) == 0 {
+			return MatchDecision{EventID: c.ID, Score: 1, Reason: "identical headline tokens", Matched: true}
+		}
 		if !shared {
 			continue
 		}
@@ -278,4 +285,35 @@ func Fingerprint(symbols []string, typ Type, titleKey string, day time.Time, loc
 	// stay distinct — a company can win two separate orders.
 	h.Write([]byte(titleKey))
 	return hex.EncodeToString(h.Sum(nil)[:16])
+}
+
+// StripPublisher removes a trailing " - Publisher" that aggregators append to
+// a headline.
+//
+// Google News writes every headline as "Story - Outlet", so the same story
+// from two outlets arrived as two different headlines and never clustered.
+// The suffix is removed only when it is the item's own publisher, or a bare
+// domain: "Notable Two Hundred Day Moving Average Cross - CLF" ends in a
+// ticker, and those are different stories about different companies.
+func StripPublisher(title, publisher string) string {
+	t := strings.TrimSpace(title)
+	for _, sep := range []string{" - ", " | ", " — ", " – "} {
+		i := strings.LastIndex(t, sep)
+		if i <= 0 {
+			continue
+		}
+		tail := strings.TrimSpace(t[i+len(sep):])
+		if tail == "" || len(tail) > 60 {
+			continue
+		}
+		pub := strings.TrimSpace(publisher)
+		isPublisher := pub != "" && (strings.EqualFold(tail, pub) ||
+			strings.EqualFold(strings.TrimPrefix(tail, "www."), strings.TrimPrefix(pub, "www.")))
+		isDomain := !strings.ContainsAny(tail, " ") && strings.Contains(tail, ".") &&
+			strings.IndexFunc(tail, unicode.IsLetter) >= 0
+		if isPublisher || isDomain {
+			return strings.TrimSpace(t[:i])
+		}
+	}
+	return t
 }

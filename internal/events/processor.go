@@ -205,6 +205,9 @@ func (p *Processor) processOne(ctx context.Context, item news.RawItem) (created,
 	}
 
 	typ, headline, summary, facts, occurredAt := p.interpret(src, item)
+	if src.Method != news.MethodSECFiling {
+		headline = StripPublisher(headline, item.Publisher)
+	}
 
 	// Mutual-fund NAV declarations are 440 of a day's 1,600 NSE
 	// announcements. They are real disclosures about a different asset class,
