@@ -1,3 +1,4 @@
+import { Select } from "../ui/controls";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Filter, Plus, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -206,28 +207,20 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
         <div className="space-y-1.5">
           {def.conditions.map((c, i) => (
             <div key={i} className="flex flex-wrap items-center gap-1.5">
-              <select
+              <Select
+                label="Measure"
+                showLabel={false}
                 value={c.field}
-                onChange={(e) => patch(i, { field: e.target.value })}
-                className="h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 font-mono text-meta text-text-primary outline-none focus:border-brand"
-              >
-                {fields.map((f) => (
-                  <option key={f.field} value={f.field}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-              <select
+                onChange={(v) => patch(i, { field: v })}
+                options={fields.map((f) => ({ value: f.field, label: f.label }))}
+              />
+              <Select
+                label="Comparison"
+                showLabel={false}
                 value={c.op}
-                onChange={(e) => patch(i, { op: e.target.value })}
-                className="h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 font-mono text-meta text-text-primary outline-none focus:border-brand"
-              >
-                {ops.map((o) => (
-                  <option key={o.op} value={o.op}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => patch(i, { op: v })}
+                options={ops.map((o) => ({ value: o.op, label: o.label }))}
+              />
               <input
                 type="number"
                 step="any"
@@ -272,17 +265,13 @@ export function ScreensView({ onSelect }: { onSelect: (symbol: string) => void }
           <span className="text-meta font-medium text-text-secondary first-letter:uppercase">
             sort
           </span>
-          <select
+          <Select
+            label="Sort by"
+            showLabel={false}
             value={def.sort_by}
-            onChange={(e) => setDef((d) => ({ ...d, sort_by: e.target.value }))}
-            className="h-8 rounded-md border border-border-subtle bg-bg-base px-2.5 font-mono text-meta text-text-secondary outline-none focus:border-brand"
-          >
-            {fields.map((f) => (
-              <option key={f.field} value={f.field}>
-                {f.label}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setDef((d) => ({ ...d, sort_by: v }))}
+            options={fields.map((f) => ({ value: f.field, label: f.label }))}
+          />
           <button
             type="button"
             onClick={() => setDef((d) => ({ ...d, sort_desc: !d.sort_desc }))}

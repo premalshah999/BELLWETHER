@@ -2,12 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Briefcase, Plus, Trash2, X } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 import { api, ApiError, type Position } from "../../lib/api";
-import { venueOf } from "../../lib/symbol";
 import { Empty } from "../ui/Empty";
 import { PageHeader, SkeletonRows } from "../ui/controls";
 
-function currencyOf(symbol: string): "₹" | "$" {
-  return venueOf(symbol) === "NSE" ? "₹" : "$";
+function currencyOf(_symbol: string): "$" {
+  return "$";
 }
 
 function money(n: number, currency: string) {
@@ -25,9 +24,7 @@ function money(n: number, currency: string) {
  * what makes that a real question with a real answer.
  *
  * Cost basis is average-cost, not FIFO lots -- see
- * internal/storage/postgres/positions.go for what that trades off. Totals
- * are grouped by currency rather than summed across them: adding dollars to
- * rupees is not a rounding shortcut, it is a wrong number.
+ * internal/storage/postgres/positions.go for what that trades off.
  */
 export function PositionsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
   const qc = useQueryClient();
@@ -61,7 +58,7 @@ export function PositionsPage({ onSelect }: { onSelect: (symbol: string) => void
   }, [positions]);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Positions"
         subtitle={

@@ -27,7 +27,7 @@ export function ScannerPage({ onSelect }: { onSelect: (symbol: string) => void }
   const { mode: routeMode } = useParams();
   if (routeMode === "screens") {
     return (
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <PageHeader title="Screens" subtitle="Filter the S&P 1500 by valuation, growth, momentum and quality, and save what you use." />
         <ScreensView onSelect={onSelect} />
       </div>
@@ -100,7 +100,7 @@ function Signals({ onSelect }: { onSelect: (symbol: string) => void }) {
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Signals"
         subtitle={
@@ -174,8 +174,9 @@ function Signals({ onSelect }: { onSelect: (symbol: string) => void }) {
             </p>
           </div>
         ) : (
+          <div className="mx-5 mb-8 overflow-x-auto rounded-xl border border-border-subtle bg-bg-card md:mx-8 md:overflow-x-clip">
           <table className="w-full min-w-[760px] border-collapse text-ui">
-            <thead className="sticky top-0 z-10 bg-bg-panel shadow-[0_1px_0_var(--line)]">
+            <thead className="sticky top-0 z-10 bg-bg-card shadow-[0_1px_0_var(--line)]">
               <tr className="text-meta text-text-muted">
                 <th className="px-6 py-2.5 text-left font-medium">Company</th>
                 <SortTh k="return_1d" sort={sort} desc={desc} onSort={sortBy} title="Today's price change.">
@@ -236,6 +237,7 @@ function Signals({ onSelect }: { onSelect: (symbol: string) => void }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

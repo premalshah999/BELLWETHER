@@ -105,6 +105,17 @@ func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// US listings only. The archive still holds events on Indian symbols from
+	// before the product narrowed to US equities; they belong to no benchmark
+	// the product shows and would quietly change its numbers.
+	us := pairs[:0]
+	for _, p := range pairs {
+		if sym, err := marketdata.ParseSymbol(p.Symbol); err == nil && !sym.IsIndian() {
+			us = append(us, p)
+		}
+	}
+	pairs = us
+
 	var needUS, needNSE bool
 	for _, p := range pairs {
 		sym, err := marketdata.ParseSymbol(p.Symbol)

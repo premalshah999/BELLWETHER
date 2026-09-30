@@ -607,6 +607,6 @@ function Spark({ points, up }: { points: number[]; up: boolean }) {
 }
 
 function formatPrice(v: number, currency: string) {
-  const symbol = currency === "INR" ? "₹" : currency === "USD" ? "$" : "";
+  const symbol = currency === "USD" || !currency ? "$" : "";
   return symbol + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

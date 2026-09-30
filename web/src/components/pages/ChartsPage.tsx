@@ -48,11 +48,7 @@ type RangeId = (typeof RANGES)[number]["id"];
 
 /**
  * Bars in one trading session, per interval -- sized for a US-hours 6h30m
- * session (390 one-minute bars) rather than NSE's shorter 6h15m (375),
- * since this only ever decides how many bars to *request*: asking for
- * slightly more than an NSE session actually has is harmless, while sizing
- * to NSE's shorter session would under-fetch and silently truncate a US
- * intraday range.
+ * session: 390 one-minute bars.
  */
 const PER_SESSION: Record<Interval, number> = {
   "1m": 390,
@@ -208,7 +204,7 @@ export function ChartsPage({
     layout === 1 ? "grid-cols-1 grid-rows-1" : layout === 2 ? "grid-cols-2 grid-rows-1" : "grid-cols-2 grid-rows-2";
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border-subtle px-4">
         <Segmented
           label="Layout"
@@ -309,11 +305,9 @@ function ChartPane({
   // The authoritative price, from the same endpoint the watchlist, the
   // scanner and the dashboard all read.
   //
-  // An intraday chart's last candle is not the session close: the upstream
-  // stops every NSE session at 15:15 and never sends the final quarter hour.
-  // On 31 Aug that last 5m bar closed at 1294.90 while the session actually
-  // closed at 1277 — so the chart showed one number and the rest of the app
-  // showed another, seventeen rupees apart, with nothing saying why.
+  // An intraday chart's last candle is not always the session close: the free
+  // feed can stop short of the final bars, so the chart and the rest of the
+  // app would otherwise show two different closing prices without saying why.
   const { data: quote } = useQuery({
     queryKey: ["quote", pane.symbol],
     queryFn: () => api.quote(pane.symbol),
@@ -397,7 +391,7 @@ function ChartPane({
         {drifted && lastBar && (
           <span
             className="shrink-0 font-mono text-micro text-brand"
-            title={`The last bar drawn closes at ${lastBar.c.toFixed(2)}, but the session closed at ${truth?.toFixed(2)}. The upstream feed stops each NSE session at 15:15 IST and never delivers the final quarter hour, so an intraday chart's last candle is not the close. Every other price in this app uses the close.`}
+            title={`The last bar drawn closes at ${lastBar.c.toFixed(2)}, but the session closed at ${truth?.toFixed(2)}. The price feed did not deliver the session's final bars. Every other price in the app uses the official close.`}
           >
             chart ends {lastBar.c.toFixed(2)}
           </span>

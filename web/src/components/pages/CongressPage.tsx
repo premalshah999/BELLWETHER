@@ -58,7 +58,7 @@ export function CongressPage({ onSelect }: { onSelect: (symbol: string) => void 
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Congress trades"
         subtitle={
@@ -127,8 +127,9 @@ export function CongressPage({ onSelect }: { onSelect: (symbol: string) => void 
             </p>
           </div>
         ) : (
+          <div className="mx-5 mb-8 overflow-x-auto rounded-xl border border-border-subtle bg-bg-card md:mx-8 md:overflow-x-clip">
           <table className="w-full min-w-[820px] text-ui">
-            <thead className="sticky top-0 z-10 bg-bg-panel shadow-[0_1px_0_var(--line)]">
+            <thead className="sticky top-0 z-10 bg-bg-card shadow-[0_1px_0_var(--line)]">
               <tr className="text-left text-meta text-text-muted">
                 <th className="px-6 py-2.5 font-medium">Member</th>
                 <th className="px-3 py-2.5 font-medium">Filed</th>
@@ -187,6 +188,7 @@ export function CongressPage({ onSelect }: { onSelect: (symbol: string) => void 
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
@@ -204,7 +206,7 @@ function Tickers({ symbols, onOpen }: { symbols: string[]; onOpen: (s: string) =
           key={s}
           type="button"
           onClick={() => onOpen(s)}
-          className="inline-flex h-6 items-center rounded px-1.5 font-semibold text-text-primary transition-colors hover:bg-brand-muted hover:text-brand"
+          className="inline-flex h-6 items-center rounded-md bg-bg-chip px-2 font-num text-[12px] font-medium text-text-primary transition-colors hover:bg-brand-muted hover:text-accent-text"
         >
           {s}
         </button>

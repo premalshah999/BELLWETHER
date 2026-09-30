@@ -126,7 +126,7 @@ export function ResearchPage() {
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Research"
         subtitle="Ask about a company, a catalyst or a policy change. Every answer shows the documents it read."

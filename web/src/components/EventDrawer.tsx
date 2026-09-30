@@ -3,6 +3,7 @@ import { ArrowDownRight, ArrowUpRight, ExternalLink, Link2, Minus, ShieldCheck, 
 import { useState } from "react";
 import { api, type EventEntity, type Evidence, type MarketEvent } from "../lib/api";
 import { formatAgo, formatDateTime, formatDuration } from "../lib/format";
+import { usSectors } from "../lib/signals";
 import { Drawer } from "./ui/controls";
 
 /** INSIDER_TRANSACTION → "Insider transaction". */
@@ -86,7 +87,7 @@ export function EventDrawer({
                 </span>
                 {(e.source_count ?? 1) > 1 && <span>{e.source_count} independent sources</span>}
                 {importanceLabel(e.importance) && (
-                  <span className="rounded-sm bg-brand-muted px-1.5 font-medium text-brand">{importanceLabel(e.importance)}</span>
+                  <span className="rounded-full bg-brand-muted px-2 py-px font-semibold text-accent-text">{importanceLabel(e.importance)}</span>
                 )}
               </div>
               <div className="mt-1 flex flex-wrap gap-2">
@@ -114,10 +115,10 @@ export function EventDrawer({
               </section>
             )}
 
-            {(e.sectors?.length ?? 0) > 0 && (
+            {usSectors(e.sectors).length > 0 && (
               <section>
                 <SectionTitle>Sectors it reaches</SectionTitle>
-                <p className="text-ui text-text-secondary">{e.sectors!.join(", ")}</p>
+                <p className="text-ui text-text-secondary">{usSectors(e.sectors).join(", ")}</p>
               </section>
             )}
 

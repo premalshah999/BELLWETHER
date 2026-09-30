@@ -64,7 +64,7 @@ export function EventStudyPage() {
   const phrase = eventPhrase(type);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Event study"
         subtitle="Does a kind of news actually move prices? Measured against the S&P 500 from the moment Bellwether learned of each event."

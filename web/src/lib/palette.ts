@@ -43,7 +43,7 @@ export function readPalette(): Palette {
     down: v("--down"),
     upSoft: v("--up-soft"),
     downSoft: v("--down-soft"),
-    font: "Public Sans Variable, system-ui, sans-serif",
+    font: "Geist Variable, Geist, system-ui, sans-serif",
   };
 }
 

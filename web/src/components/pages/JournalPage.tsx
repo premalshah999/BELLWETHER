@@ -2,14 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import { BookOpen } from "lucide-react";
 import { useMemo } from "react";
 import { api, type JournalEntry } from "../../lib/api";
-import { venueOf } from "../../lib/symbol";
 import { Empty } from "../ui/Empty";
 import { PageHeader } from "../ui/controls";
 import { Panel } from "../ui/Panel";
 import { Pill } from "../ui/Pill";
 
-function money(n: number, symbol: string) {
-  const cur = venueOf(symbol) === "NSE" ? "₹" : "$";
+function money(n: number, _symbol?: string) {
+  const cur = "$";
   return `${n >= 0 ? "" : "−"}${cur}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
@@ -46,7 +45,6 @@ export function JournalPage({ onSelect }: { onSelect: (symbol: string) => void }
       none: { n: 0, wins: 0, pnl: 0 },
     };
     // Realized P&L is grouped by currency, never summed across them --
-    // adding dollars to rupees is a wrong number, not a rounding shortcut
     // (see PositionsPage for the same rule applied to unrealized P&L).
     const pnlByCurrency = new Map<string, number>();
     let totalWins = 0;
@@ -55,7 +53,7 @@ export function JournalPage({ onSelect }: { onSelect: (symbol: string) => void }
       b.n++;
       b.pnl += t.realized_pnl;
       if (t.realized_pnl > 0) b.wins++;
-      const cur = venueOf(t.symbol) === "NSE" ? "₹" : "$";
+      const cur = "$";
       pnlByCurrency.set(cur, (pnlByCurrency.get(cur) ?? 0) + t.realized_pnl);
       if (t.realized_pnl > 0) totalWins++;
     }
@@ -63,7 +61,7 @@ export function JournalPage({ onSelect }: { onSelect: (symbol: string) => void }
   }, [trades]);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Journal"
         subtitle={

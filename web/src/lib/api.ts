@@ -598,7 +598,7 @@ export interface EventTypeCount {
 /**
  * Does this event type actually move the stocks it names, historically --
  * see internal/eventstudy's package doc for the method. Every abnormal
- * return is against the symbol's own venue benchmark (S&P 500 or NIFTY 50),
+ * return is against the S&P 500,
  * not a fixed zero line.
  */
 export interface EventStudyResult {
@@ -1316,7 +1316,7 @@ export const api = {
 
   /**
    * Each symbol's industry, spelled to match an event's own `sectors`
-   * directly (an "US: " prefix for a US/GICS symbol, the bare NSE industry
+   * directly (a "US: " prefix for a GICS sector, the bare industry
    * name otherwise) -- see internal/server/events.go's handleSymbolSectors.
    */
   symbolSectors: (symbols: string[]) => {
@@ -1526,7 +1526,7 @@ export const api = {
       body: JSON.stringify({ to }),
     }),
 
-  // Screens — custom scanners over the full NSE constituent universe.
+  // Screens — custom scanners over the S&P 1500.
   screenCatalogue: () => request<ScreenCatalogue>("/api/screens/fields"),
 
   screens: () => request<{ screens: Screen[] }>("/api/screens"),

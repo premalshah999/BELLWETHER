@@ -13,7 +13,7 @@ import { useResize } from "../../lib/layout";
 import { Divider } from "../ui/Divider";
 import { Empty } from "../ui/Empty";
 import { Panel } from "../ui/Panel";
-import { PageHeader, Segmented } from "../ui/controls";
+import { PageHeader, Segmented, Select as UiSelect } from "../ui/controls";
 import { useParams } from "react-router-dom";
 import { BacktestPanel } from "./BacktestPanel";
 import { Pill } from "../ui/Pill";
@@ -111,7 +111,7 @@ export function AlgorithmsPage() {
   // tested will not get tested.
   if (mode === "backtest") {
     return (
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <PageHeader
           title="Backtest"
           subtitle={
@@ -127,7 +127,7 @@ export function AlgorithmsPage() {
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-panel">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Algorithms"
         subtitle="Rules that watch your symbols and alert you when every condition holds on a closed bar."
@@ -484,18 +484,24 @@ function Select({
   onChange: (v: string) => void;
   options: string[];
 }) {
+  const OPS: Record<string, string> = {
+    "<": "below",
+    "<=": "at or below",
+    ">": "above",
+    ">=": "at or above",
+    "==": "equal to",
+    "!=": "not equal to",
+    crosses_above: "crosses above",
+    crosses_below: "crosses below",
+  };
   return (
-    <select
+    <UiSelect
+      label="Choose"
+      showLabel={false}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="border border-border-subtle bg-bg-base px-1 py-1 font-mono text-micro outline-none focus:border-brand"
-    >
-      {options.map((o) => (
-        <option key={o} value={o}>
-          {o}
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      options={options.map((o) => ({ value: o, label: OPS[o] ?? o.replace(/_/g, " ") }))}
+    />
   );
 }
 
