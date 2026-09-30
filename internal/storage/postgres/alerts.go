@@ -64,7 +64,7 @@ ON CONFLICT (algorithm_id, symbol) DO UPDATE SET last_fired_at = excluded.last_f
 // ListAlerts returns alerts matching a filter, most recent first.
 func (d *DB) ListAlerts(ctx context.Context, f alerts.Filter) ([]alerts.Alert, error) {
 	var (
-		where []string
+		where = []string{"symbol !~ " + indianSymbol}
 		args  []any
 	)
 	add := func(clause string, value any) {
@@ -170,7 +170,7 @@ func (d *DB) MarkAllAlertsRead(ctx context.Context) error {
 func (d *DB) UnreadAlertCount(ctx context.Context) (int, error) {
 	var n int
 	if err := d.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM alerts WHERE read_at IS NULL`).Scan(&n); err != nil {
+		`SELECT count(*) FROM alerts WHERE read_at IS NULL AND symbol !~ `+indianSymbol).Scan(&n); err != nil {
 		return 0, fmt.Errorf("postgres: unread alert count: %w", err)
 	}
 	return n, nil

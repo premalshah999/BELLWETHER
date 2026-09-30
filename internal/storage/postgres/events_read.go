@@ -77,6 +77,22 @@ const contentAgeExpr = `CASE
 // timeline of what happened. Importance is a filter, not a sort: an operator
 // scanning the day wants it in order, and re-ranking by a score would make the
 // same feed look different every time the classifier ran.
+// indianSymbol matches a symbol listed in India. The product covers US
+// equities only; the archive still holds events on Indian listings from
+// before that, and every read leaves them out rather than deleting them.
+const indianSymbol = `'\.(NSE|BSE)$'`
+
+// usRelevant keeps an event unless everything tying it to a company points
+// at an Indian listing: an Indian entity with no other, or evidence that came
+// only from an Indian instrument's own watchlist search.
+const usRelevant = `NOT (
+    EXISTS (SELECT 1 FROM event_entities xi WHERE xi.event_id = e.id AND xi.symbol ~ ` + indianSymbol + `)
+    AND NOT EXISTS (SELECT 1 FROM event_entities xu WHERE xu.event_id = e.id AND xu.symbol !~ ` + indianSymbol + `)
+) AND NOT (
+    EXISTS (SELECT 1 FROM event_evidence wi WHERE wi.event_id = e.id AND wi.source_id ~ '^watch-.*\.(nse|bse)$')
+    AND NOT EXISTS (SELECT 1 FROM event_evidence wu WHERE wu.event_id = e.id AND wu.source_id !~ '^watch-.*\.(nse|bse)$')
+)`
+
 func (d *DB) ListEvents(ctx context.Context, f EventFilter) ([]news.Event, error) {
 	limit := f.Limit
 	if limit <= 0 || limit > 500 {
@@ -91,6 +107,7 @@ func (d *DB) ListEvents(ctx context.Context, f EventFilter) ([]news.Event, error
 		args = append(args, value)
 		where = append(where, fmt.Sprintf(clause, len(args)))
 	}
+	where = append(where, usRelevant)
 
 	if f.Symbol != "" {
 		sym := strings.ToUpper(f.Symbol)
@@ -280,7 +297,7 @@ func (d *DB) attachEntities(ctx context.Context, list []news.Event, ids []int64)
 SELECT event_id, symbol, relationship::text, match_confidence, match_method,
        direction::text, impact_strength, rationale
 FROM event_entities
-WHERE event_id = ANY($1::bigint[])
+WHERE event_id = ANY($1::bigint[]) AND symbol !~ `+indianSymbol+`
 ORDER BY match_confidence DESC, symbol`, ids)
 	if err != nil {
 		return fmt.Errorf("postgres: load event entities: %w", err)
