@@ -280,7 +280,7 @@ function EvidenceRow({ ev }: { ev: Evidence }) {
       >
         <p className="flex items-center gap-2 text-meta text-text-muted">
           <span className="font-medium text-text-secondary">{host}</span>
-          <span>{formatAgo(ev.published_at || ev.discovered_at)}</span>
+          <time title={formatAgo(ev.published_at || ev.discovered_at)}>{formatDateTime(ev.published_at || ev.discovered_at)}</time>
           {ev.words ? <span>{ev.words.toLocaleString()} words read</span> : <span>headline only</span>}
           <ExternalLink size={12} className="ml-auto opacity-0 transition-opacity group-hover:opacity-100" />
         </p>

@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/tradesys/dashboard/internal/ai"
 	"github.com/tradesys/dashboard/internal/jev"
-	"github.com/tradesys/dashboard/internal/search"
 )
 
 // LLMTokensUsed reports total consumption in a period.
@@ -290,52 +288,6 @@ WHERE id = $6 AND resolved_at IS NULL`,
 		o.ActualScenario, o.BrierScore, o.ID)
 	if err != nil {
 		return fmt.Errorf("postgres: resolve outlook: %w", err)
-	}
-	return nil
-}
-
-// LoadSearch reads a cached search result.
-func (d *DB) LoadSearch(ctx context.Context, key string) (search.Results, bool, error) {
-	var (
-		raw             []byte
-		query, provider string
-		fetchedAt       time.Time
-	)
-	err := d.db.QueryRowContext(ctx,
-		`SELECT query, provider, results, fetched_at FROM search_cache WHERE key = $1`, key).
-		Scan(&query, &provider, &raw, &fetchedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return search.Results{}, false, nil
-	}
-	if err != nil {
-		return search.Results{}, false, fmt.Errorf("postgres: load search: %w", err)
-	}
-	var out search.Results
-	// A cached payload that no longer decodes is treated as a miss rather
-	// than an error: the caller simply fetches again.
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return search.Results{}, false, nil
-	}
-	out.Query, out.Provider = query, provider
-	out.FetchedAt = fetchedAt.UTC()
-	return out, true, nil
-}
-
-// SaveSearch stores a search result.
-func (d *DB) SaveSearch(ctx context.Context, key string, r search.Results) error {
-	raw, err := json.Marshal(r)
-	if err != nil {
-		return fmt.Errorf("postgres: encode search results: %w", err)
-	}
-	_, err = d.db.ExecContext(ctx, `
-INSERT INTO search_cache (key, query, provider, results, fetched_at)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (key) DO UPDATE SET
-    query = excluded.query, provider = excluded.provider,
-    results = excluded.results, fetched_at = excluded.fetched_at`,
-		key, r.Query, r.Provider, raw, r.FetchedAt.UTC())
-	if err != nil {
-		return fmt.Errorf("postgres: save search: %w", err)
 	}
 	return nil
 }

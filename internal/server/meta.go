@@ -16,7 +16,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		Features: metaFeatures{
 			AI:           c.LLMConfigured(),
 			Telegram:     c.TelegramConfigured(),
-			Search:       c.SearchConfigured(),
+			Search:       s.deps.Research != nil,
 			AlphaVantage: c.AlphaVantageConfigured(),
 		},
 		Providers: s.deps.Router.ProviderNames(),

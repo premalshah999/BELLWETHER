@@ -18,7 +18,7 @@ general:
   enable_metrics: false
 
 server:
-  secret_key: "0847bebd48e21b9079efa95144615136b50a27941c2ba5f49e07f051bd614c83"
+  secret_key: "set-by-SEARXNG_SECRET"  # overridden by the SEARXNG_SECRET environment variable
   limiter: false
   image_proxy: false
   # Bound to the compose network only; nothing publishes this to the host.

@@ -36,7 +36,6 @@ import (
 	"github.com/tradesys/dashboard/internal/notify"
 	"github.com/tradesys/dashboard/internal/notify/telegram"
 	"github.com/tradesys/dashboard/internal/scanner"
-	"github.com/tradesys/dashboard/internal/search"
 	"github.com/tradesys/dashboard/internal/server"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 	"github.com/tradesys/dashboard/internal/stream"
@@ -305,10 +304,6 @@ func run() error {
 		log.Info("telegram is not configured; alerts will appear in the in-app feed only")
 	}
 
-	// Search, news, and the AI feature layer.
-	searchRouter := search.NewRouter(store, buildSearchProviders(cfg),
-		search.WithLogger(log), search.WithObserver(tracker.Observe))
-
 	newsPoller := news.NewPoller(store, store,
 		news.WithPollerLogger(log), news.WithObserver(tracker.Observe))
 
@@ -495,10 +490,12 @@ func run() error {
 		log.Info("no TYPESAFE_API_KEY; decisions stay on the text model")
 	}
 
+	researchEngine := buildResearchEngine(cfg, store, newsArchive, companyMaster, router, log)
+
 	aiService := ai.NewService(llm, router, store, cfg.DisplayTZ,
 		ai.WithServiceLogger(log),
 		ai.WithResearchContext(ctx),
-		ai.WithSearch(searchRouter),
+		ai.WithSearch(webNews{researchEngine}),
 		ai.WithNews(store),
 		ai.WithScoreStore(store),
 		ai.WithWatchlist(store),
@@ -508,9 +505,6 @@ func run() error {
 
 	if !cfg.LLMConfigured() {
 		log.Info("no LLM configured; AI features will report as unconfigured and everything else runs normally")
-	}
-	if !cfg.SearchConfigured() {
-		log.Info("no search provider configured; explanations will fall back to collected news")
 	}
 
 	engineOpts := []alerts.EngineOption{alerts.WithLogger(log)}
@@ -547,8 +541,6 @@ func run() error {
 		return fmt.Errorf("start scheduler: %w", err)
 	}
 	defer scheduler.Stop()
-
-	researchEngine := buildResearchEngine(cfg, store, newsArchive, companyMaster, router, log)
 
 	// A process that died mid-research leaves a turn in 'running' forever,
 	// which the interface would show as a question permanently in progress.

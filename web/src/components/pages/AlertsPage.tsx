@@ -135,7 +135,7 @@ function AlertRow({ alert, onOpen }: { alert: Alert; onOpen: (symbol: string) =>
   const read = !!alert.read_at;
   return (
     <article className="flex gap-4 border-b border-border-subtle px-5 py-4 md:px-6 [contain-intrinsic-size:auto_110px] [content-visibility:auto]">
-      <time className="w-12 shrink-0 pt-0.5 font-num text-[12px] text-text-muted max-sm:hidden" title={formatAgo(alert.fired_at)}>
+      <time className="w-14 shrink-0 pt-0.5 font-num text-[12px] leading-[1.35] text-text-muted max-sm:hidden" title={formatAgo(alert.fired_at)}>
         {formatClock(alert.fired_at)}
       </time>
       <div className="min-w-0 flex-1">

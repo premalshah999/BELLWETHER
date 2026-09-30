@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { api, type EventQuery, type MarketEvent } from "../../lib/api";
 import { dayOf, formatClock, formatDateTime, formatDay } from "../../lib/format";
 import { useUrlList, useUrlState } from "../../lib/url";
+import { WebHeadlines } from "../WebHeadlines";
 import { EventDrawer, importanceLabel, typeLabel } from "../EventDrawer";
 import { MultiSelect, PageHeader, Segmented, Select, SkeletonRows, Switch } from "../ui/controls";
 
@@ -196,6 +197,13 @@ export function NewsPage({ onSelect }: { onSelect: (symbol: string) => void }) {
       </PageHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {q && (
+          <WebHeadlines
+            query={q}
+            title={`"${q}" on the web`}
+            className="mx-5 mb-5 rounded-xl border border-border-subtle bg-bg-card px-5 py-3.5 md:mx-8 md:px-6"
+          />
+        )}
         {isLoading ? (
           <SkeletonRows count={9} height={60} />
         ) : events.length === 0 ? (
@@ -278,7 +286,7 @@ function EventRow({
       <time
         dateTime={at}
         title={formatDateTime(at)}
-        className="w-12 shrink-0 pt-0.5 font-num text-[12px] text-text-muted max-sm:hidden"
+        className="w-14 shrink-0 pt-0.5 font-num text-[12px] leading-[1.35] text-text-muted max-sm:hidden"
       >
         {formatClock(at)}
       </time>

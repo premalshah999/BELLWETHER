@@ -9,7 +9,6 @@ import (
 	"github.com/tradesys/dashboard/internal/jev"
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
-	"github.com/tradesys/dashboard/internal/search"
 )
 
 // MarketSource supplies prices to the AI features. The market data router
@@ -25,10 +24,14 @@ type NewsSource interface {
 	ListArticles(ctx context.Context, symbol string, limit int) ([]news.Article, error)
 }
 
-// SearchSource supplies web results for sourced explanations.
+// WebResult is one headline found on the open web.
+type WebResult struct {
+	Title, URL, Source, Snippet string
+}
+
+// SearchSource supplies recent web headlines for sourced explanations.
 type SearchSource interface {
-	Configured() bool
-	Search(ctx context.Context, q search.Query) (search.Results, error)
+	News(ctx context.Context, query string, limit int) ([]WebResult, error)
 }
 
 // WatchlistSource supplies the symbols the morning brief covers.

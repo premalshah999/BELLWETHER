@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { api } from "../../lib/api";
 import type { StreamState } from "../../lib/stream";
-import { BrandMark, SearchButton, StatusDot, ThemeSwitch, useSystemStatus } from "./NavChrome";
+import { BrandMark, SearchButton, StatusDot, ThemeSwitch, ZoneSwitch, useSystemStatus } from "./NavChrome";
 import { NAV, TAB_BAR, titleFor } from "./nav";
 import { isActive, useUnreadAlerts } from "./SideNav";
 
@@ -139,6 +139,10 @@ function MoreSheet({ stream, unread, onClose }: { stream: StreamState; unread: n
             <span className="block text-micro text-text-muted">{s.market}</span>
           </span>
           <ThemeSwitch />
+        </div>
+        <div className="mx-5 flex items-center justify-between border-t border-border-subtle py-3">
+          <span className="text-meta text-text-muted">Times in</span>
+          <ZoneSwitch />
         </div>
         {auth?.required && (
           <button

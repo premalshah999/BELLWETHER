@@ -14,7 +14,6 @@ import (
 	"github.com/tradesys/dashboard/internal/indicators"
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/research"
-	"github.com/tradesys/dashboard/internal/search"
 )
 
 // Citation is one source the explanation may reference.
@@ -183,18 +182,12 @@ func (s *Service) gatherCitations(ctx context.Context, sym marketdata.Symbol) []
 	var citations []Citation
 	index := 1
 
-	if s.search != nil && s.search.Configured() {
-		// Deliberately the bare ticker, not the canonical symbol: a search
-		// engine reads "RELIANCE.NSE stock news" as a literal, broken
-		// phrase, not as an instrument to disambiguate. Precision against a
-		// same-named instrument on another venue is a smaller loss than a
-		// query that returns nothing.
-		query := sym.Ticker + " stock news"
-		results, err := s.search.Search(ctx, search.Query{Text: query, MaxResults: 5, Days: 3})
+	if s.search != nil {
+		results, err := s.search.News(ctx, sym.Ticker+" stock news", 5)
 		if err != nil {
 			s.log.Debug("search unavailable for explanation", "symbol", sym, "err", err)
 		} else {
-			for _, r := range results.Results {
+			for _, r := range results {
 				citations = append(citations, Citation{
 					Index: index, Title: r.Title, URL: r.URL,
 					Source: r.Source, Snippet: r.Snippet,

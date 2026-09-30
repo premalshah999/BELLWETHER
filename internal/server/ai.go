@@ -43,7 +43,7 @@ func (s *Server) handleAIStatus(w http.ResponseWriter, r *http.Request) {
 	resp.Status = s.deps.AI.Available(r.Context())
 	resp.Model = client.Model()
 	resp.CheapModel = client.CheapModel()
-	resp.Search = s.deps.Config.SearchConfigured()
+	resp.Search = s.deps.Research != nil
 
 	budget, err := client.Budget(r.Context())
 	if err != nil {

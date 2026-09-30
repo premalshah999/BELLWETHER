@@ -226,10 +226,3 @@ func summariseFailures(entries [][]any) string {
 	}
 	return strings.Join(parts, "; ")
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

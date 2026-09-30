@@ -7,6 +7,7 @@ import { useUrlState } from "../../lib/url";
 import { BarList, money } from "../charts/BarList";
 import { Drawer, PageHeader, Segmented, Select, SkeletonRows } from "../ui/controls";
 import { CongressPage } from "./CongressPage";
+import { formatDate } from "../../lib/format";
 
 const TABS = [
   { value: "overview", label: "Overview" },
@@ -23,10 +24,7 @@ const WINDOWS = [
   { value: "365", label: "Last year" },
 ] as const;
 
-function date(iso: string | undefined) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-}
+const date = (iso: string | undefined) => formatDate(iso, { month: "short", day: "numeric" });
 
 function secURL(t: InsiderTrade) {
   return `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${t.owner_cik}&type=4&dateb=&owner=include&count=40`;

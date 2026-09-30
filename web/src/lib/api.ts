@@ -1273,6 +1273,17 @@ export interface StockAnalysis {
   notes: string[];
 }
 
+/** One headline found on the open web. */
+export interface WebResult {
+  title: string;
+  url: string;
+  publisher: string;
+  snippet?: string;
+  published_at?: string;
+  engine: string;
+  symbols?: string[];
+}
+
 export const api = {
   /** Whether a session is required, whether this browser has one, and whose. */
   authStatus: () =>
@@ -1394,6 +1405,12 @@ export const api = {
   /** Valuation, reported periods and peer position for one company. */
   fundamentals: (symbol: string) =>
     request<Fundamentals>(`/api/symbols/${encodeURIComponent(symbol)}/fundamentals`),
+
+  /** Headlines from the open web, beyond the curated sources. */
+  webSearch: (q: string, kind: "news" | "web" = "news", limit = 12) =>
+    request<{ query: string; kind: string; results: WebResult[] }>(
+      `/api/web/search?q=${encodeURIComponent(q)}&kind=${kind}&limit=${limit}`,
+    ),
 
   scanLatest: (limit = 40) =>
     request<{ findings: ScanFinding[] | null; count: number }>(
