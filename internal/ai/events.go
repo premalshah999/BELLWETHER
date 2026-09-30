@@ -360,10 +360,6 @@ func clamp01(p *float64) float64 {
 func formatFacts(facts map[string]string) string {
 	keys := make([]string, 0, len(facts))
 	for k := range facts {
-		// Internal bookkeeping is not worth prompt tokens.
-		if strings.HasPrefix(k, "NSE_SYMBOL_PATH") {
-			continue
-		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)

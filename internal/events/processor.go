@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
 	"github.com/tradesys/dashboard/internal/news/company"
 )
@@ -61,12 +61,6 @@ type Processor struct {
 	minEntityConfidence float64
 	// onEvent, when set, receives each newly created event for live delivery.
 	onEvent func(EventNotice)
-
-	// usByCIK resolves an SEC filer's CIK to its bare US ticker. The filer
-	// declares its own CIK on every filing, which is a far stronger identity
-	// signal than the NSE document-path regex ever was -- there is no text
-	// matching involved at all, just a lookup.
-	usByCIK map[string]string
 }
 
 // AttentionSink is told when something happens to a set of instruments.
@@ -112,23 +106,12 @@ func WithProcessorClock(now func() time.Time) ProcessorOption {
 	return func(p *Processor) { p.now = now }
 }
 
-// WithUSCIKIndex supplies the CIK -> ticker map SEC filing entity resolution
-// needs. Built once from the embedded SEC ticker reference (see
-// company.LoadEmbeddedUS), the same way the NSE master is built once and
-// passed in rather than loaded per-processor.
-func WithUSCIKIndex(byCIK map[string]string) ProcessorOption {
-	return func(p *Processor) { p.usByCIK = byCIK }
-}
-
 // NewProcessor builds a processor.
 func NewProcessor(store Store, master *company.Master, registry *news.Registry, opts ...ProcessorOption) *Processor {
-	loc, err := time.LoadLocation("Asia/Kolkata")
-	if err != nil {
-		loc = time.FixedZone("IST", 5*3600+1800)
-	}
 	p := &Processor{
 		store: store, master: master, registry: registry,
-		log: slog.Default(), now: time.Now, loc: loc,
+		// Fingerprints bucket events by the market's calendar day.
+		log: slog.Default(), now: time.Now, loc: marketdata.Market,
 		minEntityConfidence: 0.85,
 	}
 	for _, opt := range opts {
@@ -209,10 +192,8 @@ func (p *Processor) processOne(ctx context.Context, item news.RawItem) (created,
 		headline = StripPublisher(headline, item.Publisher)
 	}
 
-	// Mutual-fund NAV declarations are 440 of a day's 1,600 NSE
-	// announcements. They are real disclosures about a different asset class,
-	// so they are recognised and kept as raw items, but they do not enter an
-	// equity operator's event stream.
+	// Disclosures about other asset classes are kept as raw items but do not
+	// enter an equity event stream.
 	if !typ.Equity() {
 		return false, false, true, false, nil
 	}
@@ -220,41 +201,16 @@ func (p *Processor) processOne(ctx context.Context, item news.RawItem) (created,
 	entities := p.resolveEntities(src, item, headline, summary, facts)
 	noEntity = len(entities) == 0
 
-	// A watchlist source is exempt from both relevance gates below. The
-	// operator has stated that this instrument matters to them, which
-	// settles the question those gates exist to answer — including for the
-	// US names a content filter would otherwise discard as unactionable.
-	//
-	// An official source is exempt for a different reason: it is not
-	// commentary to be judged relevant, it is the primary disclosure --
-	// an SEC Form 4's own filer entry (a person, not a company, and
-	// unresolvable by the CIK lookup on that account) is not "unproven
-	// foreign noise" the way a wire story about a company nobody here can
-	// trade would be. Indian official sources (NSE, RBI) never reached this
-	// gate in the first place, since src.Indian() was already true for
-	// them; this exemption is what makes the same true for SEC.
+	// A watchlist source is exempt from the relevance gates below: the
+	// operator has said this instrument matters. So is an official source,
+	// which is the primary disclosure rather than commentary to be judged.
 	if src.Watchlist() || src.Official() {
 		return p.finish(ctx, src, item, typ, headline, summary, facts, occurredAt, entities, noEntity)
 	}
 
-	// Every source has to earn its place in the feed, on the same terms.
-	//
-	// This gate used to exempt Indian sources outright and apply only to
-	// everyone else, from a time when the app covered one venue and a
-	// global desk's coverage of companies nobody here could trade was the
-	// only thing worth filtering. Two venues later that exemption had
-	// become the single biggest structural bias in the pipeline: measured
-	// over one production archive, Indian sources kept 89-99% of what they
-	// collected and US sources 1.7-8.3%, because an Indian source's
-	// entity-free item was waved through while a US one was discarded.
-	//
-	// The test is now the same for everybody and does not mention a
-	// country: name a company listed on a venue this app covers, or be the
-	// kind of event whose reach is sectoral or macro. Anything else is kept
-	// as evidence and left out of the stream. What makes this fair rather
-	// than merely symmetrical is the resolver change that landed with it --
-	// the master now holds the US listed universe too, so a US source can
-	// actually satisfy the first half, which it never could before.
+	// Every other source earns its place on the same terms: name a listed
+	// company, or be an event whose reach is sectoral or macro. Anything
+	// else is kept as evidence and left out of the stream.
 	if noEntity && !typ.SectorScope() {
 		return false, false, true, true, nil
 	}
@@ -267,9 +223,7 @@ func (p *Processor) processOne(ctx context.Context, item news.RawItem) (created,
 		return false, false, true, true, nil
 	}
 
-	// The same test applied to content rather than origin. Indian outlets
-	// republish a great deal of US market commentary, which the source-level
-	// gate cannot catch because the source is Indian.
+	// Market commentary that names no company is not an event either.
 	if noEntity && Unactionable(headline, summary) {
 		return false, false, true, true, nil
 	}
@@ -458,10 +412,7 @@ func (p *Processor) interpret(src news.Source, item news.RawItem) (typ Type, hea
 		if doctype := pf["DOCTYPE"]; doctype != "" {
 			facts["FR_DOCTYPE"] = doctype
 		}
-		// The readable part of the description is everything before the
-		// first "|KEY: VALUE" marker -- parsePipeFacts only extracts the
-		// facts, so the abstract itself is recovered the same way NSE's
-		// announcement parser separates its own summary from its subject.
+		// The abstract is everything before the first "|KEY: VALUE" marker.
 		summary := item.Description
 		if i := strings.IndexByte(summary, '|'); i >= 0 {
 			summary = strings.TrimSpace(summary[:i])
@@ -488,52 +439,15 @@ func (p *Processor) interpret(src news.Source, item news.RawItem) (typ Type, hea
 	return fast.Type, item.Title, item.Description, facts, time.Time{}
 }
 
-// maxHeadlineChars is where a headline stops being a headline.
-const maxHeadlineChars = 110
-
-// condenseHeadline reduces a filing's text to something that reads as a title.
-//
-// Most NSE descriptions are a phrase and need no work. The exceptions are the
-// exchange's surveillance notices, whose entire substance is a single
-// 300-character sentence of statutory boilerplate: "Significant movement in
-// price has been observed in X. The Exchange, in order to ensure that
-// investors have latest relevant information about the company and to inform
-// the market place so that the interest of the investors is safeguarded, has
-// written to the company. The response from the company is awaited."
-//
-// Used whole, that is not a headline — it is a paragraph, and a feed of them
-// is unreadable. The first sentence carries the news; the rest is the same
-// sentence on every such notice, and it stays available in the summary and in
-// the evidence.
-func condenseHeadline(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= maxHeadlineChars {
-		return s
-	}
-	// Prefer a sentence boundary, when one falls somewhere useful.
-	if i := strings.Index(s, ". "); i > 24 && i <= maxHeadlineChars {
-		return s[:i]
-	}
-	// Otherwise cut on a word boundary rather than mid-word.
-	cut := s[:maxHeadlineChars]
-	if i := strings.LastIndexByte(cut, ' '); i > 40 {
-		cut = cut[:i]
-	}
-	return strings.TrimRight(cut, " ,;:") + "…"
-}
-
 // classifyPolicy types a regulator or ministry publication.
 func classifyPolicy(src news.Source, title string) Type {
 	t := strings.ToLower(title)
 	switch {
-	case strings.Contains(t, "monetary policy") || strings.Contains(t, "repo rate") ||
-		strings.Contains(t, "inflation") || strings.Contains(t, "gdp"):
+	case containsAny(t, "monetary policy", "federal funds", "interest rate", "inflation", "gdp", "employment situation"):
 		return TypeMacroEvent
-	case strings.Contains(t, "circular") || strings.Contains(t, "regulation") ||
-		strings.Contains(t, "amendment") || strings.Contains(t, "directions"):
+	case containsAny(t, "final rule", "proposed rule", "regulation", "amendment", "guidance"):
 		return TypeRegulatoryPolicy
-	case strings.Contains(t, "penalty") || strings.Contains(t, "order against") ||
-		strings.Contains(t, "bars ") || strings.Contains(t, "debars"):
+	case containsAny(t, "penalty", "charges", "settles", "order against", "bars ", "debars"):
 		return TypeRegulatoryAction
 	}
 	switch src.Category {
@@ -545,69 +459,44 @@ func classifyPolicy(src news.Source, title string) Type {
 	return TypeUnclassified
 }
 
-// resolveEntities decides which companies an item concerns.
-//
-// The strongest evidence available is used and weaker evidence is not stacked
-// on top of it. An NSE filing whose document path names a symbol has told us
-// the company outright, and running a text resolver over the headline as well
-// would only add opportunities to be wrong.
-// nseSymbol renders a bare NSE ticker (what company.Master resolves text
-// against) as the canonical, venue-qualified symbol everything downstream of
-// entity resolution is stored under. p.master is always the NSE master here
-// -- there is no US text resolver wired into this pipeline yet -- so every
-// resolution this function produces is unambiguously NSE.
-// sourceVenue is the venue a source's coverage is about, used only to settle
-// a name or ticker claimed on both venues (INFY, ABB) -- see
-// company.ResolveForVenue. A source with no country expresses no preference
-// and those matches stay ambiguous, exactly as before.
-func sourceVenue(src news.Source) string {
-	switch src.Country {
-	case "IN":
-		return company.VenueNSE
-	case "US":
-		return company.VenueUS
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
 	}
-	return ""
+	return false
 }
 
+// resolveEntities decides which companies an item concerns, from the
+// strongest evidence available: a scoped search, then a filer's own CIK, then
+// the text. Weaker evidence is not stacked on a stronger answer.
 func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline, summary string, facts map[string]string) []news.EventEntity {
 	if p.master == nil {
 		return nil
 	}
+	text := headline
+	if summary != "" && summary != headline {
+		text = headline + ". " + summary
+	}
 
-	// Path 0: the query was scoped to one company.
-	//
-	// A watchlist source searches for a named instrument, so every result is
-	// about it by construction. Resolving from the headline instead threw
-	// that away and discarded most of what these sources returned — a Reuters
-	// piece headlined "Ambani weighs aluminium entry" is about Reliance, and
-	// no amount of text matching will say so.
-	//
-	// Text resolution still runs, because an article can concern several
-	// companies and the others are worth having. This only guarantees the one
-	// that was asked for.
+	// A watchlist source searched for one company, so every result is about
+	// it by construction, even when the headline never names it. The text
+	// still runs, for the other companies an article concerns.
 	if len(src.Symbols) == 1 && src.Watchlist() {
-		want := strings.ToUpper(src.Symbols[0])
-		if c, listed := p.master.Lookup(want); listed {
+		if c, listed := p.master.Lookup(src.Symbols[0]); listed {
 			out := []news.EventEntity{{
-				Symbol: c.CanonicalSymbol(), Relationship: news.RelPrimary,
-				// High, but below a filing naming itself: a scoped search
-				// does return the occasional unrelated result.
+				Symbol: c.Symbol, Relationship: news.RelPrimary,
+				// High, but a scoped search returns the odd unrelated result.
 				MatchConfidence: 0.9, MatchMethod: "watchlist_query",
 			}}
-			text := headline
-			if summary != "" && summary != headline {
-				text = headline + ". " + summary
-			}
-			for _, m := range p.master.ResolveAboveForVenue(text, p.minEntityConfidence, sourceVenue(src)) {
-				if m.CanonicalSymbol() == c.CanonicalSymbol() {
-					// The text confirms it; upgrade to what the text says.
-					out[0].MatchConfidence = m.Confidence
-					out[0].MatchMethod = string(m.Method)
+			for _, m := range p.master.ResolveAbove(text, p.minEntityConfidence) {
+				if m.Symbol == c.Symbol {
+					out[0].MatchConfidence, out[0].MatchMethod = m.Confidence, string(m.Method)
 					continue
 				}
 				out = append(out, news.EventEntity{
-					Symbol: m.CanonicalSymbol(), Relationship: news.RelMentioned,
+					Symbol: m.Symbol, Relationship: news.RelMentioned,
 					MatchConfidence: m.Confidence, MatchMethod: string(m.Method),
 				})
 			}
@@ -615,27 +504,10 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 		}
 	}
 
-	// Path 1: the filing names its own symbol.
-	if sym, ok := facts["NSE_SYMBOL_PATH"]; ok {
-		if c, listed := p.master.Lookup(sym); listed {
-			return []news.EventEntity{{
-				Symbol: c.CanonicalSymbol(), Relationship: news.RelPrimary,
-				MatchConfidence: 0.99, MatchMethod: "nse_document_path",
-			}}
-		}
-		// The path named a symbol the master does not list. That happens
-		// after a rename — a filing arrived under IHFL when the listing had
-		// become SAMMAANCAP — so the symbol is not trusted and the company
-		// name is resolved instead.
-		p.log.Debug("filing path names an unlisted symbol", "symbol", sym, "source", src.ID)
-	}
-
-	// Path 1b: an SEC filing names its own CIK. Stronger even than NSE's
-	// document-path symbol, because there is no text pattern involved at
-	// all -- the filer declares an identifier under penalty of the
-	// securities laws, and it either resolves or it does not.
-	if cik, ok := facts["SEC_CIK"]; ok && p.usByCIK != nil {
-		if ticker, listed := p.usByCIK[cik]; listed {
+	// An SEC filing declares its filer's CIK under penalty of the securities
+	// laws: no text matching involved.
+	if cik, ok := facts["SEC_CIK"]; ok {
+		if ticker, listed := p.master.ByCIK(cik); listed {
 			return []news.EventEntity{{
 				Symbol: ticker, Relationship: news.RelPrimary,
 				MatchConfidence: 0.99, MatchMethod: "sec_cik",
@@ -644,43 +516,19 @@ func (p *Processor) resolveEntities(src news.Source, item news.RawItem, headline
 		p.log.Debug("sec filing names an unrecognized cik", "cik", cik, "source", src.ID)
 	}
 
-	// Path 2: resolve from the text. For a filing that is the exchange's own
-	// rendering of the legal name, which is the resolver's best case.
-	text := headline
-	if summary != "" && summary != headline {
-		text = headline + ". " + summary
-	}
-	matches := p.master.ResolveAboveForVenue(text, p.minEntityConfidence, sourceVenue(src))
-	if len(matches) == 0 {
-		return nil
-	}
-
+	matches := p.master.ResolveAbove(text, p.minEntityConfidence)
 	out := make([]news.EventEntity, 0, len(matches))
 	for i, m := range matches {
+		// The strongest match is the subject when an official source filed it
+		// or the name matched near-certainly; otherwise it is only mentioned.
 		rel := news.RelMentioned
-		// The highest-confidence match in a filing is the filer. In a news
-		// headline the first company named is usually the subject, but that
-		// is a weaker claim, so only official sources get RelPrimary here.
 		if i == 0 && (src.Official() || m.Confidence >= 0.95) {
 			rel = news.RelPrimary
 		}
 		out = append(out, news.EventEntity{
-			Symbol: m.CanonicalSymbol(), Relationship: rel,
+			Symbol: m.Symbol, Relationship: rel,
 			MatchConfidence: m.Confidence, MatchMethod: string(m.Method),
 		})
 	}
 	return out
-}
-
-// numericFact parses a fact value, reporting whether it is a number at all.
-func numericFact(v string) (float64, bool) {
-	v = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(v), "%"))
-	if v == "" {
-		return 0, false
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return 0, false
-	}
-	return f, true
 }

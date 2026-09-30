@@ -11,17 +11,13 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-func nse(t string) marketdata.Symbol {
-	return marketdata.Symbol{Ticker: t, Exchange: marketdata.ExchangeNSE}
-}
 func us(t string) marketdata.Symbol {
 	return marketdata.Symbol{Ticker: t, Exchange: marketdata.ExchangeUS}
 }
 
-// The vendor suffix is this package's business and nobody else's: symbols go
-// out as RELIANCE.NS and must come back as RELIANCE.NSE, or every downstream
-// join is against a symbol the rest of the schema has never heard of.
-func TestCalendarRetagsVendorSymbols(t *testing.T) {
+// Listings go out in the sidecar's spelling and come back canonical; an index
+// has no calendar and is never sent.
+func TestCalendarSendsListingsOnly(t *testing.T) {
 	var got struct {
 		Symbols []string `json:"symbols"`
 	}
@@ -30,8 +26,8 @@ func TestCalendarRetagsVendorSymbols(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"calendar": map[string]any{
-				"AAPL":        map[string]any{"earnings_date": "2026-10-29", "eps_average": 1.98},
-				"RELIANCE.NS": map[string]any{"earnings_date": "2026-10-16"},
+				"AAPL":  map[string]any{"earnings_date": "2026-10-29", "eps_average": 1.98},
+				"BRK-B": map[string]any{"earnings_date": "2026-11-01"},
 			},
 			"failed": []string{}, "elapsed_seconds": 0.5,
 		})
@@ -39,19 +35,19 @@ func TestCalendarRetagsVendorSymbols(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{BaseURL: srv.URL}
-	res, err := c.Calendar(context.Background(), []marketdata.Symbol{us("AAPL"), nse("RELIANCE")})
+	res, err := c.Calendar(context.Background(), []marketdata.Symbol{us("AAPL"), us("BRK-B"), {Ticker: "GSPC", Exchange: marketdata.ExchangeIndex}})
 	if err != nil {
 		t.Fatalf("Calendar: %v", err)
 	}
 
-	if want := []string{"AAPL", "RELIANCE.NS"}; !sameSet(got.Symbols, want) {
+	if want := []string{"AAPL", "BRK-B"}; !sameSet(got.Symbols, want) {
 		t.Errorf("sent %v, want %v (vendor spelling on the wire)", got.Symbols, want)
 	}
 	byCanonical := map[string]CalendarEntry{}
 	for _, e := range res.Entries {
 		byCanonical[e.Symbol.String()] = e
 	}
-	for _, want := range []string{"AAPL", "RELIANCE.NSE"} {
+	for _, want := range []string{"AAPL", "BRK-B"} {
 		if _, ok := byCanonical[want]; !ok {
 			t.Errorf("missing %q in results; got %v", want, keysOf(byCanonical))
 		}
@@ -126,18 +122,18 @@ func TestCalendarReportsFailuresAsSymbols(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"calendar": map[string]any{"AAPL": map[string]any{"earnings_date": "2026-10-29"}},
-			"failed":   []string{"RELIANCE.NS"},
+			"failed":   []string{"BRK-B"},
 		})
 	}))
 	defer srv.Close()
 
 	res, err := (&Client{BaseURL: srv.URL}).Calendar(context.Background(),
-		[]marketdata.Symbol{us("AAPL"), nse("RELIANCE")})
+		[]marketdata.Symbol{us("AAPL"), us("BRK-B"), {Ticker: "GSPC", Exchange: marketdata.ExchangeIndex}})
 	if err != nil {
 		t.Fatalf("Calendar: %v", err)
 	}
-	if len(res.Failed) != 1 || res.Failed[0].String() != "RELIANCE.NSE" {
-		t.Fatalf("failed = %v, want [RELIANCE.NSE] in canonical form", res.Failed)
+	if len(res.Failed) != 1 || res.Failed[0].String() != "BRK-B" {
+		t.Fatalf("failed = %v, want [BRK-B] in canonical form", res.Failed)
 	}
 }
 

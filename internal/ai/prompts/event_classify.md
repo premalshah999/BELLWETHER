@@ -22,12 +22,12 @@ Events:
 For each event return:
 
 **event_type** — keep the existing type unless the text plainly contradicts it.
-The type on an exchange filing came from the exchange's own subject line and is
-almost always right; override it only when the detail shows the subject was
-generic and the substance is specific. Choose from:
+The type on an SEC filing came from the form and its item codes and is almost
+always right; override it only when the detail shows the item was generic and
+the substance is specific. Choose from:
 {{.Types}}
 
-**importance** — an integer 0 to 10, for an equity operator on either venue.
+**importance** — an integer 0 to 10, for a US equity operator.
 Judge it against the company involved, not in the abstract: a $50 million
 contract is transformative for a small-cap and routine
 for a large one. Confirmation by an exchange or regulator raises importance; a

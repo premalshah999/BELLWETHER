@@ -49,8 +49,7 @@ func (m *memCache) SaveCandles(_ context.Context, sym Symbol, iv Interval, sourc
 		high = prev.RequestedLimit
 	}
 	m.series[k] = CachedSeries{
-		Candles: bars.Candles, Source: source,
-		ResolvedSymbol: bars.ResolvedSymbol, FetchedAt: time.Now().UTC(),
+		Candles: bars.Candles, Source: source, FetchedAt: time.Now().UTC(),
 		RequestedLimit: high,
 	}
 	return nil
@@ -98,13 +97,12 @@ func (m *memCache) seed(sym Symbol, iv Interval, source string, fetchedAt time.T
 
 // stubProvider is a Provider whose every response the test dictates.
 type stubProvider struct {
-	name     string
-	candles  []Candle
-	quote    Quote
-	resolved string
-	err      error
-	mu       sync.Mutex
-	calls    int
+	name    string
+	candles []Candle
+	quote   Quote
+	err     error
+	mu      sync.Mutex
+	calls   int
 }
 
 func (s *stubProvider) Name() string { return s.name }
@@ -116,7 +114,7 @@ func (s *stubProvider) Candles(context.Context, Symbol, Interval, int) (Bars, er
 	if s.err != nil {
 		return Bars{}, s.err
 	}
-	return Bars{Candles: s.candles, ResolvedSymbol: s.resolved}, nil
+	return Bars{Candles: s.candles}, nil
 }
 
 func (s *stubProvider) Quote(context.Context, Symbol) (Quote, error) {
@@ -151,7 +149,7 @@ func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-var testSym = MustParseSymbol("RELIANCE.BSE")
+var testSym = MustParseSymbol("AAPL")
 
 func TestRouterCandles(t *testing.T) {
 	frozen := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
@@ -417,11 +415,11 @@ func TestRouterSurvivesBrokenCache(t *testing.T) {
 }
 
 func TestRouterTTLPerInterval(t *testing.T) {
-	// Overnight IST, so that every age below also lands outside the trading
-	// session. Inside one, a bar is still forming and the interval's lifetime
+	// Overnight in New York, so that every age below also lands outside the
+	// trading session. Inside one, a bar is still forming and the interval's lifetime
 	// deliberately no longer applies — that rule is exercised on its own in
 	// TestRouterRefetchesProvisionalBar.
-	frozen := time.Date(2026, 8, 24, 20, 0, 0, 0, time.UTC)
+	frozen := time.Date(2026, 8, 25, 4, 0, 0, 0, time.UTC) // midnight ET
 	tests := []struct {
 		name      string
 		interval  Interval
@@ -457,12 +455,8 @@ func TestRouterTTLPerInterval(t *testing.T) {
 // Once trading stops it must be refetched even though its lifetime has not
 // expired, or a mid-session guess becomes the permanent record for that day.
 func TestRouterRefetchesProvisionalBar(t *testing.T) {
-	loc, err := time.LoadLocation("Asia/Kolkata")
-	if err != nil {
-		t.Skip("no tzdata")
-	}
-	capturedMidSession := time.Date(2026, 8, 24, 12, 52, 0, 0, loc)
-	afterTheClose := time.Date(2026, 8, 24, 17, 30, 0, 0, loc)
+	capturedMidSession := time.Date(2026, 8, 24, 12, 52, 0, 0, Market)
+	afterTheClose := time.Date(2026, 8, 24, 17, 30, 0, 0, Market)
 
 	cache := newMemCache()
 	cache.seed(testSym, Interval1d, "yahoo", capturedMidSession, 1, 2)
@@ -479,7 +473,7 @@ func TestRouterRefetchesProvisionalBar(t *testing.T) {
 
 	// A bar that was already settled when it was cached is not provisional,
 	// and must still be served from cache.
-	settled := time.Date(2026, 8, 24, 19, 0, 0, 0, loc)
+	settled := time.Date(2026, 8, 24, 19, 0, 0, 0, Market)
 	cache2 := newMemCache()
 	cache2.seed(testSym, Interval1d, "yahoo", settled, 1, 2)
 	p2 := &stubProvider{name: "yahoo", candles: makeCandles(9)}
@@ -542,7 +536,7 @@ func TestRouterQuote(t *testing.T) {
 	t.Run("falls back and flags stale", func(t *testing.T) {
 		cache := newMemCache()
 		cache.quotes[testSym.String()] = CachedQuote{
-			Quote:     Quote{Symbol: testSym, Price: 100, Currency: "INR"},
+			Quote:     Quote{Symbol: testSym, Price: 100, Currency: "USD"},
 			Source:    "yahoo",
 			FetchedAt: frozen.Add(-time.Hour),
 		}
@@ -588,50 +582,13 @@ func TestRouterQuote(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.Quote.Currency != "INR" {
-			t.Errorf("currency = %q, want INR", got.Quote.Currency)
+		if got.Quote.Currency != "USD" {
+			t.Errorf("currency = %q, want USD", got.Quote.Currency)
 		}
 		if got.Quote.Symbol != testSym {
 			t.Errorf("symbol = %v, want %v", got.Quote.Symbol, testSym)
 		}
 	})
-}
-
-func TestRouterPropagatesResolvedSymbol(t *testing.T) {
-	// A venue substitution must reach the API, and must survive the trip
-	// through the cache — a chart drawn from a sibling listing has to stay
-	// labelled as such on every subsequent read.
-	cache := newMemCache()
-	p := &stubProvider{name: "yahoo", candles: makeCandles(1, 2), resolved: "RELIANCE.NSE"}
-	r := NewRouter(cache, []Provider{p}, WithLogger(quietLogger()))
-
-	got, err := r.Candles(context.Background(), testSym, Interval1d, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.ResolvedSymbol != "RELIANCE.NSE" {
-		t.Errorf("ResolvedSymbol = %q, wanted the substitution surfaced", got.ResolvedSymbol)
-	}
-
-	cached, err := r.Candles(context.Background(), testSym, Interval1d, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cached.ResolvedSymbol != "RELIANCE.NSE" {
-		t.Errorf("after a cache hit, ResolvedSymbol = %q, want it preserved", cached.ResolvedSymbol)
-	}
-}
-
-func TestRouterNoResolvedSymbolWhenExact(t *testing.T) {
-	p := &stubProvider{name: "yahoo", candles: makeCandles(1, 2)}
-	r := NewRouter(newMemCache(), []Provider{p}, WithLogger(quietLogger()))
-	got, err := r.Candles(context.Background(), testSym, Interval1d, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.ResolvedSymbol != "" {
-		t.Errorf("ResolvedSymbol = %q, want empty when the exact listing served the data", got.ResolvedSymbol)
-	}
 }
 
 func TestRouterCacheCoverage(t *testing.T) {

@@ -13,14 +13,11 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-// Benchmark indices for the event study's abnormal-return calculation:
-// GSPC.INDEX (S&P 500, -> Yahoo's ^GSPC) for US-venue symbols, NSEI.INDEX
-// (NIFTY 50, -> ^NSEI) for NSE ones. The index itself, not an ETF, so the
-// comparison is against what the market did rather than what one fund's
-// tracking and fees did to it.
+// The event study measures abnormal returns against the S&P 500 index itself,
+// not an ETF, so the comparison is with the market rather than one fund's
+// tracking and fees.
 const (
-	usBenchmarkSymbol   = "GSPC.INDEX"
-	nseBenchmarkSymbol  = "NSEI.INDEX"
+	benchmarkSymbol     = "GSPC.INDEX"
 	defaultHoldingDays  = 5
 	maxHoldingDays      = 60
 	eventStudyCandleLen = 400
@@ -82,41 +79,20 @@ func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// US listings only. The archive still holds events on Indian symbols from
-	// before the product narrowed to US equities; they belong to no benchmark
-	// the product shows and would quietly change its numbers.
+	// Only symbols that parse: the archive still holds events on retired
+	// Indian listings, which the parser refuses and which would otherwise
+	// quietly change the numbers.
 	us := pairs[:0]
 	for _, p := range pairs {
-		if sym, err := marketdata.ParseSymbol(p.Symbol); err == nil && !sym.IsIndian() {
+		if _, err := marketdata.ParseSymbol(p.Symbol); err == nil {
 			us = append(us, p)
 		}
 	}
 	pairs = us
 
-	var needUS, needNSE bool
-	for _, p := range pairs {
-		sym, err := marketdata.ParseSymbol(p.Symbol)
-		if err != nil {
-			continue
-		}
-		if sym.IsIndian() {
-			needNSE = true
-		} else {
-			needUS = true
-		}
-	}
-
-	// The benchmark is fetched through the router -- unlike the event
-	// population's own symbols below, there are at most two of these, so a
-	// cold-cache fetch here costs one real request per venue actually
-	// present rather than one per event.
-	var usBench, nseBench []marketdata.Candle
-	if needUS {
-		usBench = loadBenchmark(ctx, s, usBenchmarkSymbol)
-	}
-	if needNSE {
-		nseBench = loadBenchmark(ctx, s, nseBenchmarkSymbol)
-	}
+	// The benchmark goes through the router (one fetch at most); the event
+	// symbols below come from the store only.
+	bench := loadBenchmark(ctx, s, benchmarkSymbol)
 
 	// Each event symbol's own series comes from the store only, never a
 	// live fetch: an event type can span hundreds of distinct companies,
@@ -167,14 +143,6 @@ func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
 		if len(candles) == 0 {
 			continue
 		}
-		sym, err := marketdata.ParseSymbol(p.Symbol)
-		if err != nil {
-			continue
-		}
-		bench := usBench
-		if sym.IsIndian() {
-			bench = nseBench
-		}
 		if len(bench) == 0 {
 			continue
 		}
@@ -183,7 +151,7 @@ func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	res := eventstudy.Run(eventType, benchmarkLabel(needUS, needNSE), days, len(pairs), samples)
+	res := eventstudy.Run(eventType, "S&P 500", days, len(pairs), samples)
 	s.studies.put(key, res, s.deps.Now())
 	writeJSON(w, http.StatusOK, res)
 }
@@ -237,15 +205,4 @@ func loadBenchmark(ctx context.Context, s *Server, symbol string) []marketdata.C
 		return nil
 	}
 	return series.Candles
-}
-
-func benchmarkLabel(needUS, needNSE bool) string {
-	switch {
-	case needUS && needNSE:
-		return "S&P 500 (US symbols) / NIFTY 50 (NSE symbols)"
-	case needNSE:
-		return "NIFTY 50"
-	default:
-		return "S&P 500"
-	}
 }

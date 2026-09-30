@@ -15,7 +15,7 @@ import (
 // every open connection.
 func TestUnchangedQuotesAreNotRepublished(t *testing.T) {
 	q := &QuoteSource{}
-	sym := marketdata.Symbol{Ticker: "RELIANCE", Exchange: marketdata.ExchangeNSE}
+	sym := marketdata.Symbol{Ticker: "AAPL"}
 	q.last = map[string]marketdata.Quote{}
 
 	first := marketdata.Quote{Price: 1298, Volume: 5_735_384}

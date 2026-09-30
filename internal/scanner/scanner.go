@@ -27,22 +27,10 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-// vendorTicker renders a canonical symbol in the price sidecar's dialect —
-// the same .NS/.BO/bare mapping yfin.vendorSymbol uses, duplicated here
-// because the scanner talks to the sidecar directly rather than through the
-// market-data router. ok is false for a venue the sidecar cannot scan (an
-// index has no fundamentals-style bar history worth scanning).
+// vendorTicker is the price sidecar's spelling of a symbol; indices are not
+// scanned.
 func vendorTicker(sym marketdata.Symbol) (vendor string, ok bool) {
-	switch sym.Exchange {
-	case marketdata.ExchangeUS:
-		return sym.Ticker, true
-	case marketdata.ExchangeNSE:
-		return sym.Ticker + ".NS", true
-	case marketdata.ExchangeBSE:
-		return sym.Ticker + ".BO", true
-	default:
-		return "", false
-	}
+	return sym.Ticker, sym.Exchange == marketdata.ExchangeUS
 }
 
 // Metrics are one instrument's behaviour, reduced to what a scanner reasons

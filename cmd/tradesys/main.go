@@ -1,5 +1,5 @@
 // Command tradesys runs the TradeSys Dashboard: a market analysis and alerting
-// server for Indian and US equities.
+// server for US equities.
 //
 // This build contains no order-placement code path of any kind. It observes
 // markets and notifies; it does not trade.
@@ -45,33 +45,9 @@ import (
 // version is stamped at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
-// seedSymbols populate an empty watchlist on first run.
-//
-// A fresh install opening on two tickers looks like a demo, so this is a
-// working set a US-first operator would plausibly start from: US megacaps
-// across sectors, plus a handful of large-cap Indian names since NSE stays a
-// supported second venue. Anything else is a search away, and the whole list
-// can be removed in a few clicks.
-var seedSymbols = []string{
-	// United States, across sectors rather than tech alone.
-	"AAPL",
-	"MSFT",
-	"NVDA",
-	"GOOGL",
-	"AMZN",
-	"META",
-	"JPM",
-	"XOM",
-	"JNJ",
-	"WMT",
-
-	// India — NSE, which has deeper history than BSE on most of these.
-	"RELIANCE.NSE",
-	"TCS.NSE",
-	"HDFCBANK.NSE",
-	"INFY.NSE",
-	"ICICIBANK.NSE",
-}
+// seedSymbols populate an empty watchlist on first run: large caps across
+// sectors rather than tech alone. Anything else is a search away.
+var seedSymbols = []string{"AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "JPM", "XOM", "JNJ", "WMT"}
 
 func main() {
 	// -reprocess rebuilds every event from the raw items already held, then
@@ -207,17 +183,9 @@ func runReprocess() error {
 	}
 	log.Info("discarded derived events; rebuilding from raw items", "discarded", discarded)
 
-	// The US universe is merged into the master, not kept beside it: the
-	// resolver has to be able to name a US company from free text, or every
-	// US publisher's item arrives entity-free and the relevance gate
-	// discards it (see company.MergeUS for the measured damage that did).
-	master, err := company.LoadEmbeddedUSMaster()
+	master, err := company.Load()
 	if err != nil {
 		return fmt.Errorf("load company master: %w", err)
-	}
-	usTickers, _, err := company.LoadEmbeddedUS()
-	if err != nil {
-		return fmt.Errorf("load us company master: %w", err)
 	}
 	registry, err := buildRegistry(cfg.SECUserAgent)
 	if err != nil {
@@ -230,7 +198,7 @@ func runReprocess() error {
 	syncWatchlistSources(ctx, registry, store, master, nil, log)
 
 	processor := events.NewProcessor(store, master, registry,
-		events.WithProcessorLogger(log), events.WithUSCIKIndex(buildUSCIKIndex(usTickers)))
+		events.WithProcessorLogger(log))
 
 	var total, created, merged, filtered int
 	for {
@@ -358,17 +326,12 @@ func run() error {
 	// and rebuilding it costs one polling cycle.
 	attention := news.NewTracker(time.Now)
 
-	companyMaster, err := company.LoadEmbeddedUSMaster()
+	companyMaster, err := company.Load()
 	if err != nil {
 		return fmt.Errorf("load company master: %w", err)
 	}
-	usTickers, usListings, err := company.LoadEmbeddedUS()
-	if err != nil {
-		return fmt.Errorf("load us company master: %w", err)
-	}
-	universe := buildScanUniverse(usListings)
-	usByCIK := buildUSCIKIndex(usTickers)
-	log.Info("scan universe ready", "us", len(usListings))
+	universe := buildScanUniverse(companyMaster)
+	log.Info("scan universe ready", "symbols", len(universe.symbols))
 
 	// The market scanner: the half of the intelligence layer that does not
 	// wait to be told.
@@ -490,7 +453,6 @@ func run() error {
 	eventProcessor := events.NewProcessor(store, companyMaster, ingestEngine.Registry(),
 		events.WithProcessorLogger(log),
 		events.WithAttentionSink(attention),
-		events.WithUSCIKIndex(usByCIK),
 		// Newly created events go straight to any connected client. This is
 		// the difference between a filing appearing on screen when it is
 		// published and appearing when a twenty-second timer next fires.

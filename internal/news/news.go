@@ -4,7 +4,6 @@ package news
 
 import (
 	"context"
-	"net/url"
 	"strings"
 	"time"
 )
@@ -77,38 +76,15 @@ type Store interface {
 	PruneArticles(ctx context.Context, before time.Time) (int, error)
 }
 
-// GoogleNewsFeed builds a Google News RSS query URL for a symbol.
-//
-// Google News is the seed source because it needs no key and covers both
-// Indian and US press. The query includes the company name when known, since
-// a bare ticker like "TCS" collides with unrelated acronyms.
-func GoogleNewsFeed(symbol, company string, indian bool) string {
-	ticker := symbol
-	if i := strings.IndexByte(ticker, '.'); i > 0 {
-		ticker = ticker[:i]
-	}
-
+// GoogleNewsFeed is the Google News search for one symbol: the company name
+// as a phrase when known, since a bare ticker like "ALL" collides with words.
+func GoogleNewsFeed(symbol, company string) string {
+	ticker, _, _ := strings.Cut(symbol, ".")
 	query := ticker + " stock"
 	if company != "" {
 		query = "\"" + company + "\""
 	}
-
-	// US by default, because that is what this product covers. The Indian
-	// branch stays for a symbol that really is on NSE: those still exist in
-	// the archive, and searching for one in the US index finds the wrong
-	// company or nothing at all.
-	params := url.Values{
-		"q":    {query},
-		"hl":   {"en-US"},
-		"gl":   {"US"},
-		"ceid": {"US:en"},
-	}
-	if indian {
-		params.Set("hl", "en-IN")
-		params.Set("gl", "IN")
-		params.Set("ceid", "IN:en")
-	}
-	return "https://news.google.com/rss/search?" + params.Encode()
+	return GoogleNewsSearch(query)
 }
 
 func itoa(i int) string {

@@ -7,7 +7,7 @@ to someone holding or considering this instrument.
 Rules:
 - Lead with the concrete fact. Numbers, sizes, dates, counterparties.
 - If the item is routine — a procedural filing, a scheduling notice, a
-  shareholding pattern with no change — say so plainly and stop. Most items
+  ownership filing with no change — say so plainly and stop. Most items
   are routine and pretending otherwise is worse than silence.
 - Never predict a price move or recommend an action.
 - Say "the filing does not say" rather than inferring anything the text does

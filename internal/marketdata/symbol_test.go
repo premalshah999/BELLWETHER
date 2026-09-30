@@ -12,18 +12,15 @@ func TestParseSymbol(t *testing.T) {
 		want      Symbol
 		wantErr   bool
 		canonical string
-		indian    bool
 		currency  string
 	}{
 		{name: "us plain", in: "AAPL", want: Symbol{"AAPL", ExchangeUS}, canonical: "AAPL", currency: "USD"},
 		{name: "us lowercase", in: "aapl", want: Symbol{"AAPL", ExchangeUS}, canonical: "AAPL", currency: "USD"},
 		{name: "us padded", in: "  AAPL  ", want: Symbol{"AAPL", ExchangeUS}, canonical: "AAPL", currency: "USD"},
-		{name: "bse", in: "RELIANCE.BSE", want: Symbol{"RELIANCE", ExchangeBSE}, canonical: "RELIANCE.BSE", indian: true, currency: "INR"},
-		{name: "nse", in: "TCS.NSE", want: Symbol{"TCS", ExchangeNSE}, canonical: "TCS.NSE", indian: true, currency: "INR"},
-		{name: "nse lowercase", in: "tcs.nse", want: Symbol{"TCS", ExchangeNSE}, canonical: "TCS.NSE", indian: true, currency: "INR"},
+		{name: "retired venue rejected", in: "TCS.NSE", wantErr: true},
 		{name: "empty", in: "", wantErr: true},
 		{name: "whitespace only", in: "   ", wantErr: true},
-		{name: "no ticker", in: ".BSE", wantErr: true},
+		{name: "no ticker", in: ".INDEX", wantErr: true},
 		{name: "unknown exchange", in: "FOO.LSE", wantErr: true},
 		{name: "yahoo dialect rejected", in: "RELIANCE.NS", wantErr: true},
 		{name: "class share with dot", in: "BRK.B", want: Symbol{"BRK-B", ExchangeUS}, canonical: "BRK-B", currency: "USD"},
@@ -52,9 +49,6 @@ func TestParseSymbol(t *testing.T) {
 			}
 			if got.String() != tc.canonical {
 				t.Errorf("String() = %q, want %q", got.String(), tc.canonical)
-			}
-			if got.IsIndian() != tc.indian {
-				t.Errorf("IsIndian() = %v, want %v", got.IsIndian(), tc.indian)
 			}
 			if got.Currency() != tc.currency {
 				t.Errorf("Currency() = %q, want %q", got.Currency(), tc.currency)
@@ -129,23 +123,16 @@ func TestSortCandles(t *testing.T) {
 	})
 }
 
-// TestParseSymbolRejectsNonTickers.
-//
-// The parser previously accepted any non-empty string, so a bulk watchlist
-// paste containing a stray line of prose added that line as an instrument and
-// the price stream then polled for it every few seconds.
+// A bulk paste with a stray line of prose must not become an instrument
+// that the price stream then polls every few seconds.
 func TestParseSymbolRejectsNonTickers(t *testing.T) {
-	// Real listings, including the punctuation Indian tickers actually use.
-	for _, good := range []string{
-		"RELIANCE.NSE", "TCS.NSE", "AAPL", "M&M.NSE", "M&MFIN.NSE",
-		"L&TFH.NSE", "BAJAJ-AUTO.NSE", "NIFTY50.NSE", "3MINDIA.NSE",
-	} {
+	for _, good := range []string{"AAPL", "BRK-B", "BF.B", "GSPC.INDEX", "^VIX", "MMM"} {
 		if _, err := ParseSymbol(good); err != nil {
 			t.Errorf("rejected a real ticker %q: %v", good, err)
 		}
 	}
 	for _, bad := range []string{
-		"@@@bad@@@", "", "   ", "hello world", "a b", "sym*bol",
+		"@@@bad@@@", "", "   ", "hello world", "a b", "sym*bol", "M&M",
 		"WAYTOOLONGATICKERNAMEHERE", "123", "!!!", "semi;colon",
 	} {
 		if sym, err := ParseSymbol(bad); err == nil {

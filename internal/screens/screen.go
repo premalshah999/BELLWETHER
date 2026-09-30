@@ -219,12 +219,9 @@ func (d *Definition) SQL() (string, []any) {
 			args = append(args, id)
 			marks = append(marks, fmt.Sprintf("$%d", len(args)))
 		}
-		// Watchlists store fully qualified symbols (RELIANCE.NSE) and the
-		// scanner stores bare NSE tickers, so the comparison has to strip the
-		// suffix or nothing ever matches.
 		where += fmt.Sprintf(`
 			AND m.symbol IN (
-				SELECT split_part(i.symbol, '.', 1)
+				SELECT i.symbol
 				FROM watchlist_items i
 				WHERE i.watchlist_id IN (%s)
 			)`, strings.Join(marks, ","))

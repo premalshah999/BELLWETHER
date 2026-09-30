@@ -7,33 +7,29 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-// nse is shorthand for the NSE symbol these tests build watched sources for.
-func nse(ticker string) marketdata.Symbol {
-	return marketdata.Symbol{Ticker: ticker, Exchange: marketdata.ExchangeNSE}
-}
+func us(ticker string) marketdata.Symbol { return marketdata.Symbol{Ticker: ticker} }
 
 // TestWatchlistSourceQuery covers the query a watched instrument gets.
 //
-// A bare ticker is a poor search — "TCS" reaches a great deal that is not Tata
-// Consultancy — so the registered name leads where one is known.
+// A bare ticker is a poor search — "ALL" reaches a great deal that is not
+// Allstate — so the registered name leads where one is known.
 func TestWatchlistSourceQuery(t *testing.T) {
-	withName := WatchlistSource(nse("RELIANCE"), "Reliance Industries Limited")
-	if !strings.Contains(withName.URL, "Reliance+Industries") {
+	withName := WatchlistSource(us("NVDA"), "NVIDIA Corporation")
+	if !strings.Contains(withName.URL, "NVIDIA") {
 		t.Errorf("query should lead with the company name: %s", withName.URL)
 	}
-	// The legal suffix is noise: publishers write "Reliance Industries".
-	if strings.Contains(withName.URL, "Limited") {
+	// The legal suffix is noise: publishers write "NVIDIA".
+	if strings.Contains(withName.URL, "Corporation") {
 		t.Errorf("the legal suffix should be trimmed from the query: %s", withName.URL)
 	}
 
-	// The bare ticker must not appear as an alternative: "Reliance" reaches
-	// "self-reliance", and every such result would then be attributed to the
-	// company because the query named it.
+	// The bare ticker must not appear as an alternative: every result it
+	// reaches would be attributed to the company because the query named it.
 	if strings.Contains(withName.URL, "OR") {
 		t.Errorf("query should not offer the bare ticker as an alternative: %s", withName.URL)
 	}
 
-	bare := WatchlistSource(nse("XYZ"), "")
+	bare := WatchlistSource(us("XYZ"), "")
 	if !strings.Contains(bare.URL, "XYZ") {
 		t.Errorf("a nameless instrument must still search its ticker: %s", bare.URL)
 	}
@@ -43,9 +39,9 @@ func TestWatchlistSourceQuery(t *testing.T) {
 // the scheduler can only poll a source harder for an eventful company if the
 // source says which company it follows.
 func TestWatchlistSourceCarriesItsSymbol(t *testing.T) {
-	s := WatchlistSource(nse("SUZLON"), "Suzlon Energy Limited")
-	if len(s.Symbols) != 1 || s.Symbols[0] != "SUZLON" {
-		t.Errorf("Symbols = %v, want [SUZLON]", s.Symbols)
+	s := WatchlistSource(us("CAT"), "Caterpillar Inc.")
+	if len(s.Symbols) != 1 || s.Symbols[0] != "CAT" {
+		t.Errorf("Symbols = %v, want [CAT]", s.Symbols)
 	}
 	if s.Lane() != LaneFast {
 		t.Errorf("lane = %s, want fast: a watched position is where being late matters", s.Lane())
@@ -59,14 +55,13 @@ func TestWatchlistSourceCarriesItsSymbol(t *testing.T) {
 }
 
 func TestWatchlistSourcesDeduplicate(t *testing.T) {
-	// The same company held on two exchanges is one company as far as news
-	// is concerned; polling twice would double the traffic to learn the same
-	// thing.
+	// The same company on two lists is one company as far as news is
+	// concerned; polling twice would double the traffic for nothing.
 	got := WatchlistSources([]Watched{
-		{Ticker: "RELIANCE", Venue: marketdata.ExchangeNSE, Company: "Reliance Industries Limited"},
-		{Ticker: "reliance", Venue: marketdata.ExchangeNSE, Company: "Reliance Industries Limited"},
-		{Ticker: "TCS", Venue: marketdata.ExchangeNSE},
-		{Ticker: "", Venue: marketdata.ExchangeNSE},
+		{Ticker: "NVDA", Company: "NVIDIA Corporation"},
+		{Ticker: "nvda", Company: "NVIDIA Corporation"},
+		{Ticker: "IBM"},
+		{Ticker: ""},
 	})
 	if len(got) != 2 {
 		t.Fatalf("got %d sources, want 2", len(got))
@@ -91,7 +86,7 @@ func TestRegistryReplaceSwapsOnlyItsCategory(t *testing.T) {
 	before := reg.Len()
 
 	added, removed, err := reg.Replace("watchlist",
-		WatchlistSources([]Watched{{Ticker: "AAPL", Venue: marketdata.ExchangeUS}, {Ticker: "MSFT", Venue: marketdata.ExchangeUS}}))
+		WatchlistSources([]Watched{{Ticker: "AAPL"}, {Ticker: "MSFT"}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +101,7 @@ func TestRegistryReplaceSwapsOnlyItsCategory(t *testing.T) {
 	}
 
 	// Shrinking the watchlist removes only what left it.
-	added, removed, err = reg.Replace("watchlist", WatchlistSources([]Watched{{Ticker: "MSFT", Venue: marketdata.ExchangeUS}}))
+	added, removed, err = reg.Replace("watchlist", WatchlistSources([]Watched{{Ticker: "MSFT"}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +123,7 @@ func TestRegistryReplaceSwapsOnlyItsCategory(t *testing.T) {
 // sources that would then be invisible to the next rebuild.
 func TestRegistryReplaceRejectsWrongCategory(t *testing.T) {
 	reg, _ := DefaultRegistry()
-	bad := WatchlistSource(nse("RELIANCE"), "Reliance Industries")
+	bad := WatchlistSource(us("NVDA"), "NVIDIA")
 	bad.Category = "markets"
 	if _, _, err := reg.Replace("watchlist", []Source{bad}); err == nil {
 		t.Error("expected a category mismatch to be rejected")
@@ -137,10 +132,9 @@ func TestRegistryReplaceRejectsWrongCategory(t *testing.T) {
 
 // Every per-instrument query carries a window.
 //
-// Without one, Google News ranks by relevance rather than recency and returns
-// whatever it likes: a bare "Reliance Industries" measured 81 items, 32 of
-// them older than a week and the oldest 1,541 days. Those arrive on every
-// poll, about the companies the operator cares most about.
+// Without one, Google News ranks by relevance rather than recency: a bare
+// company name measured 81 items, 32 older than a week and the oldest four
+// years, arriving on every poll.
 func TestWatchlistQueriesAreWindowed(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -148,11 +142,11 @@ func TestWatchlistQueriesAreWindowed(t *testing.T) {
 		want    string
 		notWant string
 	}{
-		{"followed", WatchlistSource(nse("RELIANCE"), "Reliance Industries Limited"), "when%3A3d", "when%3A1d"},
-		{"no company name", WatchlistSource(nse("XYZ"), ""), "when%3A3d", ""},
+		{"followed", WatchlistSource(us("NVDA"), "NVIDIA Corporation"), "when%3A3d", "when%3A1d"},
+		{"no company name", WatchlistSource(us("XYZ"), ""), "when%3A3d", ""},
 		{
 			"flagged by the scanner",
-			WatchlistSources([]Watched{{Ticker: "SUZLON", Venue: marketdata.ExchangeNSE, Company: "Suzlon Energy Limited", Attention: true}})[0],
+			WatchlistSources([]Watched{{Ticker: "CAT", Company: "Caterpillar Inc.", Attention: true}})[0],
 			"when%3A1d", "when%3A3d",
 		},
 	} {
@@ -170,8 +164,8 @@ func TestWatchlistQueriesAreWindowed(t *testing.T) {
 // An instrument the scanner flagged is polled harder than one merely being
 // followed: the move already happened, and the explanation is arriving now.
 func TestFlaggedInstrumentsArePolledHarder(t *testing.T) {
-	followed := WatchlistSources([]Watched{{Ticker: "TCS", Venue: marketdata.ExchangeNSE, Company: "Tata Consultancy Services"}})[0]
-	flagged := WatchlistSources([]Watched{{Ticker: "TCS", Venue: marketdata.ExchangeNSE, Company: "Tata Consultancy Services", Attention: true}})[0]
+	followed := WatchlistSources([]Watched{{Ticker: "IBM", Company: "International Business Machines"}})[0]
+	flagged := WatchlistSources([]Watched{{Ticker: "IBM", Company: "International Business Machines", Attention: true}})[0]
 	if flagged.Refresh >= followed.Refresh {
 		t.Errorf("flagged refresh %s is not faster than followed %s", flagged.Refresh, followed.Refresh)
 	}
@@ -185,8 +179,8 @@ func TestFlaggedInstrumentsArePolledHarder(t *testing.T) {
 // and whoever is following it still gets the news.
 func TestFlagWinsOverFollowForTheSameTicker(t *testing.T) {
 	got := WatchlistSources([]Watched{
-		{Ticker: "SUZLON", Venue: marketdata.ExchangeNSE, Company: "Suzlon Energy"},
-		{Ticker: "SUZLON", Venue: marketdata.ExchangeNSE, Company: "Suzlon Energy", Attention: true},
+		{Ticker: "CAT", Company: "Caterpillar"},
+		{Ticker: "CAT", Company: "Caterpillar", Attention: true},
 	})
 	if len(got) != 1 {
 		t.Fatalf("got %d sources, want 1", len(got))

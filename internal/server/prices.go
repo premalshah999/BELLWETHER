@@ -39,14 +39,13 @@ func (s *Server) handleCandles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, candlesResponse{
-		Symbol:         sym.String(),
-		Interval:       string(interval),
-		Currency:       sym.Currency(),
-		Candles:        series.Candles,
-		Source:         series.Source,
-		ResolvedSymbol: series.ResolvedSymbol,
-		FetchedAt:      series.FetchedAt,
-		Stale:          series.Stale,
+		Symbol:    sym.String(),
+		Interval:  string(interval),
+		Currency:  sym.Currency(),
+		Candles:   series.Candles,
+		Source:    series.Source,
+		FetchedAt: series.FetchedAt,
+		Stale:     series.Stale,
 	})
 }
 
@@ -92,7 +91,7 @@ type searchResult struct {
 //
 // This is what makes the watchlist more than the two symbols it ships with:
 // without discovery, an operator has to already know that Infosys is
-// INFY.NSE before they can add it.
+// a ticker before they can add it.
 func (s *Server) handleSearchSymbols(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {
@@ -101,7 +100,7 @@ func (s *Server) handleSearchSymbols(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.deps.Searcher == nil {
 		writeError(w, http.StatusServiceUnavailable, "search_unavailable",
-			"Symbol search needs the yfinance provider. You can still add a symbol by typing it exactly, for example RELIANCE.NSE.")
+			"Symbol search needs the yfinance provider. You can still add a symbol by typing it exactly, for example AAPL.")
 		return
 	}
 

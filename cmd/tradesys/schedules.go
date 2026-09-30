@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
+
 	"github.com/tradesys/dashboard/internal/ai"
 	"github.com/tradesys/dashboard/internal/config"
 	"github.com/tradesys/dashboard/internal/events"
 	"github.com/tradesys/dashboard/internal/fundamentals"
-	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
 	"github.com/tradesys/dashboard/internal/scanner"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
@@ -103,17 +103,14 @@ func startAISchedules(
 	// understood to under-report; the close scan is the one whose output
 	// should be trusted.
 	if marketScanner != nil {
-		usScope := func(s marketdata.Symbol) bool { return !s.IsIndian() && !s.IsIndex() }
-		scan := func(scope func(marketdata.Symbol) bool) func(context.Context) {
-			return func(runCtx context.Context) {
-				if _, err := marketScanner.Run(runCtx, scope); err != nil {
-					log.Warn("market scan failed", "err", err)
-				}
+		scan := func(runCtx context.Context) {
+			if _, err := marketScanner.Run(runCtx); err != nil {
+				log.Warn("market scan failed", "err", err)
 			}
 		}
-		add("market scan (us close)", "CRON_TZ=America/New_York 15 16 * * 1-5", scan(usScope))
-		add("market scan (us intraday)", "CRON_TZ=America/New_York 15,45 10-15 * * 1-5", scan(usScope))
-		add("market scan (us open)", "CRON_TZ=America/New_York 45 9 * * 1-5", scan(usScope))
+		add("market scan (us close)", "CRON_TZ=America/New_York 15 16 * * 1-5", scan)
+		add("market scan (us intraday)", "CRON_TZ=America/New_York 15,45 10-15 * * 1-5", scan)
+		add("market scan (us open)", "CRON_TZ=America/New_York 45 9 * * 1-5", scan)
 
 		// The forward calendar, once a day before the US open.
 		//

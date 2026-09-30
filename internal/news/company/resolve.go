@@ -7,150 +7,69 @@ import (
 	"unicode"
 )
 
-// explicitTicker matches notations that name an instrument unambiguously,
-// because a venue or suffix accompanies the symbol: "NSE: RELIANCE",
-// "BSE:500325", "RELIANCE.NS", "TCS.BO".
-var explicitTicker = regexp.MustCompile(`(?i)\b(?:NSE|BSE)\s*[:\-]\s*([A-Z0-9&]{2,20})\b|\b([A-Z0-9&]{2,20})\.(?:NS|BO)\b`)
+// exchangeTicker matches the exchange-qualified notation US market copy uses
+// constantly -- "(NASDAQ:NVDA)", "NYSE: KO". The ticker is an unambiguous
+// identification, and the exchange name must not be read as a company:
+// Nasdaq Inc. is itself listed (NDAQ).
+var exchangeTicker = regexp.MustCompile(`(?i)\b(?:NASDAQ|NYSE|NYSEAMERICAN|NYSEARCA|AMEX|OTC|CBOE)\s*[:\-]\s*([A-Z0-9.\-]{1,6})\b`)
 
-// usExchangeTicker matches the exchange-qualified notation US market copy
-// uses constantly -- "(NASDAQ:NVDA)", "NYSE: KO". It earns its own pattern
-// for two reasons: the ticker after the colon is an unambiguous
-// identification, and the exchange name before it must NOT be read as a
-// company. Nasdaq Inc. is itself listed as NDAQ, so "NVIDIA (NASDAQ:NVDA)"
-// was resolving to both NVDA and NDAQ until this existed.
-var usExchangeTicker = regexp.MustCompile(`(?i)\b(?:NASDAQ|NYSE|NYSEAMERICAN|NYSEARCA|AMEX|OTC|CBOE)\s*[:\-]\s*([A-Z0-9.\-]{1,6})\b`)
-
-// exchangeWords are never company mentions when they appear as the exchange
-// half of that notation, or as a bare word in market copy.
-var exchangeWords = map[string]bool{
-	"NASDAQ": true, "NYSE": true, "AMEX": true, "CBOE": true, "OTC": true,
-	"NSE": true, "BSE": true,
-}
+// exchangeWords are never company mentions as bare words in market copy.
+var exchangeWords = map[string]bool{"NASDAQ": true, "NYSE": true, "AMEX": true, "CBOE": true, "OTC": true}
 
 // Resolve finds the companies named in text.
 //
-// The ladder runs most-certain first — explicit ticker notation, then the
-// registered legal name, then a curated alias, then a bare uppercase symbol —
-// and a company already resolved by a stronger rule is never downgraded by a
-// weaker one. Matching is longest-first and non-overlapping, so "Tata
-// Consultancy Services" resolves once as TCS rather than also offering up
-// whatever "Tata Consultancy" might match.
-//
-// Ambiguity is not resolved by guessing. A phrase claimed by more than one
-// listing yields nothing unless the claimants are share classes of a single
-// issuer, in which case the ordinary class is chosen.
-func (m *Master) Resolve(text string) []Match { return m.ResolveForVenue(text, "") }
-
-// ResolveForVenue is Resolve with a tie-breaker: when a name or ticker is
-// claimed on both venues, the one matching prefer ("NSE" or "US") wins
-// instead of the match being discarded as ambiguous. Pass "" for no
-// preference, which is exactly Resolve.
-//
-// The caller that has a preference is the news pipeline: a source has a
-// country, and a US wire writing "Infosys" means the ADR while an Indian
-// paper means the NSE line. Nothing else about resolution changes -- a
-// phrase claimed by two companies on the SAME venue is still ambiguous and
-// still yields nothing.
-func (m *Master) ResolveForVenue(text, prefer string) []Match {
+// The ladder runs most-certain first -- exchange-qualified ticker, registered
+// name, curated alias, lead word, bare uppercase symbol -- and a company found
+// by a stronger rule is never downgraded by a weaker one. Name matching is
+// longest-first and non-overlapping. A phrase claimed by two issuers matches
+// nothing: there is no evidence in the phrase for choosing.
+func (m *Master) Resolve(text string) []Match {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
-
 	best := map[string]Match{}
-	offer := func(canonical string, conf float64, method Method, matched string) {
-		c, listed := m.bySymbol[canonical]
+	offer := func(sym string, conf float64, method Method, matched string) {
+		c, listed := m.bySymbol[sym]
 		if !listed {
 			return
 		}
-		if prev, seen := best[canonical]; seen && prev.Confidence >= conf {
+		if prev, seen := best[sym]; seen && prev.Confidence >= conf {
 			return
 		}
-		best[canonical] = Match{
-			Symbol: c.Symbol, Name: c.Name, Confidence: conf,
-			Method: method, Matched: matched, Venue: c.Venue,
-		}
+		best[sym] = Match{Symbol: c.Symbol, Name: c.Name, Confidence: conf, Method: method, Matched: matched}
 	}
 
-	// --- explicit venue-qualified notation ---------------------------------
-	for _, g := range explicitTicker.FindAllStringSubmatch(text, -1) {
-		sym := strings.ToUpper(g[1])
-		if sym == "" {
-			sym = strings.ToUpper(g[2])
-		}
-		// The notation this matches ("NSE: RELIANCE", "RELIANCE.NS") is
-		// Indian by construction, so it names the NSE line regardless of
-		// which venue the surrounding source prefers.
-		offer(sym+".NSE", confExplicit, MethodExplicit, sym)
-	}
-	// The exchange-qualified spans are consumed here and then blanked out of
-	// the text the later passes read. Otherwise "NVIDIA (NASDAQ:NVDA)" also
-	// resolves NDAQ, because Nasdaq Inc. is a listed company whose name is
-	// the word sitting in front of the colon. Blanking the span rather than
-	// blocking the word keeps "Nasdaq Inc. reported earnings" -- where the
-	// exchange is genuinely the subject -- resolving as it should.
-	for _, loc := range usExchangeTicker.FindAllStringSubmatchIndex(text, -1) {
-		if loc[2] >= 0 {
-			if sym := strings.ToUpper(text[loc[2]:loc[3]]); sym != "" {
-				offer(sym, confExplicit, MethodExplicit, sym)
-			}
+	// Exchange-qualified tickers, then blanked out so "NVIDIA (NASDAQ:NVDA)"
+	// does not also resolve Nasdaq Inc. Blanking the span rather than
+	// blocking the word keeps "Nasdaq Inc. reported earnings" working.
+	for _, g := range exchangeTicker.FindAllStringSubmatch(text, -1) {
+		if sym := strings.ToUpper(g[1]); sym != "" {
+			offer(sym, confExplicit, MethodExplicit, sym)
 		}
 	}
-	text = blankSpans(text, usExchangeTicker.FindAllStringIndex(text, -1))
+	text = blankSpans(text, exchangeTicker.FindAllStringIndex(text, -1))
 
-	// --- registered names and curated aliases ------------------------------
-	tokens := tokenize(Normalize(text))
+	// Registered names, aliases and lead words.
+	tokens := strings.Fields(Normalize(text))
 	for i := 0; i < len(tokens); i++ {
-		width := maxPhraseTokens
-		if remaining := len(tokens) - i; width > remaining {
-			width = remaining
-		}
-		for n := width; n >= 1; n-- {
+		for n := min(maxPhraseTokens, len(tokens)-i); n >= 1; n-- {
 			phrase := strings.Join(tokens[i:i+n], " ")
-			// A one-word phrase is the weakest evidence the resolver
-			// accepts, and normalisation has already destroyed the case
-			// information that separates a company from a common noun. Three
-			// guards apply, none of which a multi-word name needs:
-			//
-			//   - an ordinary English word that happens to be a listed name
-			//     ("Delta", "Swan") is refused outright;
-			//   - so is one that happens to be a listed ticker ("LT", "IDEA",
-			//     "TOTAL"), which the alias table would otherwise smuggle
-			//     past the bare-ticker blocklist;
-			//   - and what remains must appear capitalised in the original
-			//     text, because a company is a proper noun. This is what
-			//     separates "SAIL raised output" from "winds fail to sail".
+			// One word is the weakest evidence, and normalizing has discarded
+			// the case that separates a company from a common noun. So: no
+			// ordinary word ("Delta") or word-like ticker ("ALL") unless a
+			// person curated it as an alias, it must appear capitalized
+			// ("Apple unveils", not "an apple"), and a lead word must start
+			// a name rather than sit inside another one.
 			if n == 1 {
-				if nameBlocklist[phrase] || tickerBlocklist[strings.ToUpper(phrase)] {
-					continue
-				}
-				// The common-word lexicon guards lead words already; an
-				// un-curated one-word registered name needs it just as much,
-				// and needed it more once the US universe arrived, where
-				// single-word names are the norm rather than the exception.
-				//
-				// A curated alias is exempt: the lexicon exists to catch
-				// names nobody vetted, and "sail" is in it precisely because
-				// it is an ordinary word -- but a person put "sail" -> SAIL
-				// in the alias table on purpose, and that judgement outranks
-				// the generic guard.
-				if !m.aliasPhrase[phrase] && commonWords[phrase] {
-					continue
-				}
-				if !appearsCapitalized(text, phrase) {
-					continue
-				}
-				// A lead word stands in for a name only when it starts one.
-				// "Impex" opens Impex Ferro Tech, but in "Striders Impex
-				// Limited" it is the middle of a different company's name,
-				// and in "House of Abhinandan Lodha" it is the tail of a
-				// person's. Requiring that no capitalised word immediately
-				// precede it separates the two cases.
-				if m.leadPhrase[phrase] && !startsProperNoun(text, phrase) {
+				if nameBlocklist[phrase] || tickerBlocklist[strings.ToUpper(phrase)] ||
+					(!m.aliasPhrase[phrase] && commonWords[phrase]) ||
+					!appearsCapitalized(text, phrase) ||
+					(m.leadPhrase[phrase] && !startsProperNoun(text, phrase)) {
 					continue
 				}
 			}
-			sym, ok := m.disambiguate(m.byPhrase[phrase], prefer)
-			if !ok {
+			claimants := m.byPhrase[phrase]
+			if len(claimants) != 1 {
 				continue
 			}
 			conf, method := confLegalName, MethodLegalName
@@ -160,46 +79,23 @@ func (m *Master) ResolveForVenue(text, prefer string) []Match {
 			case m.leadPhrase[phrase]:
 				conf, method = confSingle, MethodLeadWord
 			case n == 1 && m.solePhrase[phrase]:
-				// The whole registered name is this one word. Nothing was
-				// dropped to reach the match, so it is a name match, not a
-				// lead -- see confSoleName.
 				conf = confSoleName
 			case n == 1:
-				// One word taken out of a longer name is weak evidence, so
-				// it is reported as a lead rather than a fact.
 				conf = confSingle
 			}
-			offer(sym, conf, method, phrase)
-			i += n - 1 // consume the span; no overlapping match
+			offer(claimants[0], conf, method, phrase)
+			i += n - 1 // consume the span
 			break
 		}
 	}
 
-	// --- bare uppercase symbols --------------------------------------------
-	// A headline in full capitals makes every word look like a ticker --
-	// press releases shout constantly ("PROJECT HEALTHY MINDS SETS THE
-	// STAGE...", which matched FOR) -- so the bare-ticker path, which
-	// depends entirely on capitalisation carrying information, is skipped
-	// when capitalisation carries none.
-	bareTickers := tickerTokens(text)
-	if isShouting(text) {
-		bareTickers = nil
-	}
-	for _, tok := range bareTickers {
-		if len(tok) < 3 || tickerBlocklist[tok] || exchangeWords[tok] {
-			continue
-		}
-		// A bare ticker can name a listing on either venue -- INFY and ABB
-		// are real on both -- so the same disambiguation the phrase path
-		// uses applies here rather than a first-match guess.
-		var claimants []string
-		for _, canonical := range []string{tok + ".NSE", tok} {
-			if _, listed := m.bySymbol[canonical]; listed {
-				claimants = append(claimants, canonical)
+	// Bare uppercase symbols, unless the whole text is shouted: in an
+	// all-caps press release every word looks like a ticker.
+	if !isShouting(text) {
+		for _, tok := range tickerTokens(text) {
+			if len(tok) >= 3 && !tickerBlocklist[tok] && !exchangeWords[tok] {
+				offer(tok, confTicker, MethodTicker, tok)
 			}
-		}
-		if sym, ok := m.disambiguate(claimants, prefer); ok {
-			offer(sym, confTicker, MethodTicker, tok)
 		}
 	}
 
@@ -216,31 +112,21 @@ func (m *Master) ResolveForVenue(text, prefer string) []Match {
 	return out
 }
 
-// ResolveAbove returns only matches at or above a confidence floor.
-//
-// Callers pick the floor to suit the cost of being wrong: an alert that
-// pushes to a phone should demand near-certainty, while a browsable company
-// timeline can afford a weaker lead.
-func (m *Master) ResolveAbove(text string, min float64) []Match {
-	return m.ResolveAboveForVenue(text, min, "")
-}
-
-// ResolveAboveForVenue is ResolveAbove with the venue tie-breaker described
-// on ResolveForVenue.
-func (m *Master) ResolveAboveForVenue(text string, min float64, prefer string) []Match {
-	all := m.ResolveForVenue(text, prefer)
+// ResolveAbove returns only matches at or above a confidence floor, chosen
+// by the caller to suit the cost of being wrong.
+func (m *Master) ResolveAbove(text string, floor float64) []Match {
+	all := m.Resolve(text)
 	out := all[:0]
 	for _, mt := range all {
-		if mt.Confidence >= min {
+		if mt.Confidence >= floor {
 			out = append(out, mt)
 		}
 	}
 	return out
 }
 
-// blankSpans replaces each half-open span with spaces, preserving every
-// byte offset so that the capitalisation checks downstream still line up
-// with the original string.
+// blankSpans replaces each span with spaces, preserving byte offsets so the
+// capitalization checks still line up with the original text.
 func blankSpans(text string, spans [][]int) string {
 	if len(spans) == 0 {
 		return text
@@ -254,138 +140,61 @@ func blankSpans(text string, spans [][]int) string {
 	return string(b)
 }
 
-// isShouting reports whether text is written predominantly in capitals, in
-// which case a capitalised token is evidence of nothing.
+// isShouting reports whether at least two thirds of the letters are capitals.
 func isShouting(text string) bool {
 	var upper, letters int
 	for _, r := range text {
-		if !unicode.IsLetter(r) {
-			continue
-		}
-		letters++
-		if unicode.IsUpper(r) {
-			upper++
+		if unicode.IsLetter(r) {
+			letters++
+			if unicode.IsUpper(r) {
+				upper++
+			}
 		}
 	}
-	// Two thirds, not all of it: real headlines mix in a lowercase word or
-	// two ("SETS THE STAGE FOR ITS FOURTH ANNUAL...") without ceasing to be
-	// shouted.
 	return letters >= 12 && upper*3 >= letters*2
 }
 
-// appearsCapitalized reports whether word occurs in raw text with a leading
-// capital, as a whole word. Matching is done on the raw string precisely
-// because Normalize has thrown this information away.
-func appearsCapitalized(raw, word string) bool {
-	if word == "" {
-		return false
-	}
-	for i := 0; i+len(word) <= len(raw); i++ {
-		if !strings.EqualFold(raw[i:i+len(word)], word) {
+// occurrences calls fn for every whole-word, capitalized occurrence of word
+// in raw text, stopping when fn returns true.
+func occurrences(raw, word string, fn func(i int) bool) bool {
+	for i := 0; word != "" && i+len(word) <= len(raw); i++ {
+		end := i + len(word)
+		if !strings.EqualFold(raw[i:end], word) || (raw[i] >= 'a' && raw[i] <= 'z') ||
+			(i > 0 && isWordByte(raw[i-1])) || (end < len(raw) && isWordByte(raw[end])) {
 			continue
 		}
-		if raw[i] >= 'a' && raw[i] <= 'z' {
-			continue // lower-case occurrence: prose, not a name
-		}
-		beforeOK := i == 0 || !isWordByte(raw[i-1])
-		end := i + len(word)
-		afterOK := end == len(raw) || !isWordByte(raw[end])
-		if beforeOK && afterOK {
+		if fn(i) {
 			return true
 		}
 	}
 	return false
 }
 
-// startsProperNoun reports whether word appears in raw text at the head of a
-// capitalised phrase — that is, with no capitalised word directly before it.
-// Punctuation breaks the chain, so a name after a comma or a quote still
-// counts as starting one.
+// appearsCapitalized reports whether word occurs capitalized, as a word.
+func appearsCapitalized(raw, word string) bool {
+	return occurrences(raw, word, func(int) bool { return true })
+}
+
+// startsProperNoun reports whether word appears at the head of a capitalized
+// phrase: "Costco" in "Costco raised prices", not in "Big Costco Rival".
+// Punctuation breaks the chain, so a name after a comma still counts.
 func startsProperNoun(raw, word string) bool {
-	for i := 0; i+len(word) <= len(raw); i++ {
-		if !strings.EqualFold(raw[i:i+len(word)], word) {
-			continue
-		}
-		if raw[i] >= 'a' && raw[i] <= 'z' {
-			continue
-		}
-		end := i + len(word)
-		if i > 0 && isWordByte(raw[i-1]) {
-			continue // mid-word, not a match at all
-		}
-		if end < len(raw) && isWordByte(raw[end]) {
-			continue
-		}
-		// Walk back over the separating run. Only spaces continue a name;
-		// anything else ends the previous phrase.
+	return occurrences(raw, word, func(i int) bool {
 		j := i
 		for j > 0 && raw[j-1] == ' ' {
 			j--
 		}
-		if j == 0 {
-			return true // starts the text
+		if j == 0 || !isLetterByte(raw[j-1]) {
+			return true
 		}
-		prevEnd := j
-		if !isLetterByte(raw[prevEnd-1]) {
-			return true // preceded by punctuation, so a new phrase begins
+		start := j
+		for start > 0 && isWordByte(raw[start-1]) {
+			start--
 		}
-		prevStart := prevEnd
-		for prevStart > 0 && isWordByte(raw[prevStart-1]) {
-			prevStart--
-		}
-		if c := raw[prevStart]; c >= 'A' && c <= 'Z' {
-			continue // a capitalised word runs into this one: same name
-		}
-		return true
-	}
-	return false
+		return !(raw[start] >= 'A' && raw[start] <= 'Z')
+	})
 }
 
-func isLetterByte(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
-}
+func isLetterByte(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') }
 
-func isWordByte(b byte) bool {
-	return b == '_' || (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
-}
-
-// disambiguate picks a single symbol from the claimants of one phrase.
-//
-// The only ambiguity worth resolving automatically is the differential-voting
-// -rights listing: JISLJALEQS and JISLDVREQS are one company, and a story
-// about Jain Irrigation is about the ordinary class. Genuine collisions
-// between different issuers return nothing, because there is no evidence in
-// the phrase itself for choosing between them.
-func (m *Master) disambiguate(symbols []string, prefer string) (string, bool) {
-	switch len(symbols) {
-	case 0:
-		return "", false
-	case 1:
-		return symbols[0], true
-	}
-	// A name or ticker claimed on both venues is not ambiguous when the
-	// source asking has a venue of its own: a US wire writing "Infosys"
-	// means the ADR, an Indian one means the NSE line. Without a preference
-	// it stays ambiguous and resolves to nothing, as it always did.
-	if prefer != "" {
-		var preferred []string
-		for _, s := range symbols {
-			if c, ok := m.bySymbol[s]; ok && c.Venue == prefer {
-				preferred = append(preferred, s)
-			}
-		}
-		if len(preferred) == 1 {
-			return preferred[0], true
-		}
-	}
-	var ordinary []string
-	for _, s := range symbols {
-		if !strings.Contains(s, "DVR") {
-			ordinary = append(ordinary, s)
-		}
-	}
-	if len(ordinary) == 1 {
-		return ordinary[0], true
-	}
-	return "", false
-}
+func isWordByte(b byte) bool { return b == '_' || (b >= '0' && b <= '9') || isLetterByte(b) }

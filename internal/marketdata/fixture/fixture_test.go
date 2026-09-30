@@ -18,7 +18,7 @@ func newProvider() *Provider {
 func TestDeterministic(t *testing.T) {
 	// The same symbol must produce the same series every time, or a chart
 	// would reshuffle itself on every poll.
-	sym := marketdata.MustParseSymbol("RELIANCE.BSE")
+	sym := marketdata.MustParseSymbol("MSFT")
 	a, err := newProvider().Candles(context.Background(), sym, marketdata.Interval1d, 50)
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +38,7 @@ func TestDeterministic(t *testing.T) {
 }
 
 func TestCandlesAreCoherent(t *testing.T) {
-	for _, s := range []string{"RELIANCE.BSE", "AAPL", "TCS.NSE"} {
+	for _, s := range []string{"MSFT", "AAPL", "GSPC.INDEX"} {
 		t.Run(s, func(t *testing.T) {
 			sym := marketdata.MustParseSymbol(s)
 			bars, err := newProvider().Candles(context.Background(), sym, marketdata.Interval1d, 100)
@@ -69,16 +69,14 @@ func TestCandlesAreCoherent(t *testing.T) {
 	}
 }
 
-func TestPriceRangeMatchesVenue(t *testing.T) {
-	// Rupee names should look like rupee names so a glance at a chart is not
-	// immediately absurd.
-	inr, err := newProvider().Candles(context.Background(),
-		marketdata.MustParseSymbol("RELIANCE.BSE"), marketdata.Interval1d, 10)
+func TestPriceRangeIsPlausible(t *testing.T) {
+	bars, err := newProvider().Candles(context.Background(),
+		marketdata.MustParseSymbol("MSFT"), marketdata.Interval1d, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p := inr.Candles[0].Close; p < 100 || p > 20000 {
-		t.Errorf("INR price %v is outside a plausible range", p)
+	if p := bars.Candles[0].Close; p < 10 || p > 2000 {
+		t.Errorf("price %v is outside a plausible dollar range", p)
 	}
 }
 

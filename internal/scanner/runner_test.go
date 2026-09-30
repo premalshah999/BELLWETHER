@@ -55,56 +55,19 @@ func discoverable(symbol string) Metrics {
 	return Metrics{Symbol: symbol, Close: 100, VolumeZ: 6, ReturnZ: 6, VolumeRatio: 8}
 }
 
-// TestRunPreservesOtherScopesAttention is the regression for splitting the
-// market scan into a separately-timed NSE pass and US pass over one shared
-// Runner: a scoped run must not erase what the other venue's scan already
-// raised.
-func TestRunPreservesOtherScopesAttention(t *testing.T) {
-	nseSym, _ := marketdata.ParseSymbol("RELIANCE.NSE")
-	usSym, _ := marketdata.ParseSymbol("AAPL")
-
-	srv := stubSidecar(t, map[string]Metrics{
-		"RELIANCE.NS": discoverable("RELIANCE.NS"),
-		"AAPL":        discoverable("AAPL"),
-	})
+// Each run replaces the attention list with what it found unexplained.
+func TestRunRaisesAttention(t *testing.T) {
+	srv := stubSidecar(t, map[string]Metrics{"AAPL": discoverable("AAPL"), "MSFT": discoverable("MSFT")})
 	defer srv.Close()
-
 	r := &Runner{
 		Client:   &Client{BaseURL: srv.URL, HTTP: srv.Client()},
 		Store:    fakeRunnerStore{},
-		Universe: func() []marketdata.Symbol { return []marketdata.Symbol{nseSym, usSym} },
+		Universe: func() []marketdata.Symbol { return []marketdata.Symbol{{Ticker: "AAPL"}, {Ticker: "MSFT"}} },
 	}
-	nseScope := func(s marketdata.Symbol) bool { return s.IsIndian() }
-	usScope := func(s marketdata.Symbol) bool { return !s.IsIndian() }
-
-	if _, err := r.Run(context.Background(), nseScope); err != nil {
-		t.Fatalf("nse run: %v", err)
+	if _, err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
 	}
-	afterNSE := r.AttentionSymbols()
-	if len(afterNSE) != 1 || afterNSE[0] != "RELIANCE.NSE" {
-		t.Fatalf("after NSE scan, attention = %v, want [RELIANCE.NSE]", afterNSE)
-	}
-
-	if _, err := r.Run(context.Background(), usScope); err != nil {
-		t.Fatalf("us run: %v", err)
-	}
-	afterUS := r.AttentionSymbols()
-	want := map[string]bool{"RELIANCE.NSE": true, "AAPL": true}
-	if len(afterUS) != 2 {
-		t.Fatalf("after US scan, attention = %v, want both RELIANCE.NSE (preserved) and AAPL (new)", afterUS)
-	}
-	for _, s := range afterUS {
-		if !want[s] {
-			t.Errorf("unexpected attention symbol %q", s)
-		}
-	}
-
-	// A third, unscoped run replaces everyone -- the manual-trigger case.
-	if _, err := r.Run(context.Background(), nil); err != nil {
-		t.Fatalf("unscoped run: %v", err)
-	}
-	afterAll := r.AttentionSymbols()
-	if len(afterAll) != 2 {
-		t.Fatalf("after unscoped scan, attention = %v, want both symbols found fresh", afterAll)
+	if got := r.AttentionSymbols(); len(got) != 2 {
+		t.Fatalf("attention = %v, want both symbols", got)
 	}
 }

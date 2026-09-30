@@ -50,9 +50,8 @@ var headlineRules = []rule{
 	// firm first.
 	{compile("auditor resign(s|ed|ation)?", "resign(s|ed)? as (?:the )?(?:statutory )?auditor",
 		"qualified opinion", "adverse opinion", "audit qualification", "auditor (?:change|replaced)"), TypeAuditorChange, 2},
-	// "fined", "penalty" and "non-compliance" were all missing, and between
-	// them they cover the most common wording of an exchange penalty:
-	// "Ircon fined Rs 9.66 lakh each by NSE, BSE for board non-compliance".
+	// "fined", "penalty" and "non-compliance" cover the most common wording of
+	// an enforcement headline.
 	{compile("(?:SEC|FTC|DOJ|CFTC|FINRA|OSHA|EPA|FDA) (?:bars|debars|charges|sues|fines|orders|penalis|penaliz)",
 		"show cause notice", "regulatory action", "banned by", "debarred", "fined", "penalty",
 		"penalised", "penalized", "non[- ]compliance", "violat(es|ed|ion)",
@@ -224,46 +223,14 @@ func firstSentences(s string, n int) string {
 	return s
 }
 
-// Two tiers of irrelevance, because they behave differently.
-//
-// hardMarketNoise is coverage of a foreign market's own session or a retail
-// technical signal. Nothing rescues it: a US index wrap that happens to
-// mention inflation is still a US index wrap, and treating the word as an
-// escape hatch let "Dow Jones | Nasdaq | S&P 500 | US Stock Market Today"
-// through on exactly that basis.
-var hardMarketNoise = compile(
-	"Dow Jones", "S&P 500", "Nasdaq (?:composite|100)?", "Wall Street",
-	"US stock(?:s| market)", "U\\.S\\. stock(?:s| market)",
-	"FTSE", "DAX", "Nikkei", "Hang Seng", "Euro Stoxx",
+// marketNoise is coverage no US equity reader acts on when it names no
+// company: another market's session wrap, or a retail technical-signal
+// listicle ("RSI Alert: ... Now Oversold", "... hits 52-week high").
+var marketNoise = compile(
+	"FTSE", "DAX", "CAC 40", "Nikkei", "Hang Seng", "Euro Stoxx", "Sensex", "Nifty",
 	"52-week (?:high|low)", "moving average cross", "RSI alert",
 	"oversold", "overbought", "intrinsic value", "price target (?:raised|cut)",
 	"analyst (?:upgrades|downgrades) stock",
-)
-
-// softMarketNoise is coverage of a foreign company. It is dropped only when
-// nothing in the item connects it to India or to an input Indian companies
-// depend on — "Apple launches Mac mini" goes, "Apple expands India
-// manufacturing" stays.
-var softMarketNoise = compile(
-	"Nvidia", "Tesla", "Netflix", "Meta Platforms", "Alphabet", "Apple",
-	"Berkshire", "Goldman Sachs", "JPMorgan", "Walmart", "Boeing", "Honda",
-	"Palantir", "Intuit", "Salesforce", "Oracle Corp", "Cisco", "Alibaba",
-	"Samsung", "Toyota", "Volkswagen", "Ford Motor", "General Motors",
-)
-
-// commodityOrPolicy marks the foreign subjects that do reach Indian equities.
-//
-// The list is inputs and rules rather than places: crude, gas, metals, duties,
-// rates and the rupee. A foreign story touching one of these reaches Indian
-// companies through their cost base or their market access, which is exactly
-// the connection worth keeping.
-var commodityOrPolicy = compile(
-	"crude", "brent", "OPEC", "oil price", "natural gas", "LNG",
-	"gold", "silver", "copper", "steel", "coal", "palm oil", "sunflower oil", "fertiliser",
-	"tariff", "sanction(s)?", "trade (?:war|deal|deficit)", "import (?:duty|price)", "export ban",
-	"interest rate", "rate (?:cut|hike)", "recession",
-	"rupee", "dollar index", "USD/INR", "FPI", "FII", "foreign (?:portfolio|investor)",
-	"India", "Indian",
 )
 
 // NotReadableHere reports that a headline is not in the script this feed is
@@ -274,12 +241,10 @@ var commodityOrPolicy = compile(
 // end to end, so an item in another script cannot be resolved to a company,
 // cannot be sensibly ranked against its neighbours, and cannot be read by the
 // people using it — while still competing for the top of the list on whatever
-// importance the classifier assigns its subject matter. A Hindi notice about a
-// bus compliance certificate outranking a merger is what that looks like.
+// importance the classifier assigns its subject matter.
 //
-// The threshold is deliberately high. Indian English headlines routinely carry
-// a rupee sign, a name in Devanagari, or a quoted phrase, and none of those
-// make an otherwise English headline unreadable.
+// The threshold is deliberately high: a quoted foreign name or a currency
+// sign does not make an otherwise English headline unreadable.
 func NotReadableHere(headline string) bool {
 	var latin, other int
 	for _, r := range headline {
@@ -298,18 +263,8 @@ func NotReadableHere(headline string) bool {
 	return float64(other)/float64(latin+other) > 0.5
 }
 
-// Unactionable reports whether an item is market coverage with no reachable
-// bearing on Indian equities.
-//
-// Only consulted for events that resolved to no Indian company; anything
-// naming a listed company is kept however it is worded.
+// Unactionable reports whether an item that named no company is market
+// noise rather than news.
 func Unactionable(headline, summary string) bool {
-	text := headline + ". " + firstSentences(summary, 1)
-	if hardMarketNoise.MatchString(text) {
-		return true
-	}
-	if !softMarketNoise.MatchString(text) {
-		return false
-	}
-	return !commodityOrPolicy.MatchString(text)
+	return marketNoise.MatchString(headline + ". " + firstSentences(summary, 1))
 }

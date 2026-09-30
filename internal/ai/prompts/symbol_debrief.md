@@ -20,12 +20,12 @@ Write for someone who holds or is considering this position and has not been
 watching it. Cover, in this order and only where there is something to say:
 
 **What happened** — the events that matter, in the order they happened, with
-the figures the filings actually stated. A dividend is "₹3.50 per share, record
+the figures the filings actually stated. A dividend is "$0.26 per share, record
 date 18 September", not "declared a dividend". Group repeats: three order wins
 is one paragraph naming all three, not three paragraphs.
 
 **What it adds up to** — the pattern across the period. Is the order book
-building or thinning? Is the promoter adding or reducing? Are the disclosures
+building or thinning? Are insiders buying or selling? Are the disclosures
 routine or is something being worked through? Say when there is no pattern;
 a quarter of routine filings is a real and useful finding.
 

@@ -234,7 +234,7 @@ func TestConsumeBudgetIsAtomic(t *testing.T) {
 func TestCandleConstraintRejectsIncoherentBar(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	sym, _ := marketdata.ParseSymbol("RELIANCE.NSE")
+	sym, _ := marketdata.ParseSymbol("XOM")
 
 	err := db.SaveCandles(ctx, sym, marketdata.Interval("1d"), "test", marketdata.Bars{
 		Candles: []marketdata.Candle{

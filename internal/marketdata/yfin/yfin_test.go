@@ -91,21 +91,10 @@ func (s *sidecar) count() int {
 }
 
 func TestSymbolMapping(t *testing.T) {
-	tests := []struct{ in, want string }{
-		{"AAPL", "AAPL"},
-		{"RELIANCE.BSE", "RELIANCE.BO"},
-		{"TCS.NSE", "TCS.NS"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.in, func(t *testing.T) {
-			got, err := vendorSymbol(marketdata.MustParseSymbol(tc.in))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != tc.want {
-				t.Errorf("vendorSymbol(%q) = %q, want %q", tc.in, got, tc.want)
-			}
-		})
+	for in, want := range map[string]string{"AAPL": "AAPL", "BRK.B": "BRK-B", "^GSPC": "^GSPC"} {
+		if got := vendorSymbol(marketdata.MustParseSymbol(in)); got != want {
+			t.Errorf("vendorSymbol(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
@@ -152,71 +141,6 @@ func TestDividendAdjustmentIsOptIn(t *testing.T) {
 	c.Candles(context.Background(), marketdata.MustParseSymbol("AAPL"), marketdata.Interval1d, 10)
 	if got := srv.at(0).Get("adjust"); got != "true" {
 		t.Errorf("adjust = %q, want true when opted in", got)
-	}
-}
-
-func TestVenueFallback(t *testing.T) {
-	tests := []struct {
-		name         string
-		symbol       string
-		bars         map[string]int
-		wantResolved string
-		wantAsked    []string
-		wantErr      bool
-	}{
-		{
-			name:   "healthy BSE listing is used as-is",
-			symbol: "TCS.BSE", bars: map[string]int{"TCS.BO": 240, "TCS.NS": 240},
-			wantAsked: []string{"TCS.BO"},
-		},
-		{
-			// Yahoo's RELIANCE.BO feed carries a single bar; NSE is complete.
-			name:   "a one-bar BSE feed falls back to NSE, labelled",
-			symbol: "RELIANCE.BSE", bars: map[string]int{"RELIANCE.BO": 1, "RELIANCE.NS": 240},
-			wantResolved: "RELIANCE.NSE",
-			wantAsked:    []string{"RELIANCE.BO", "RELIANCE.NS"},
-		},
-		{
-			name:   "both venues empty is an error",
-			symbol: "GONE.BSE", bars: map[string]int{},
-			wantErr:   true,
-			wantAsked: []string{"GONE.BO", "GONE.NS"},
-		},
-		{
-			name:   "US symbols have no sibling venue",
-			symbol: "AAPL", bars: map[string]int{"AAPL": 50},
-			wantAsked: []string{"AAPL"},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			srv := newSidecar(t, tc.bars)
-			c := New(srv.URL)
-
-			bars, err := c.Candles(context.Background(),
-				marketdata.MustParseSymbol(tc.symbol), marketdata.Interval1d, 200)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("want an error, got %d candles", len(bars.Candles))
-				}
-			} else {
-				if err != nil {
-					t.Fatal(err)
-				}
-				if bars.ResolvedSymbol != tc.wantResolved {
-					t.Errorf("ResolvedSymbol = %q, want %q", bars.ResolvedSymbol, tc.wantResolved)
-				}
-			}
-			if srv.count() != len(tc.wantAsked) {
-				t.Fatalf("made %d requests, want %d", srv.count(), len(tc.wantAsked))
-			}
-			for i, want := range tc.wantAsked {
-				if got := srv.at(i).Get("symbol"); got != want {
-					t.Errorf("request %d asked for %q, want %q", i, got, want)
-				}
-			}
-		})
 	}
 }
 

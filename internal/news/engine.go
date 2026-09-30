@@ -112,10 +112,9 @@ type Engine struct {
 	now      func() time.Time
 	rand     *rand.Rand
 
-	workSlots   chan struct{}
-	workers     int
-	perHost     int
-	istLocation *time.Location
+	workSlots chan struct{}
+	workers   int
+	perHost   int
 	// heat, when set, lets the scheduler poll sources covering eventful
 	// instruments more often. Optional: the engine schedules perfectly well
 	// without it, just less cleverly.
@@ -236,23 +235,18 @@ const (
 func (e *Engine) Registry() *Registry { return e.registry }
 
 func NewEngine(registry *Registry, store RawStore, opts ...EngineOption) *Engine {
-	ist, err := time.LoadLocation("Asia/Kolkata")
-	if err != nil {
-		ist = time.FixedZone("IST", 5*3600+1800)
-	}
 	e := &Engine{
-		registry:    registry,
-		store:       store,
-		http:        defaultFetchClient(),
-		log:         slog.Default(),
-		now:         time.Now,
-		rand:        rand.New(rand.NewSource(time.Now().UnixNano())),
-		workers:     defaultWorkers,
-		perHost:     defaultPerHost,
-		istLocation: ist,
-		state:       map[string]*sourceState{},
-		hosts:       map[string]chan struct{}{},
-		inWork:      map[string]bool{},
+		registry: registry,
+		store:    store,
+		http:     defaultFetchClient(),
+		log:      slog.Default(),
+		now:      time.Now,
+		rand:     rand.New(rand.NewSource(time.Now().UnixNano())),
+		workers:  defaultWorkers,
+		perHost:  defaultPerHost,
+		state:    map[string]*sourceState{},
+		hosts:    map[string]chan struct{}{},
+		inWork:   map[string]bool{},
 	}
 	for _, opt := range opts {
 		opt(e)
@@ -616,22 +610,10 @@ func (e *Engine) parseFeedItems(src Source, body []byte, discoveredAt time.Time)
 	if err != nil {
 		return nil, err
 	}
-	// Every feed now either carries an explicit zone or is close enough to
-	// UTC not to matter. The one that did not was NSE, which stamped its
-	// filings in IST without saying so; that special case went with the
-	// exchange.
-	loc := time.UTC
-
 	trust := src.TimestampTrust()
 	out := make([]RawItem, 0, len(parsed))
 	for _, p := range parsed {
-		// Always reparse against the source's own timezone rather than
-		// accepting the parser's UTC reading. A zoneless stamp parses
-		// *successfully* as UTC, so treating that as good enough would mean
-		// the IST correction never runs for the one source that needs it.
-		// Formats carrying an explicit offset are unaffected: parseFeedTimeIn
-		// tries those first and the location is then ignored.
-		published := parseFeedTimeIn(p.RawDate, loc)
+		published := parseFeedTime(p.RawDate)
 		if published.IsZero() {
 			published = p.Published
 		}
@@ -712,7 +694,7 @@ func (e *Engine) recordSuccess(src Source, now time.Time, items, added int, etag
 //
 // Must be called with e.mu held.
 func (e *Engine) nextInterval(src Source, emptyPolls int, now time.Time) time.Duration {
-	phase := PhaseAt(now, e.istLocation)
+	phase := PhaseAt(now)
 	interval := adaptiveInterval(src, emptyPolls, phase)
 
 	if e.heat != nil && len(src.Symbols) > 0 {
@@ -819,21 +801,16 @@ func parseRetryAfter(v string, now time.Time) time.Duration {
 	return 0
 }
 
-// backoff grows the wait after each consecutive failure, capped so a source
-// that recovers overnight is retried within the hour rather than never.
 // acceptLanguageFor maps a source's country to the locale to ask it in.
-// Unknown or absent country falls back to en-US, the default venue.
 func acceptLanguageFor(src Source) string {
-	switch src.Country {
-	case "IN":
-		return "en-IN,en;q=0.9"
-	case "GB":
+	if src.Country == "GB" {
 		return "en-GB,en;q=0.9"
-	default:
-		return "en-US,en;q=0.9"
 	}
+	return "en-US,en;q=0.9"
 }
 
+// backoff grows the wait after each consecutive failure, capped so a source
+// that recovers overnight is retried within the hour rather than never.
 func (e *Engine) backoff(failures int, base time.Duration) time.Duration {
 	if base <= 0 {
 		base = time.Minute
@@ -910,7 +887,7 @@ func (e *Engine) Schedules() []Schedule {
 }
 
 // Phase reports the current market phase, which drives cadence.
-func (e *Engine) Phase() MarketPhase { return PhaseAt(e.now(), e.istLocation) }
+func (e *Engine) Phase() MarketPhase { return PhaseAt(e.now()) }
 
 // Health returns the current health of every registered source.
 func (e *Engine) Health() []SourceHealth {
@@ -1050,7 +1027,7 @@ func (e *Engine) parseFederalRegister(src Source, body []byte, discoveredAt time
 		if r.Type != "" {
 			desc += " |DOCTYPE: " + r.Type
 		}
-		published, note := ValidatePublished(parseFeedTimeIn(r.PublicationDate, time.UTC), discoveredAt, trust)
+		published, note := ValidatePublished(parseFeedTime(r.PublicationDate), discoveredAt, trust)
 		canonical := CanonicalURL(r.HTMLURL)
 		out = append(out, RawItem{
 			SourceID:       src.ID,

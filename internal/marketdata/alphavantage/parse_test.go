@@ -176,7 +176,7 @@ func TestParseGlobalQuote(t *testing.T) {
 }
 
 func TestCandleParams(t *testing.T) {
-	rel := marketdata.MustParseSymbol("RELIANCE.BSE")
+	rel := marketdata.MustParseSymbol("AAPL")
 	tests := []struct {
 		name         string
 		interval     marketdata.Interval
@@ -206,8 +206,8 @@ func TestCandleParams(t *testing.T) {
 			if got := v.Get("outputsize"); got != tc.wantSize {
 				t.Errorf("outputsize = %q, want %q", got, tc.wantSize)
 			}
-			if got := v.Get("symbol"); got != "RELIANCE.BSE" {
-				t.Errorf("symbol = %q, want RELIANCE.BSE", got)
+			if got := v.Get("symbol"); got != "AAPL" {
+				t.Errorf("symbol = %q, want AAPL", got)
 			}
 		})
 	}

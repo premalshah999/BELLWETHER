@@ -12,9 +12,7 @@ import (
 // in the cheapest quartile of its peers, with better margins than most of them
 // — that is information, and it is the question an investor actually has.
 //
-// Peers come from the NSE industry classification already embedded in the
-// company master, so the grouping is the exchange's own rather than something
-// invented here.
+// Peers are the scan-universe members in the same GICS sector.
 
 // PeerStat is one metric compared against a peer group.
 type PeerStat struct {
@@ -38,8 +36,8 @@ type PeerStat struct {
 	// Carried explicitly because the provider is not consistent and there is
 	// no way to infer it. Return on equity arrives as 0.32 meaning 32 per
 	// cent, while dividend yield arrives as 4.37 meaning 4.37 per cent.
-	// Scaling everything by a hundred turns Infosys's yield into 437 per
-	// cent; scaling nothing reports its return on equity as 0.32 per cent.
+	// Scaling everything by a hundred turns a 4.37% yield into 437%; scaling
+	// nothing reports a 32% return on equity as 0.32%.
 	// Both are wrong in ways a reader would not catch.
 	Unit string `json:"unit"`
 }
@@ -76,11 +74,9 @@ var peerMetrics = []struct {
 	// Free cash flow against what the market pays for the company.
 	//
 	// Derived rather than taken from the provider, and taken from the annual
-	// statements rather than the quarterly ones: measured across this data,
-	// 380 of 474 annual periods report cash flow and only 21 of 555 quarterly
-	// ones do. Quarterly cash flow simply is not published for most Indian
-	// listings, and computing a yield from the handful that have it would
-	// rank twenty companies against each other and call it a sector.
+	// statements rather than the quarterly ones, which far fewer companies
+	// report: a yield from the handful that have it would rank twenty
+	// companies against each other and call it a sector.
 	{"fcf_yield", "FCF yield", true, "fraction"},
 }
 
@@ -92,13 +88,11 @@ var peerMetrics = []struct {
 // Five also puts the divisor safely above zero.
 const minPeersForPercentile = 5
 
-// ComparePeers ranks one company against the other listed companies in its
-// NSE industry.
+// ComparePeers ranks one company against the others in its sector.
 func (d *DB) ComparePeers(ctx context.Context, symbol string) (PeerComparison, error) {
-	var industry, taxonomy string
+	var industry string
 	err := d.db.QueryRowContext(ctx,
-		`SELECT industry, COALESCE(taxonomy, '') FROM index_constituents WHERE symbol = $1`,
-		symbol).Scan(&industry, &taxonomy)
+		`SELECT industry FROM index_constituents WHERE symbol = $1`, symbol).Scan(&industry)
 	if err == sql.ErrNoRows || industry == "" {
 		return PeerComparison{}, fmt.Errorf("compare peers: %s has no industry classification", symbol)
 	}
@@ -116,18 +110,12 @@ func (d *DB) ComparePeers(ctx context.Context, symbol string) (PeerComparison, e
 	// capitalisation that moves daily. The two live in different tables
 	// because they change on different clocks; they are joined here rather
 	// than stored together for the same reason.
-	//
-	// Scoped by taxonomy as well as industry label: NSE's classification and
-	// GICS both use ordinary English sector names, and "Information
-	// Technology" means one thing in each. Matching on the label alone would
-	// silently pool an NSE company's peer group with US ones any time the
-	// two taxonomies happened to spell a sector the same way.
 	const base = `
 WITH snapshots AS (
     SELECT DISTINCT ON (f.symbol) f.*
     FROM fundamentals_snapshot f
     JOIN index_constituents ic ON ic.symbol = f.symbol
-    WHERE ic.industry = $1 AND ic.taxonomy = $2
+    WHERE ic.industry = $1
     ORDER BY f.symbol, f.id DESC
 ),
 fcf AS (
@@ -141,9 +129,8 @@ latest AS (
            CASE
                WHEN l.market_cap IS NULL OR l.market_cap <= 0 THEN NULL
                -- A statement figure over a market figure is only a ratio if
-               -- both are in the same money. Infosys files in dollars and
-               -- trades in rupees, which turned a roughly 5% free cash flow
-               -- yield into 0.1% — a number that looked entirely ordinary.
+               -- both are in the same currency (a foreign filer may report in
+               -- its home currency).
                WHEN fcf.currency <> '' AND l.quote_currency <> ''
                     AND fcf.currency <> l.quote_currency THEN NULL
                ELSE fcf.free_cash_flow / l.market_cap
@@ -152,13 +139,7 @@ latest AS (
     LEFT JOIN fcf ON fcf.symbol = l.symbol
 )`
 
-	// $2 (taxonomy) must actually appear in base's own text for Postgres to
-	// infer its type -- a positional gap (passing a dummy value for an
-	// unreferenced placeholder) fails with "could not determine data type
-	// of parameter $n" rather than being silently ignored, which is why
-	// industry and taxonomy are $1/$2 here and symbol is pushed to $3 below
-	// instead of sitting in the middle.
-	if err := d.db.QueryRowContext(ctx, base+` SELECT count(*) FROM latest`, industry, taxonomy).
+	if err := d.db.QueryRowContext(ctx, base+` SELECT count(*) FROM latest`, industry).
 		Scan(&out.Peers); err != nil {
 		return out, fmt.Errorf("compare peers: count: %w", err)
 	}
@@ -174,15 +155,15 @@ latest AS (
 		// had one would move everyone else's rank for no reason.
 		q := fmt.Sprintf(`%s
 SELECT
-    (SELECT %[2]s FROM latest WHERE symbol = $3),
+    (SELECT %[2]s FROM latest WHERE symbol = $2),
     (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY %[2]s) FROM latest WHERE %[2]s IS NOT NULL),
     (SELECT count(*) FROM latest WHERE %[2]s IS NOT NULL),
     (SELECT count(*) FROM latest WHERE %[2]s IS NOT NULL
-        AND %[2]s < (SELECT %[2]s FROM latest WHERE symbol = $3))`, base, m.column)
+        AND %[2]s < (SELECT %[2]s FROM latest WHERE symbol = $2))`, base, m.column)
 
 		var value, median sql.NullFloat64
 		var reporting, below int
-		if err := d.db.QueryRowContext(ctx, q, industry, taxonomy, symbol).
+		if err := d.db.QueryRowContext(ctx, q, industry, symbol).
 			Scan(&value, &median, &reporting, &below); err != nil {
 			return out, fmt.Errorf("compare peers: %s: %w", m.label, err)
 		}

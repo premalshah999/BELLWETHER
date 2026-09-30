@@ -59,7 +59,7 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, archive *postgr
 		// US equities product was being answered partly out of the Indian
 		// news index, which is where a research answer picks up a company
 		// this app cannot price.
-		&research.GoogleNewsScraper{Client: client, HL: "en-US", GL: "US"},
+		&research.GoogleNewsScraper{Client: client},
 		// GDELT's sourcecountry takes a country name, not a two-letter
 		// code, as one token with no internal space -- see the comment on
 		// gdelt-us-business in internal/news/catalog.go for what was and
@@ -172,24 +172,15 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, archive *postgr
 		return out
 	}
 
-	// A question naming an industry gets the listed universe for it. No news
-	// article enumerates the cement companies on the exchange; the industry
-	// mapping does, for 752 of them, and without it a question about "which
-	// companies" can only be answered by whichever ones happened to be in the
-	// retrieved articles.
+	// A question naming a sector gets that sector's largest members: no
+	// article enumerates the banks, and without this "which companies" is
+	// answered only by whichever ones the retrieved articles happened to name.
 	universe := func(query string) []research.UniverseNote {
 		var out []research.UniverseNote
-		for _, industry := range master.IndustriesMentioned(query) {
-			symbols := master.SymbolsInIndustry(industry)
-			if len(symbols) == 0 {
-				continue
+		for _, sector := range master.SectorsMentioned(query) {
+			if symbols := master.SymbolsInSector(sector); len(symbols) > 0 {
+				out = append(out, research.UniverseNote{Industry: sector, Symbols: symbols[:min(40, len(symbols))]})
 			}
-			// Capped: an industry with 121 members would otherwise crowd the
-			// prompt out with a list nobody reads.
-			if len(symbols) > 40 {
-				symbols = symbols[:40]
-			}
-			out = append(out, research.UniverseNote{Industry: industry, Symbols: symbols})
 		}
 		return out
 	}

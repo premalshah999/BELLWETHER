@@ -212,31 +212,12 @@ func TestParseMalformed(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestVendorParams(t *testing.T) {
-	// RELIANCE trades on both NSE and BSE under the same ticker, so the
-	// exchange parameter is what disambiguates the listing.
-	tests := []struct {
-		in           string
-		wantSymbol   string
-		wantExchange string
-	}{
-		{in: "AAPL", wantSymbol: "AAPL", wantExchange: ""},
-		{in: "RELIANCE.NSE", wantSymbol: "RELIANCE", wantExchange: "NSE"},
-		{in: "RELIANCE.BSE", wantSymbol: "RELIANCE", wantExchange: "BSE"},
-		{in: "TCS.BSE", wantSymbol: "TCS", wantExchange: "BSE"},
+	got, err := vendorParams(marketdata.MustParseSymbol("AAPL"))
+	if err != nil || got.Get("symbol") != "AAPL" || got.Get("exchange") != "" {
+		t.Errorf("vendorParams(AAPL) = %v, %v", got, err)
 	}
-	for _, tc := range tests {
-		t.Run(tc.in, func(t *testing.T) {
-			got, err := vendorParams(marketdata.MustParseSymbol(tc.in))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got.Get("symbol") != tc.wantSymbol {
-				t.Errorf("symbol = %q, want %q", got.Get("symbol"), tc.wantSymbol)
-			}
-			if got.Get("exchange") != tc.wantExchange {
-				t.Errorf("exchange = %q, want %q", got.Get("exchange"), tc.wantExchange)
-			}
-		})
+	if _, err := vendorParams(marketdata.MustParseSymbol("^GSPC")); !errors.Is(err, marketdata.ErrNotSupported) {
+		t.Errorf("an index should be declined, got %v", err)
 	}
 }
 
@@ -272,13 +253,13 @@ func TestCandlesRequestShape(t *testing.T) {
 	c := New("test-key", 800, newFakeBudget(), WithBaseURL(srv.URL))
 
 	if _, err := c.Candles(context.Background(),
-		marketdata.MustParseSymbol("RELIANCE.BSE"), marketdata.Interval1d, 150); err != nil {
+		marketdata.MustParseSymbol("AAPL"), marketdata.Interval1d, 150); err != nil {
 		t.Fatal(err)
 	}
 
 	q := srv.at(0)
-	if q.Get("symbol") != "RELIANCE" || q.Get("exchange") != "BSE" {
-		t.Errorf("symbol/exchange = %q/%q", q.Get("symbol"), q.Get("exchange"))
+	if q.Get("symbol") != "AAPL" {
+		t.Errorf("symbol = %q", q.Get("symbol"))
 	}
 	if q.Get("interval") != "1day" {
 		t.Errorf("interval = %q", q.Get("interval"))
@@ -289,8 +270,7 @@ func TestCandlesRequestShape(t *testing.T) {
 	if q.Get("apikey") != "test-key" {
 		t.Errorf("apikey = %q", q.Get("apikey"))
 	}
-	// Bar times are stored in UTC and displayed in IST; asking for UTC keeps
-	// the storage side unambiguous.
+	// Bar times are stored in UTC; asking for UTC keeps storage unambiguous.
 	if q.Get("timezone") != "UTC" {
 		t.Errorf("timezone = %q, want UTC", q.Get("timezone"))
 	}
@@ -309,10 +289,6 @@ func TestCandlesRespectsLimit(t *testing.T) {
 	// trims to the most recent window.
 	if len(bars.Candles) != 10 {
 		t.Errorf("got %d candles, want 10", len(bars.Candles))
-	}
-	if bars.ResolvedSymbol != "" {
-		t.Errorf("ResolvedSymbol = %q, want empty: twelvedata carries both venues directly",
-			bars.ResolvedSymbol)
 	}
 }
 

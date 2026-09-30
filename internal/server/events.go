@@ -404,17 +404,13 @@ func (s *Server) handleSymbolDebrief(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var company, industry string
-	// The company master is NSE-only text -- looking up a US ticker against
-	// it would occasionally collide with an unrelated NSE name (a bare
-	// ticker match is not venue-aware), so it is only consulted for the
-	// venues it actually covers.
-	if s.deps.Companies != nil && sym.IsIndian() {
-		if c, found := s.deps.Companies.Lookup(sym.Ticker); found {
+	if s.deps.Companies != nil {
+		if c, found := s.deps.Companies.Lookup(sym.String()); found {
 			company = c.Name
 		}
-		if ind, found := s.deps.Companies.Industry(sym.Ticker); found {
-			industry = ind
-		}
+	}
+	if sectors, err := s.deps.Store.SectorsFor(r.Context(), []string{sym.String()}); err == nil {
+		industry = sectors[sym.String()]
 	}
 
 	out, err := s.deps.AI.Debrief(r.Context(), s.deps.Store, sym.String(), company, industry, list, days)
