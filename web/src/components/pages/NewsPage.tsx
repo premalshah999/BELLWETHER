@@ -304,7 +304,7 @@ function EventRow({
                   type="button"
                   onClick={() => onSymbol(en.symbol)}
                   title={`Open ${en.symbol} on the chart`}
-                  className="rounded px-1 font-semibold text-text-primary transition-colors hover:bg-brand-muted hover:text-brand"
+                  className="inline-flex h-6 items-center rounded px-1.5 font-semibold text-text-primary transition-colors hover:bg-brand-muted hover:text-brand"
                 >
                   {en.symbol}
                 </button>

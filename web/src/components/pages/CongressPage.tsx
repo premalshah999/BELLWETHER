@@ -204,13 +204,13 @@ function Tickers({ symbols, onOpen }: { symbols: string[]; onOpen: (s: string) =
           key={s}
           type="button"
           onClick={() => onOpen(s)}
-          className="rounded px-1 font-semibold text-text-primary transition-colors hover:bg-brand-muted hover:text-brand"
+          className="inline-flex h-6 items-center rounded px-1.5 font-semibold text-text-primary transition-colors hover:bg-brand-muted hover:text-brand"
         >
           {s}
         </button>
       ))}
       {symbols.length > 6 && (
-        <button type="button" onClick={() => setAll((v) => !v)} className="px-1 text-meta text-text-muted hover:text-text-primary">
+        <button type="button" onClick={() => setAll((v) => !v)} className="inline-flex h-6 items-center px-1.5 text-meta text-text-muted hover:text-text-primary">
           {all ? "Show fewer" : `+${symbols.length - 6} more`}
         </button>
       )}

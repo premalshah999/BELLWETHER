@@ -219,7 +219,7 @@ export function GeopoliticsPage({ onSelect }: { onSelect: (symbol: string) => vo
                                 type="button"
                                 onClick={() => toChart(sym)}
                                 title={value != null ? "A position you hold" : "On your watchlist"}
-                                className="rounded px-1 font-semibold text-text-primary transition-colors hover:bg-brand-muted hover:text-brand"
+                                className="inline-flex h-6 items-center rounded px-1.5 font-semibold text-text-primary transition-colors hover:bg-brand-muted hover:text-brand"
                               >
                                 {sym}
                                 {value != null && <span className="ml-1 font-normal text-text-muted">{money(value)}</span>}

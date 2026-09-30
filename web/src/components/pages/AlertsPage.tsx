@@ -141,7 +141,7 @@ function AlertRow({ alert, onOpen }: { alert: Alert; onOpen: (symbol: string) =>
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           {!read && <span className="h-2 w-2 shrink-0 self-center rounded-full bg-brand" aria-label="Unread" />}
-          <button type="button" onClick={() => onOpen(alert.symbol)} className="text-emphasis font-semibold text-text-primary hover:text-brand">
+          <button type="button" onClick={() => onOpen(alert.symbol)} className="inline-flex min-h-6 items-center text-emphasis font-semibold text-text-primary hover:text-brand">
             {alert.symbol}
           </button>
           <span className={"text-ui " + (read ? "text-text-secondary" : "text-text-primary")}>{alert.algorithm_name}</span>
