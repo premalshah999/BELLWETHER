@@ -102,10 +102,6 @@ func WithProcessorLogger(l *slog.Logger) ProcessorOption {
 	return func(p *Processor) { p.log = l }
 }
 
-func WithProcessorClock(now func() time.Time) ProcessorOption {
-	return func(p *Processor) { p.now = now }
-}
-
 // NewProcessor builds a processor.
 func NewProcessor(store Store, master *company.Master, registry *news.Registry, opts ...ProcessorOption) *Processor {
 	p := &Processor{

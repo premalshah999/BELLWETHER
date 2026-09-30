@@ -94,7 +94,7 @@ export const TAB_BAR: NavItem[] = [
   { to: "/research", label: "Research", icon: Search },
 ];
 
-export const ALL_ITEMS = NAV.flatMap((s) => s.items);
+const ALL_ITEMS = NAV.flatMap((s) => s.items);
 
 /** The page's own name, for the phone header and the document title. */
 export function titleFor(path: string): string {

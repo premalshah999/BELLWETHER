@@ -50,10 +50,6 @@ const (
 	articleTimeout = 20 * time.Second
 	// articleConcurrency is how many pages are read at once across all hosts.
 	articleConcurrency = 8
-	// perHostConcurrency keeps us to one connection per publisher. A research
-	// question routinely returns a dozen articles from the same outlet, and
-	// twelve simultaneous requests is not how a reader behaves.
-	perHostConcurrency = 1
 	// maxArticleBytes bounds what is read from any one page.
 	maxArticleBytes = 4 << 20
 	// minArticleWords is the length below which extraction is treated as

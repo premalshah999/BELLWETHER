@@ -133,7 +133,7 @@ export function StatusDot({ tone, pulse }: { tone: keyof typeof DOT; pulse?: boo
   );
 }
 
-export function StatusDetails({ stream }: { stream: StreamState }) {
+function StatusDetails({ stream }: { stream: StreamState }) {
   const s = useSystemStatus(stream);
   const used = s.budget && s.budget.limit > 0 ? Math.min(1, s.budget.used / s.budget.limit) : 0;
   return (

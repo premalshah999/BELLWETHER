@@ -54,11 +54,6 @@ func Closes(candles []marketdata.Candle) []float64 {
 	return field(candles, func(c marketdata.Candle) float64 { return c.Close })
 }
 
-// Opens extracts opening prices.
-func Opens(candles []marketdata.Candle) []float64 {
-	return field(candles, func(c marketdata.Candle) float64 { return c.Open })
-}
-
 // Highs extracts high prices.
 func Highs(candles []marketdata.Candle) []float64 {
 	return field(candles, func(c marketdata.Candle) float64 { return c.High })

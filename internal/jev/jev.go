@@ -274,9 +274,6 @@ func WithBaseURL(u string) Option { return func(c *Client) { c.baseURL = strings
 // WithModel pins a model rather than following jev-latest.
 func WithModel(m string) Option { return func(c *Client) { c.model = m } }
 
-// WithHTTPClient supplies the transport.
-func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
-
 // WithOutcomeSink reports each attempt to the health tracker.
 func WithOutcomeSink(s OutcomeSink) Option { return func(c *Client) { c.sink = s } }
 
@@ -290,9 +287,6 @@ func WithInputPrice(usdPerMillion float64) Option {
 
 // WithLogger sets the logger.
 func WithLogger(l *slog.Logger) Option { return func(c *Client) { c.log = l } }
-
-// WithClock replaces the time source. Tests use it.
-func WithClock(now func() time.Time) Option { return func(c *Client) { c.now = now } }
 
 // withSleep replaces the backoff wait, so retry tests do not actually wait.
 func withSleep(f func(context.Context, time.Duration) error) Option {

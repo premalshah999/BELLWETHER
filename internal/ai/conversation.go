@@ -300,18 +300,6 @@ func (s *Service) rewriteFollowup(ctx context.Context, conv research.Conversatio
 	return rewritten
 }
 
-// sourceText is what the model reads for one source.
-//
-// The article body where it could be fetched, the search snippet otherwise.
-// Ordering matters: a snippet is a description of an article, and a body is
-// the article, so there is never a reason to prefer the former.
-func sourceText(f research.Finding) string {
-	if body := strings.TrimSpace(f.Body); body != "" {
-		return body
-	}
-	return truncateWords(f.Snippet, 60)
-}
-
 // synthesise fills in the answer from the retrieved sources.
 func (s *Service) synthesise(ctx context.Context, conv research.Conversation, turn *research.Turn, result research.Result) error {
 	sources := result.Findings
@@ -595,16 +583,6 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 		return fmt.Errorf("the model returned no claims with valid evidence citations")
 	}
 	return nil
-}
-
-func validCitations(in []int, max int) []int {
-	var out []int
-	for _, n := range in {
-		if n >= 1 && n <= max {
-			out = append(out, n)
-		}
-	}
-	return out
 }
 
 func evidenceOverview(result research.Result) string {

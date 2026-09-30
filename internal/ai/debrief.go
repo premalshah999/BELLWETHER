@@ -3,7 +3,6 @@ package ai
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -204,13 +203,4 @@ func (s *Service) Debrief(ctx context.Context, store DebriefStore, symbol, compa
 	}
 	out.BlindSpots = payload.BlindSpots
 	return out, nil
-}
-
-// debriefIDs renders event ids for logging.
-func debriefIDs(events []news.Event) string {
-	ids := make([]string, 0, len(events))
-	for _, e := range events {
-		ids = append(ids, strconv.FormatInt(e.ID, 10))
-	}
-	return strings.Join(ids, ",")
 }

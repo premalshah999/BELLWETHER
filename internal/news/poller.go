@@ -50,17 +50,6 @@ type PollerOption func(*Poller)
 // WithPollerLogger sets the logger.
 func WithPollerLogger(l *slog.Logger) PollerOption { return func(p *Poller) { p.log = l } }
 
-// WithPollerClock replaces the time source.
-func WithPollerClock(now func() time.Time) PollerOption { return func(p *Poller) { p.now = now } }
-
-// WithHTTPClient supplies a custom HTTP client.
-func WithHTTPClient(h *http.Client) PollerOption { return func(p *Poller) { p.http = h } }
-
-// WithCompanyNames supplies ticker-to-company mappings for better queries.
-func WithCompanyNames(names map[string]string) PollerOption {
-	return func(p *Poller) { p.companyNames = names }
-}
-
 // WithObserver registers a health reporter.
 func WithObserver(f func(ctx context.Context, provider string, ok, skipped bool, err error)) PollerOption {
 	return func(p *Poller) { p.observe = f }

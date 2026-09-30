@@ -190,11 +190,6 @@ func defaultFetchClient() *http.Client {
 	return &http.Client{Transport: tr, Timeout: 120 * time.Second}
 }
 
-// WithEngineHTTPClient replaces the HTTP client.
-func WithEngineHTTPClient(c *http.Client) EngineOption {
-	return func(e *Engine) { e.http = c }
-}
-
 // WithWorkers bounds how many sources are fetched at once.
 func WithWorkers(n int) EngineOption {
 	return func(e *Engine) {

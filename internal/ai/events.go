@@ -2,8 +2,6 @@ package ai
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"sort"
 	"strconv"
@@ -380,20 +378,4 @@ func truncateWords(s string, max int) string {
 		return strings.Join(fields, " ")
 	}
 	return strings.Join(fields[:max], " ") + "…"
-}
-
-// EvidenceHash identifies the exact set of evidence an event rests on.
-//
-// It is the cache key for classification. Ten outlets reporting one story
-// produce one cluster and therefore one model call; when an eleventh arrives,
-// the hash changes and the event is reclassified, because new corroboration
-// can genuinely change how important something is.
-func EvidenceHash(e news.Event) string {
-	hashes := make([]string, 0, len(e.Evidence))
-	for _, ev := range e.Evidence {
-		hashes = append(hashes, ev.ContentHash)
-	}
-	sort.Strings(hashes)
-	sum := sha256.Sum256([]byte(strings.Join(hashes, "|")))
-	return hex.EncodeToString(sum[:12])
 }

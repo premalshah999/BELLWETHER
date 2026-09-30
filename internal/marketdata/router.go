@@ -59,11 +59,6 @@ func WithLogger(l *slog.Logger) RouterOption { return func(r *Router) { r.log = 
 // WithClock replaces the time source, used by tests to age the cache.
 func WithClock(now func() time.Time) RouterOption { return func(r *Router) { r.now = now } }
 
-// WithTTL overrides the cache lifetime for one interval.
-func WithTTL(iv Interval, d time.Duration) RouterOption {
-	return func(r *Router) { r.ttl[iv] = d }
-}
-
 // defaultTTLs balance freshness against provider budgets.
 //
 // These are the lifetimes for a *finished* bar. While a venue is trading, the

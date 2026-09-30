@@ -45,9 +45,6 @@ func WithBaseURL(u string) Option {
 	return func(c *Client) { c.baseURL = strings.TrimSuffix(u, "/") }
 }
 
-// WithHTTPClient supplies a custom HTTP client.
-func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
-
 // New builds a Telegram notifier. Empty credentials produce an unconfigured
 // notifier, which the pipeline skips rather than treating as a failure.
 func New(token, chatID string, opts ...Option) *Client {

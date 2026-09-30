@@ -63,9 +63,6 @@ type OutcomeSink func(ctx context.Context, o Outcome)
 // Option configures a Client.
 type Option func(*Client)
 
-// WithHTTPClient supplies a custom HTTP client.
-func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
-
 // WithLogger sets the logger.
 func WithLogger(l *slog.Logger) Option { return func(c *Client) { c.log = l } }
 
