@@ -14,58 +14,6 @@ import { Landmark } from "lucide-react";
  * trades at 12, on returns in the bottom quarter of that sector, is the whole
  * argument. The peer column carries the emphasis.
  */
-/**
- * The one-line version, for the quote header.
- *
- * Valuation is reference material rather than a feed: it is looked at once
- * when an instrument is opened and then ignored. Giving it a third of the
- * bottom row crowded the two panels that are actually read, so the headline
- * ratios live inline and the detail expands on demand.
- */
-export function ValuationStrip({
-  symbol,
-  onExpand,
-  expanded,
-}: {
-  symbol: string;
-  onExpand: () => void;
-  expanded: boolean;
-}) {
-  const { data } = useQuery({
-    queryKey: ["fundamentals", symbol],
-    queryFn: () => api.fundamentals(symbol),
-    retry: false,
-    staleTime: 6 * 60 * 60 * 1000,
-  });
-
-  if (!data) return null;
-  const s = data.snapshot;
-
-  // The single most useful comparison, stated rather than left as a number.
-  const pe = data.peers?.stats.find((x) => x.metric === "P/E");
-  const verdict =
-    pe?.percentile == null
-      ? null
-      : pe.percentile >= 50
-        ? { text: "pricier than sector", tone: "text-semantic-down" }
-        : { text: "cheaper than sector", tone: "text-semantic-up" };
-
-  return (
-    <button
-      type="button"
-      onClick={onExpand}
-      title="Show the full peer comparison"
-      className="flex shrink-0 items-baseline gap-3 border border-border-subtle px-2.5 py-1 font-mono text-meta transition-colors hover:border-border-focus"
-    >
-      <Stat label="P/E" v={s.pe_trailing} />
-      <Stat label="P/B" v={s.price_to_book} />
-      <Stat label="ROE" v={s.return_on_equity} pct />
-      {verdict && <span className={verdict.tone}>{verdict.text}</span>}
-      <span className="text-text-muted">{expanded ? "hide" : "detail"}</span>
-    </button>
-  );
-}
-
 export function Fundamentals({ symbol, onHide }: { symbol: string; onHide?: () => void }) {
   const ticker = tickerOf(symbol);
   const { data, isError } = useQuery({

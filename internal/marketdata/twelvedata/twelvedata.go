@@ -51,9 +51,6 @@ func WithBaseURL(u string) Option {
 	return func(c *Client) { c.baseURL = strings.TrimSuffix(u, "/") }
 }
 
-// WithHTTPClient supplies a custom HTTP client.
-func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
-
 // WithClock replaces the time source, used by tests to cross a day boundary.
 func WithClock(now func() time.Time) Option { return func(c *Client) { c.now = now } }
 

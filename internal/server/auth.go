@@ -104,12 +104,6 @@ func newSessionSecret() []byte {
 
 type profileKey struct{}
 
-// ProfileFrom returns the profile behind a request, if any.
-func ProfileFrom(ctx context.Context) (auth.Profile, bool) {
-	p, ok := ctx.Value(profileKey{}).(auth.Profile)
-	return p, ok
-}
-
 // authenticate resolves a request to a profile.
 //
 // Two credentials are accepted and they are the same credential underneath. A

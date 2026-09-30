@@ -36,13 +36,12 @@ type Budget interface {
 
 // Client is the Alpha Vantage adapter.
 type Client struct {
-	baseURL     string
-	apiKey      string
-	dailyLimit  int
-	budget      Budget
-	http        *http.Client
-	now         func() time.Time
-	lastCallGap time.Duration
+	baseURL    string
+	apiKey     string
+	dailyLimit int
+	budget     Budget
+	http       *http.Client
+	now        func() time.Time
 }
 
 // Option configures a Client.
@@ -52,9 +51,6 @@ type Option func(*Client)
 func WithBaseURL(u string) Option {
 	return func(c *Client) { c.baseURL = strings.TrimSuffix(u, "/") }
 }
-
-// WithHTTPClient supplies a custom HTTP client.
-func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
 
 // WithClock replaces the time source, used by tests to cross a day boundary.
 func WithClock(now func() time.Time) Option { return func(c *Client) { c.now = now } }

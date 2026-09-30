@@ -25,7 +25,7 @@ export interface Palette {
   font: string;
 }
 
-export function readPalette(): Palette {
+function readPalette(): Palette {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string) => css.getPropertyValue(name).trim();
   return {

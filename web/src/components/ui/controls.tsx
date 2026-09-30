@@ -56,7 +56,7 @@ export function Segmented<T extends string | number>({
 }
 
 /** Closes on an outside click or Escape. */
-export function useDismiss(open: boolean, close: () => void) {
+function useDismiss(open: boolean, close: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -461,13 +461,6 @@ export function Drawer({
         {children}
       </div>
     </div>
-  );
-}
-
-/** The frame lists and tables sit in: a card inset from the page edge. */
-export function Sheet({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return (
-    <div className={"mx-5 mb-8 overflow-clip rounded-xl border border-border-subtle bg-bg-card md:mx-8 " + className}>{children}</div>
   );
 }
 

@@ -110,16 +110,6 @@ type ScraperReport struct {
 	Skipped bool   `json:"skipped,omitempty"`
 }
 
-// company_Match mirrors the resolver's match type structurally, so that the
-// dependency stays one-way.
-type company_Match = struct {
-	Symbol     string  `json:"symbol"`
-	Name       string  `json:"name"`
-	Confidence float64 `json:"confidence"`
-	Method     string  `json:"method"`
-	Matched    string  `json:"matched"`
-}
-
 // Engine runs scrapers concurrently and merges what they return.
 type Engine struct {
 	scrapers []Scraper

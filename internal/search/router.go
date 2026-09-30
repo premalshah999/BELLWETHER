@@ -33,9 +33,6 @@ type RouterOption func(*Router)
 // WithLogger sets the logger.
 func WithLogger(l *slog.Logger) RouterOption { return func(r *Router) { r.log = l } }
 
-// WithTTL overrides the cache lifetime.
-func WithTTL(d time.Duration) RouterOption { return func(r *Router) { r.ttl = d } }
-
 // WithClock replaces the time source.
 func WithClock(now func() time.Time) RouterOption { return func(r *Router) { r.now = now } }
 

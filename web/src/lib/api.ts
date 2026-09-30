@@ -400,30 +400,6 @@ export interface MorningBrief {
   coverage: BriefCoverage;
 }
 
-export interface Citation {
-  index: number;
-  title: string;
-  url: string;
-  source: string;
-  snippet?: string;
-  /** Whether the model actually referenced this source. */
-  used: boolean;
-}
-
-export interface Explanation {
-  symbol: string;
-  generated_at: string;
-  model: string;
-  status: AIStatus;
-  price: number;
-  change_percent: number;
-  explanation: string;
-  confidence: "high" | "medium" | "low";
-  caveat: string;
-  citations: Citation[] | null;
-  note?: string;
-}
-
 export interface Scenario {
   probability: number;
   move_percent: number;
@@ -466,12 +442,6 @@ export interface Calibration {
   generated_at: string;
 }
 
-export interface CalcField {
-  label: string;
-  value: string;
-  raw: number;
-}
-
 export interface SymbolSearchResult {
   symbol: string;
   ticker: string;
@@ -480,7 +450,6 @@ export interface SymbolSearchResult {
   currency: string;
   type: string;
 }
-
 
 /* ── Events: the news and filings layer ─────────────────────────────────── */
 
@@ -761,14 +730,6 @@ export interface UpcomingCatalyst {
   next_in_days?: number;
 }
 
-export interface HotEntry {
-  key: string;
-  score: number;
-  heat: "normal" | "warm" | "hot";
-  reason?: string;
-  since?: string;
-}
-
 /* ── Deep research ──────────────────────────────────────────────────────── */
 
 export interface ResearchSource {
@@ -795,33 +756,6 @@ export interface ResearchScraperReport {
   name: string;
   count: number;
   error?: string;
-}
-
-export interface DebriefSection {
-  title: string;
-  body: string;
-  events?: number[];
-}
-
-export interface DebriefOutstanding {
-  item: string;
-  expected?: string;
-  events?: number[];
-}
-
-export interface SymbolDebrief {
-  symbol: string;
-  company?: string;
-  period: string;
-  headline: string;
-  sections?: DebriefSection[];
-  outstanding?: DebriefOutstanding[];
-  blind_spots?: string[];
-  event_count: number;
-  official_count: number;
-  model?: string;
-  generated_at: string;
-  events?: MarketEvent[];
 }
 
 export interface ResearchClaim {
@@ -989,7 +923,6 @@ export interface Conversation {
   archived: boolean;
   turns?: ResearchTurn[];
 }
-
 
 /** One instrument the scanner considers to be behaving abnormally. */
 export interface ScanFinding {
@@ -1230,7 +1163,6 @@ export interface BacktestResponse {
   elapsed: string;
 }
 
-
 // ---------------------------------------------------------------------------
 // Who's buying: insiders (SEC Form 4) and followed funds (SEC 13F)
 // ---------------------------------------------------------------------------
@@ -1364,18 +1296,8 @@ export const api = {
 
   health: () => request<HealthResponse>("/api/health"),
 
-  watchlist: () => request<{ items: WatchlistItem[] }>("/api/watchlist"),
   /** The list without waiting on live prices: persisted bars only. */
   watchlistCached: () => request<{ items: WatchlistItem[] }>("/api/watchlist?cached=1"),
-
-  addWatchlist: (symbol: string, note = "") =>
-    request<{ symbol: string }>("/api/watchlist", {
-      method: "POST",
-      body: JSON.stringify({ symbol, note }),
-    }),
-
-  removeWatchlist: (symbol: string) =>
-    request<void>(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: "DELETE" }),
 
   candles: (symbol: string, interval: Interval, limit = 300) =>
     request<CandlesResponse>(
@@ -1389,7 +1311,6 @@ export const api = {
   vocabulary: () => request<Vocabulary>("/api/algorithms/vocabulary"),
 
   templates: () => request<{ templates: Template[] }>("/api/algorithms/templates"),
-
 
   /* ── Events ── */
 
@@ -1470,27 +1391,17 @@ export const api = {
     return request<EventStudyResult>(`/api/eventstudy?${p.toString()}`);
   },
 
-
   /** Valuation, reported periods and peer position for one company. */
   fundamentals: (symbol: string) =>
     request<Fundamentals>(`/api/symbols/${encodeURIComponent(symbol)}/fundamentals`),
-
-  /** The most recent scan's findings. */
-  /** What the scanner has said about one instrument over time. */
-  scanHistory: (symbol: string, limit = 12) =>
-    request<{ symbol: string; findings: ScanFinding[] | null; count: number }>(
-      `/api/scan/symbols/${encodeURIComponent(symbol)}?limit=${limit}`,
-    ),
 
   scanLatest: (limit = 40) =>
     request<{ findings: ScanFinding[] | null; count: number }>(
       `/api/scan/latest?limit=${limit}`,
     ),
 
-
   /** Runs a scan now. Takes around two minutes across the full universe. */
   runScan: () => request<ScanResult>("/api/scan/run", { method: "POST" }),
-
 
   /** Starts a research turn. Returns as soon as it is queued; poll the
    *  conversation for progress. */
@@ -1517,8 +1428,6 @@ export const api = {
 
   algorithms: () => request<{ algorithms: Algorithm[] }>("/api/algorithms"),
 
-  algorithm: (id: number) => request<Algorithm>(`/api/algorithms/${id}`),
-
   createAlgorithm: (a: Algorithm) =>
     request<Algorithm>("/api/algorithms", { method: "POST", body: JSON.stringify(a) }),
 
@@ -1534,8 +1443,6 @@ export const api = {
       body: JSON.stringify(a),
     }),
 
-
-
   // Alerts
   alerts: (params: { limit?: number; unread?: boolean; symbol?: string; algorithmId?: number } = {}) => {
     const q = new URLSearchParams();
@@ -1546,7 +1453,6 @@ export const api = {
     const suffix = q.toString() ? `?${q}` : "";
     return request<AlertPage>(`/api/alerts${suffix}`);
   },
-
 
   markAllAlertsRead: () => request<void>("/api/alerts/read-all", { method: "POST" }),
 
@@ -1565,9 +1471,6 @@ export const api = {
     request<{ brief: MorningBrief; stale: false }>("/api/ai/brief/generate", {
       method: "POST",
     }),
-  explainMove: (symbol: string) =>
-    request<Explanation>(`/api/symbols/${encodeURIComponent(symbol)}/explain`, { method: "POST" }),
-
 
   outlooks: (symbol?: string, limit = 50) => {
     const q = new URLSearchParams({ limit: String(limit) });
@@ -1578,20 +1481,6 @@ export const api = {
   },
 
   calibration: () => request<Calibration>("/api/ai/calibration"),
-
-
-
-
-  debrief: (symbol: string, days = 30) =>
-    request<SymbolDebrief>(
-      `/api/symbols/${encodeURIComponent(symbol)}/debrief?days=${days}`,
-      { method: "POST" },
-    ),
-
-  symbolEvents: (symbol: string, limit = 30) =>
-    request<EventListResponse>(
-      `/api/symbols/${encodeURIComponent(symbol)}/events?limit=${limit}`,
-    ),
 
   // Watchlists — up to five named lists.
   watchlists: () =>
@@ -1674,9 +1563,6 @@ export const api = {
   deleteScreen: (id: number) =>
     request<void>(`/api/screens/${id}`, { method: "DELETE" }),
 
-  runSavedScreen: (id: number) =>
-    request<ScreenResult>(`/api/screens/${id}/run`, { method: "POST" }),
-
   /**
    * Runs a rule over history.
    *
@@ -1727,11 +1613,6 @@ export const api = {
     notes?: string;
   }) => request<{ id: number }>("/api/positions", { method: "POST", body: JSON.stringify(body) }),
 
-  updatePosition: (
-    id: number,
-    body: { quantity: number; cost_basis: number; opened_at?: string; account?: string; notes?: string },
-  ) => request<{ ok: true }>(`/api/positions/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-
   deletePosition: (id: number) =>
     request<{ ok: true }>(`/api/positions/${id}`, { method: "DELETE" }),
 
@@ -1740,14 +1621,6 @@ export const api = {
     id: number,
     body: { quantity: number; exit_price: number; closed_at?: string; notes?: string },
   ) => request<Trade>(`/api/positions/${id}/close`, { method: "POST", body: JSON.stringify(body) }),
-
-  trades: (opts: { symbol?: string; limit?: number } = {}) => {
-    const p = new URLSearchParams();
-    if (opts.symbol) p.set("symbol", opts.symbol);
-    if (opts.limit) p.set("limit", String(opts.limit));
-    const qs = p.toString();
-    return request<{ trades: Trade[] }>(`/api/trades${qs ? `?${qs}` : ""}`);
-  },
 
   /** Closed trades with catalyst attribution -- see internal/storage/postgres/journal.go. */
   journal: (limit = 200) =>

@@ -35,11 +35,3 @@ export function useTheme() {
   }, []);
   return [choice, set] as const;
 }
-
-/** Whether the page is currently drawn dark, however that was decided. */
-export function isDark(): boolean {
-  const stamped = document.documentElement.getAttribute("data-theme");
-  if (stamped === "light") return false;
-  if (stamped === "system") return !window.matchMedia("(prefers-color-scheme: light)").matches;
-  return true;
-}

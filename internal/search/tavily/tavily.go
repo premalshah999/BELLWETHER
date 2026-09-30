@@ -35,9 +35,6 @@ func WithBaseURL(u string) Option {
 	return func(c *Client) { c.baseURL = strings.TrimSuffix(u, "/") }
 }
 
-// WithHTTPClient supplies a custom HTTP client.
-func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
-
 // New builds a Tavily adapter.
 func New(apiKey string, opts ...Option) *Client {
 	c := &Client{
