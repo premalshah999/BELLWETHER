@@ -47,16 +47,9 @@ func (c *Client) CompleteJSON(ctx context.Context, req Request, target any) (Res
 		return resp, nil
 	}
 
-	// A truncated answer is not a malformed one, and the difference decides
-	// whether retrying can possibly help.
-	//
-	// When the model runs out of completion budget mid-object, the text it
-	// did produce is well-formed right up to the cut and then simply stops.
-	// That parses as garbage, but asking again changes nothing: the second
-	// answer is cut at the same place for the same cost, and the operator is
-	// left with a "bad JSON" error that points at the model rather than at
-	// the token cap that actually caused it. Only the empty-output case was
-	// recognised before, which missed every partial response.
+	// A truncated answer is not a malformed one: the model ran out of
+	// completion budget mid-object, and asking again is cut at the same place
+	// for the same cost. Reported as a sizing problem rather than as bad JSON.
 	if resp.FinishReason == "length" {
 		return resp, fmt.Errorf(
 			"%w: response cut off after %d completion tokens (max_tokens=%d); raise the limit or send fewer items per request",

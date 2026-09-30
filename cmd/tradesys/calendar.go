@@ -15,15 +15,9 @@ import (
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
-// calendarBatch is how many symbols go to the sidecar in one request.
-//
-// The sidecar walks a batch one symbol at a time rather than fanning out over
-// threads, which is deliberate -- the scan path already showed what threading
-// that process does to its memory. Measured at about twelve symbols a second
-// against a warm upstream, so a batch of 250 is roughly twenty seconds and
-// the full 2,254-name universe is about three minutes. Small enough that a
-// failure costs one batch, large enough that the whole refresh is not 2,254
-// round trips.
+// calendarBatch is how many symbols go to the sidecar per request. It walks
+// them one at a time (about twelve a second), so a batch is roughly twenty
+// seconds: small enough that a failure costs one batch.
 const calendarBatch = 250
 
 // refreshCalendar reloads the forward calendar for the whole universe.

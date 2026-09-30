@@ -26,15 +26,9 @@ func (d *DB) IssueKey(ctx context.Context, k auth.Key, name string, role auth.Ro
 	return p, nil
 }
 
-// ProfileForKey resolves a presented key to its profile.
-//
-// Two steps on purpose. The prefix selects one row, then the full digest is
-// compared in constant time; looking a key up by its digest directly would
-// work too, but this keeps the stored prefix useful for logs and for the
-// interface without ever putting the secret in an index.
-//
-// A revoked key resolves to nothing. Returning the profile with a flag would
-// invite a caller to forget the check.
+// ProfileForKey resolves a presented key to its profile: the prefix selects
+// one row, then the full digest is compared in constant time, so the secret is
+// never in an index. A revoked key resolves to nothing.
 func (d *DB) ProfileForKey(ctx context.Context, presented string) (auth.Profile, bool, error) {
 	prefix, ok := auth.PrefixOf(presented)
 	if !ok {
@@ -68,18 +62,9 @@ func (d *DB) ProfileForKey(ctx context.Context, presented string) (auth.Profile,
 	return p, true, nil
 }
 
-// ProfileByPrefix resolves a key's public prefix to its profile.
-//
-// Separate from ProfileForKey, which takes the whole secret and verifies a
-// digest. This one takes only the public half and verifies nothing, so it is
-// exclusively for callers that have already proved possession by other means
-// — specifically a session cookie, whose HMAC signature is the proof and
-// whose payload is the prefix.
-//
-// Conflating the two is a real mistake and was made here: the cookie path
-// called ProfileForKey with a prefix, which hashed the prefix, compared it
-// against the digest of a full key, and failed every time. Sign-in returned
-// 200, set a valid cookie, and left the browser reporting itself signed out.
+// ProfileByPrefix resolves a key's public prefix to its profile and verifies
+// nothing, so it is only for a caller that has proved possession another way:
+// a session cookie, whose HMAC is the proof and whose payload is the prefix.
 func (d *DB) ProfileByPrefix(ctx context.Context, prefix string) (auth.Profile, bool, error) {
 	var (
 		p                 auth.Profile

@@ -1,14 +1,8 @@
-// Package indicators computes technical indicators over candle series.
-//
-// Every function here returns a Series aligned index-for-index with its input:
-// output[i] describes the bar at input[i]. Positions where the indicator is
-// not yet defined hold NaN, never zero.
-//
-// That alignment rule is the whole point. The algorithm evaluator compares
-// operands bar-for-bar and needs to distinguish "no value yet" from "the value
-// is zero" — a 200-day moving average that silently reads 0 for its first 199
-// bars would fire a "close crossed above SMA200" alert on day one of every
-// symbol. Missing data must stay missing all the way to the evaluator.
+// Package indicators computes technical indicators over candle series. Every
+// function returns a Series aligned index-for-index with its input, with NaN,
+// never zero, where the indicator is not yet defined: a 200-day average that
+// read 0 for its first 199 bars would fire "close crossed above SMA200" on day
+// one of every symbol.
 package indicators
 
 import (

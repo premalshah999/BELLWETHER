@@ -40,15 +40,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Clear the write deadline for this connection only.
-	//
-	// The server sets WriteTimeout to bound ordinary requests, and that is
-	// correct for them. But a server-sent event response never completes, so
-	// the deadline applies to the whole stream and severs it on a fixed
-	// schedule — six minutes here — taking every connected client down
-	// together and producing a synchronised reconnect that is indistinguishable
-	// from an upstream failure. ResponseController lifts it per connection
-	// rather than weakening the setting for everything else.
+	// Clear the write deadline for this connection only. WriteTimeout is right
+	// for ordinary requests, but an event stream never completes, and the
+	// deadline would sever every client on a fixed schedule.
 	rc := http.NewResponseController(w)
 	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
 		s.deps.Log.Warn("could not clear the stream write deadline; "+

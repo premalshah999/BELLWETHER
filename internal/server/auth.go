@@ -16,21 +16,9 @@ import (
 	"github.com/tradesys/dashboard/internal/auth"
 )
 
-// Authentication.
-//
-// This deployment is two operators on a self-hosted box reachable from the
-// public internet, which is the case a shared passphrase fits: there are no
-// roles to model, no user directory to keep, and no password reset flow worth
-// building for two people who can edit the environment file.
-//
-// What it must not be is absent. Before this existed the host answered every
-// request from anyone who found it, including the writes — deleting an
-// algorithm, editing the watchlist, or spending the month's token budget took
-// one unauthenticated POST.
-//
-// Sessions are stateless HMAC-signed cookies rather than server-side records.
-// A restart then does not log everybody out, and there is no session table to
-// grow, expire or leak.
+// Authentication: API keys with roles, issued from the command line, and
+// stateless HMAC-signed session cookies, so a restart logs nobody out and
+// there is no session table to grow, expire or leak.
 
 const (
 	sessionCookie = "tradesys_session"
@@ -41,16 +29,9 @@ const (
 )
 
 // signSession returns a cookie value proving which key the bearer signed in
-// with, and until when.
-//
-// The key's prefix is carried rather than an opaque session id, so every
-// request can re-check the key against the database. That is what makes
-// revocation immediate: without it a withdrawn key would keep working for the
-// life of a cookie nobody can see or cancel.
-//
-// The prefix is not a secret — it is the public half of the key, stored in
-// clear precisely so it can be shown and logged — so putting it in a cookie
-// reveals nothing that the key list does not.
+// with, and until when. It carries the key's public prefix rather than an
+// opaque id, so every request re-checks the key and revoking it ends its
+// sessions at once.
 func signSession(secret []byte, prefix string, expires time.Time) string {
 	payload := prefix + "." + strconv.FormatInt(expires.Unix(), 10)
 	mac := hmac.New(sha256.New, secret)
@@ -155,23 +136,11 @@ func (s *Server) authenticate(r *http.Request) (auth.Profile, bool) {
 	return profile, true
 }
 
-// readOnlyPosts are POST routes that change nothing.
-//
-// Each earns its place by having no write in it, checked rather than assumed,
-// and the near misses are the useful part of this list:
-//
-//   - /api/screens/run takes an ad-hoc filter and queries scan metrics. No
-//     write. /api/screens/{id}/run is deliberately absent: it calls
-//     TouchScreen to record when the screen last ran, which is small but is
-//     still a write, and a read-only key should not be able to cause one.
-//   - /api/algorithms/validate and /preview are pure functions of the rule
-//     definition in the body.
-//   - /api/algorithms/backtest evaluates an unsaved definition against stored
-//     candles. /api/algorithms/{id}/backtest is absent for the same reason as
-//     the saved screen.
-//
-// Exact paths rather than prefixes, so a future route cannot fall into this
-// set by being named similarly to one that belongs in it.
+// readOnlyPosts are the POST routes a read-only key may call, each checked to
+// contain no write: an ad-hoc screen run, and validating, previewing or
+// backtesting an unsaved rule. Their saved-object variants are absent because
+// they record a last-run time. Exact paths, so a similarly named route cannot
+// fall into the set.
 var readOnlyPosts = map[string]bool{
 	"/api/screens/run":         true,
 	"/api/algorithms/validate": true,
@@ -214,16 +183,10 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// A viewer may read and nothing else. Anything that is not a plain
-		// read is refused, including the model-backed routes: those are GET-
-		// shaped in some cases but spend a shared budget, which is a write in
-		// every sense that matters.
-		//
-		// The method is the rule and readOnlyPosts is the exception, because
-		// the method is a transport detail and not a statement of intent: a
-		// screen carries its filter in a body, so running one has to be a
-		// POST, and running one only reads. A read-only key that cannot run a
-		// screen is refusing a read.
+		// A viewer may read and nothing else: anything that is not a GET is
+		// refused, which includes every model-backed route, since those spend
+		// a shared budget. readOnlyPosts is the exception for reads that need
+		// a request body.
 		if !profile.CanWrite() && r.Method != http.MethodGet && r.Method != http.MethodHead &&
 			!readOnlyPosts[r.URL.Path] {
 			writeError(w, http.StatusForbidden, "read_only",
@@ -309,15 +272,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
 }
 
-// handleAuthStatus tells the front end whether it needs to show a sign-in
-// form, and who is signed in.
-//
-// Answers without credentials on purpose: a client that cannot tell the
-// difference between "not signed in" and "server down" shows the wrong screen
-// for both.
-//
-// A deployment without keys remains locked until its owner uses the CLI.
-// Open local development requires an explicit configuration flag.
+// handleAuthStatus tells the front end whether to show a sign-in form and who
+// is signed in. It answers without credentials, so the client can tell "not
+// signed in" from "server down".
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"required": true, "authenticated": false}
 

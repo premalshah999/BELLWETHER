@@ -1,24 +1,12 @@
-// Package congress reads the House Clerk's financial disclosure filings --
-// specifically Periodic Transaction Reports, the STOCK Act filing a member
-// of Congress makes within 45 days of buying or selling a security.
+// Package congress reads the House Clerk's Periodic Transaction Reports, the
+// STOCK Act filing a member makes within 45 days of trading a security.
 //
-// What this can promise and what it cannot are kept deliberately distinct.
-// The filing index (who filed what, when, member, chamber, district) is
-// exact: it comes from the Clerk's own structured XML. Which tickers a
-// filing names is a best-effort reading of the PDF itself, and the PDFs are
-// not uniformly formatted -- some list a ticker in parentheses right next to
-// the security name ("Apple Inc. - Common Stock (AAPL)"), some wrap that
-// parenthetical onto a different visual line than the transaction row it
-// belongs to, and some ETFs are named without a parenthesized ticker at all
-// ("Invesco QQQ [OT]"). Rather than guess at row-level pairing that the
-// source layout does not support reliably, this reads at the document
-// level: every parenthesized ticker anywhere in the filing, and the
-// earliest transaction date found anywhere in it. That is a real, honest
-// signal -- "this filing names AAPL, and covers a transaction as early as
-// this date" -- and is not dressed up as more precision than the PDF
-// actually offers. A reader who wants the exact line -- which type, which
-// amount range, against which specific ticker -- follows the link to the
-// filing itself, which every result carries.
+// The filing index (who filed what, when) is exact: it is the Clerk's own XML.
+// Which tickers a filing names is a best-effort reading of the PDF, at
+// document level: every parenthesised ticker in it and the earliest
+// transaction date. The PDFs are not laid out consistently enough for row-
+// level pairing, so none is claimed; each result links to the filing for the
+// exact lines.
 package congress
 
 import (
@@ -180,17 +168,9 @@ var notTickers = map[string]bool{
 // with a specific ticker (see the package doc for why not).
 var dateOrDate = regexp.MustCompile(`(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})`)
 
-// ExtractPTR reads a Periodic Transaction Report PDF, given as raw bytes
-// (never written to disk -- piped to pdftotext over stdin, both because a
-// container's filesystem should not have to be writable for this and
-// because there is nothing worth cleaning up afterward), and returns every
-// ticker it names and the earliest transaction date found in it. It shells
-// out to pdftotext -layout rather than using a pure-Go PDF library: two
-// were tried against real filings from this source, and both reordered or
-// dropped table cells that pdftotext's layout mode preserved correctly --
-// these are Adobe-generated government forms with a denser internal
-// structure than a simple linear PDF, and poppler's renderer handles that
-// reliably where the lighter libraries did not.
+// ExtractPTR reads a report PDF from memory and returns every ticker it names
+// and its earliest transaction date. It pipes the bytes to pdftotext -layout:
+// two pure-Go PDF libraries reordered or dropped table cells in these forms.
 func ExtractPTR(ctx context.Context, pdf []byte) (tickers []string, earliest time.Time, err error) {
 	cmd := exec.CommandContext(ctx, "pdftotext", "-layout", "-", "-")
 	cmd.Stdin = bytes.NewReader(pdf)

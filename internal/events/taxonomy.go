@@ -162,12 +162,5 @@ func (t Type) BaselineImportance() int {
 	}
 }
 
-// The NSE subject classifier used to live here: subjectMap, with a hundred
-// exchange filing categories, plus normalizeSubject and ClassifySubject. All
-// three were reachable only from ParseFiling, which is gone, so they described
-// a vocabulary this product no longer reads.
-//
-// The Type constants they mapped to are deliberately kept. Events classified
-// under them are still in the archive, and a type constant is how those rows
-// are read back; removing one would not tidy anything, it would make old data
-// unreadable.
+// Some Type constants above have no producer any more. They stay because
+// archived events are read back through them.

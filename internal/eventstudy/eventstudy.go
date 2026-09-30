@@ -1,24 +1,12 @@
-// Package eventstudy answers the question retail tools never ask: does this
-// event type actually move the stocks it names, historically?
+// Package eventstudy answers whether an event type actually moves the stocks
+// it names. For each event it compares the symbol's return over the N trading
+// days after it with the benchmark's over the same window: the abnormal
+// return, the part of the move the market does not already explain.
 //
-// For each event of a given type, it compares what a symbol actually
-// returned over the N trading days after the event against what the
-// market's own benchmark returned over the same window -- the abnormal
-// return, the part of the move the broad market does not already explain.
-// Averaged across every event of a type, that is a real, falsifiable
-// answer to "does an EARNINGS event move this stock more than a random
-// Tuesday would", instead of a chart that merely shows the two happened
-// near each other.
-//
-// The anchor for "when did this event happen" is deliberately the
-// knowledge timestamp -- news.Event.KnowledgeTime(), which is
-// discovered_at -- not occurred_at or published_at. This package is not
-// asking "did the stock move around the true event date" (a question that
-// can leak information nobody had yet); it is asking "would a return
-// measured from the moment this system actually knew about the event have
-// looked abnormal", which is the only version of the question a downstream
-// trading decision could ever have acted on. Anchoring anywhere else would
-// make every result here look better than it could have been used.
+// The anchor is the knowledge timestamp (discovered_at), not when the event
+// occurred or was published. A return measured from the moment this system
+// knew is the only version a decision could have acted on; anchoring anywhere
+// else makes every result look better than it could have been used.
 package eventstudy
 
 import (

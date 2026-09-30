@@ -21,17 +21,9 @@ type EventStore interface {
 	SaveEventClassification(ctx context.Context, c events.Classification) error
 }
 
-// classifyBatchSize is how many events go into one request.
-//
-// Batching is the cost strategy: the marginal cost of an extra event is its
-// headline, while the prompt explaining the task is paid once. The ceiling is
-// the *response*, not the prompt. Each classified event returns a summary, a
-// why-it-matters line and an entity list, so twelve events at once overran the
-// completion budget and came back cut in half — which parses as garbage and
-// looks like a model failure rather than a sizing mistake.
-//
-// Six events against a much larger completion cap leaves real headroom, and
-// the model here is a reasoning model whose thinking also draws on that cap.
+// classifyBatchSize is how many events go into one request. The prompt is paid
+// once per batch, but the ceiling is the response: twelve events overran the
+// completion budget and came back cut in half.
 const classifyBatchSize = 6
 
 // ClassifyEvents runs the model over unclassified events.
@@ -41,15 +33,10 @@ const classifyBatchSize = 6
 // deterministic pipeline has already typed and entity-resolved everything, so
 // a failure here degrades the feed rather than emptying it.
 func (s *Service) ClassifyEvents(ctx context.Context, limit int) (int, error) {
-	// Classification is a decision, so it goes to Jev when Jev is configured.
-	// The text model is kept for writing, which Jev cannot do; routing its
-	// thousands of daily classifications away is also what lets the text
-	// model's daily dollar cap cover the briefs and research that need it.
-	//
-	// When Jev is configured it is the only classifier. An event Jev fails on
-	// waits for the next run rather than falling back to the text model:
-	// otherwise a Jev outage would spend the whole day's text-model budget on
-	// the backlog and leave nothing for the prose only that model can write.
+	// Classification is a decision, so it goes to Jev when Jev is configured,
+	// and only to Jev: falling back to the text model during a Jev outage
+	// would spend the day's budget on the backlog and leave nothing for the
+	// writing only that model can do.
 	if !s.JevConfigured() && s.client == nil {
 		return 0, ErrNotConfigured
 	}

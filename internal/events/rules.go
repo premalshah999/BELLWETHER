@@ -6,17 +6,10 @@ import (
 	"unicode"
 )
 
-// Cheap keyword classification, applied before any model sees an item.
-//
-// Exchange filings state their own category, so they need none of this. News
-// does not: a Reuters headline arrives as prose, and without a first pass it
-// would sit as UNCLASSIFIED until the hourly classifier reached it. For a
-// system where timing is the point, an event that exists only after the model
-// has thought about it is an event that arrived late.
-//
-// So this runs in microseconds, gets the common cases right, and is explicitly
-// allowed to be wrong at the margins — the model refines it afterwards, and
-// the confidence attached here says how much to trust it in the meantime.
+// Cheap keyword classification, applied before any model sees an item, so a
+// headline is typed when it arrives rather than when the hourly classifier
+// reaches it. It gets the common cases right in microseconds and may be wrong
+// at the margins: the model refines it afterwards.
 
 // rule is one keyword pattern and what it implies.
 type rule struct {
@@ -233,18 +226,10 @@ var marketNoise = compile(
 	"analyst (?:upgrades|downgrades) stock",
 )
 
-// NotReadableHere reports that a headline is not in the script this feed is
-// written in.
-//
-// This is a statement about the product, not about the language. The feed, the
-// classifier's prompts and the entity resolver are all English and Latin-script
-// end to end, so an item in another script cannot be resolved to a company,
-// cannot be sensibly ranked against its neighbours, and cannot be read by the
-// people using it — while still competing for the top of the list on whatever
-// importance the classifier assigns its subject matter.
-//
-// The threshold is deliberately high: a quoted foreign name or a currency
-// sign does not make an otherwise English headline unreadable.
+// NotReadableHere reports that a headline is mostly in another script. The
+// feed, the prompts and the resolver are English end to end, so such an item
+// cannot be resolved, ranked or read. The threshold is high: a quoted foreign
+// name does not make an English headline unreadable.
 func NotReadableHere(headline string) bool {
 	var latin, other int
 	for _, r := range headline {

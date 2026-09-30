@@ -16,15 +16,8 @@ func VolAvg(candles []marketdata.Candle, period int) Series {
 }
 
 // SessionVWAP is the volume-weighted average price, reset at the start of each
-// trading session.
-//
-// This is what a trader means by "VWAP". It only makes sense on intraday bars:
-// on daily bars every session contains exactly one candle, so the result is
-// just that bar's typical price. Callers working with daily data want
-// RollingVWAP instead.
-//
-// Sessions are delimited by the calendar date in the exchange's own timezone,
-// which is why a location has to be supplied.
+// trading session (the calendar date in loc, the exchange's zone). It only
+// makes sense on intraday bars; daily callers want RollingVWAP.
 func SessionVWAP(candles []marketdata.Candle, loc *time.Location) Series {
 	out := newSeries(len(candles))
 	if loc == nil {

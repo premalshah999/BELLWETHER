@@ -1,21 +1,16 @@
-// Package ai wraps a single OpenAI-compatible chat-completions endpoint and
-// the features built on top of it.
+// Package ai wraps one OpenAI-compatible chat-completions endpoint and the
+// features built on it, under three constraints.
 //
-// Three constraints shape everything here.
+// The endpoint is assumed to support neither function calling nor schema
+// enforcement, so structured output is asked for in the prompt and parsed
+// defensively, with one repair attempt.
 //
-// The endpoint is assumed to support neither function calling nor JSON-schema
-// enforcement, because the model this is pointed at does not. Structured
-// output is therefore *asked for* in the prompt and parsed defensively, with
-// one repair attempt, and a graceful degradation when that fails.
+// Tokens cost money: every call is checked against the budget before it is
+// made and recorded after, and a spent budget is reported plainly.
 //
-// Tokens cost money on a fixed monthly budget. Every call is counted against
-// it before it is made and recorded after, and once the budget is spent the AI
-// features say so plainly instead of failing in ways that look like bugs.
-//
-// Model output is never data. Everything produced here is labelled as AI, with
-// a timestamp, all the way to the UI, and no AI feature is ever load-bearing:
-// alerts fire, charts render, and algorithms evaluate whether or not the model
-// is reachable.
+// Model output is never data. It is labelled as AI all the way to the UI, and
+// nothing is load-bearing on it: alerts fire, charts render and algorithms
+// evaluate whether or not the model is reachable.
 package ai
 
 import (

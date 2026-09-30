@@ -70,15 +70,9 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, archive *postgr
 		// was not confirmed live.
 		&research.GDELTScraper{Client: client, Country: "unitedstates", Timespan: "7d"},
 
-		// Publishers that will not serve a search endpoint directly, reached
-		// by scoping discovery to their domain. What comes back is a headline
-		// and a link to them.
-		//
-		// The wires first, then the US financial press. Several of these also
-		// have direct feeds in the ingestion catalogue, and that is not a
-		// duplication: the catalogue has what they published this week, while
-		// a research question needs their archive, which is what scoping
-		// discovery to the domain reaches.
+		// Publishers with no search endpoint, reached by scoping discovery to
+		// their domain. Several also have direct feeds in the catalogue; a
+		// research question needs their archive, which this reaches.
 		&research.PublisherScraper{Client: client, Domain: "reuters.com", Label: "reuters", TrustLevel: news.TrustWire},
 		&research.PublisherScraper{Client: client, Domain: "bloomberg.com", Label: "bloomberg", TrustLevel: news.TrustWire},
 		&research.PublisherScraper{Client: client, Domain: "apnews.com", Label: "ap", TrustLevel: news.TrustWire},

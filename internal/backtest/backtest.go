@@ -1,27 +1,16 @@
 // Package backtest runs an algorithm over history and reports what it would
-// have done.
+// have done, holding every number to one question: could it have been known at
+// the time?
 //
-// The whole value of a backtest is that it is honest about a strategy the
-// operator has not yet risked money on, so every design decision here is made
-// against one question: could this number have been known at the time?
+// 1. Conditions run through the live alert engine's own evaluator, on a slice
+// ending at the bar being evaluated, so look-ahead is structurally impossible.
 //
-// Three rules follow from that, and they are the reason to read this file
-// before trusting a result:
+// 2. A signal is acted on at the next bar's open. Buying at the signal bar's
+// close uses a price learned after the opportunity passed, which flatters most
+// strategies by several percent a year.
 //
-//  1. Conditions are evaluated by the same evaluator the live alert engine
-//     uses, handed a slice that ends at the bar being evaluated. Look-ahead is
-//     therefore structurally impossible rather than merely avoided — the
-//     evaluator cannot read a bar that is not in the slice it was given.
-//
-//  2. A signal on a bar is acted on at the *next* bar's open. The close of a
-//     bar is not knowable until that bar has closed, so a backtest that buys
-//     at the signal bar's close is buying at a price it learned after the
-//     opportunity passed. That single mistake is worth several percent a year
-//     on most strategies and always in the flattering direction.
-//
-//  3. Costs are charged on both sides and default to a real number. A
-//     backtest without costs is not an optimistic estimate, it is a different
-//     strategy — one that trades for free.
+// 3. Costs are charged on both sides and default to a real number. A backtest
+// without costs is a different strategy, one that trades for free.
 package backtest
 
 import (
@@ -197,18 +186,11 @@ const startEquity = 100.0
 // invites them to be read the same way.
 const minBarsForResult = 60
 
-// Run evaluates one algorithm across one symbol's history.
-//
-// The evaluator is handed a growing prefix of the candles rather than an index
-// into the whole series, which is what makes look-ahead impossible instead of
-// merely unintended. It costs a recomputation of the indicators at every bar;
-// on a few thousand bars that is milliseconds, and it removes the entire class
-// of bug where a backtest quietly reads tomorrow.
-// The evaluator is passed in rather than constructed here, so a backtest is
-// guaranteed to use the very instance the live alert engine uses — same
-// exchange timezone, same session handling. A lookalike built locally could
-// drift from it silently, and a backtest that evaluates differently from the
-// engine is measuring a strategy nobody is running.
+// Run evaluates one algorithm across one symbol's history. The evaluator gets
+// a growing prefix of the candles, not an index into the series: that costs a
+// recomputation per bar (milliseconds) and removes the whole class of bug
+// where a backtest reads tomorrow. It is passed in so the backtest uses the
+// very instance the live engine does.
 func Run(
 	a *algo.Algorithm,
 	sym marketdata.Symbol,
@@ -274,14 +256,8 @@ func Run(
 		heldBars int
 	)
 
-	// Buy and hold, filled the same way the strategy is filled.
-	//
-	// The earliest bar the strategy can be *in* the market is the one after
-	// the first evaluable bar, and the benchmark buys at that same open. Any
-	// other convention hands one side a head start: buying at the first bar of
-	// data gives the benchmark moves the strategy could never have caught,
-	// and buying at a close gives it a price the strategy could not transact
-	// at.
+	// Buy and hold is filled the way the strategy is: at the open after the
+	// first evaluable bar. Any other convention hands one side a head start.
 	firstFill := warmup + 1
 	holdEntry := 0.0
 	if firstFill < len(candles) {
@@ -396,16 +372,9 @@ func Run(
 	return res, nil
 }
 
-// tradeReturn is the return on committed notional, net of costs on both legs.
-//
-// Costs are charged against each transaction's own value rather than as a flat
-// haircut, which is what makes the two directions exactly symmetric:
-//
-//	long  N at P, out at X:  N·(X/P) − N − N·c − N·(X/P)·c
-//	short N at P, back at X: N − N·(X/P) − N·c − N·(X/P)·c
-//
-// Divided through by N those give the two expressions below. Both return
-// −2c on a flat round trip, as they must.
+// tradeReturn is the return on committed notional, net of costs charged on
+// each leg's own value, which keeps the two directions symmetric: both return
+// -2c on a flat round trip.
 func tradeReturn(dir Direction, entry, exit, c float64) float64 {
 	if entry <= 0 {
 		return 0

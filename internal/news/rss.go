@@ -98,16 +98,9 @@ func ParseFeed(body []byte) ([]parsedItem, string, error) {
 	for _, item := range doc.Channel.Items {
 		title := cleanText(item.Title)
 		description := cleanText(item.Description)
-		// A link is normally required, because without one there is nothing
-		// to send a reader to. NSE is the exception: it publishes some of its
-		// most valuable items with an empty <link/> element — the exchange
-		// asking a company to explain a price movement, a volume spurt, or a
-		// news report it has seen. Those carry their whole substance in the
-		// description, and requiring a URL discarded every one of them.
-		//
-		// Identity does not depend on the URL either: ContentHash covers the
-		// title and description too, so a link-less item still deduplicates
-		// correctly across polls.
+		// An item needs a title and either a link or a description. Identity
+		// does not depend on the URL: ContentHash covers the title and
+		// description too.
 		if title == "" || (item.Link == "" && description == "") {
 			continue
 		}

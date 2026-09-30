@@ -49,15 +49,10 @@ type RawItem struct {
 	TimestampNote string `json:"timestamp_note,omitempty"`
 }
 
-// KnowledgeTime returns the moment this system could first have acted on the
-// item.
-//
-// It is deliberately DiscoveredAt and never PublishedAt. A publisher's
-// timestamp describes when they released a story, not when we learned of it,
-// and the gap between the two is often minutes. A strategy that treats the
-// publisher's timestamp as its own knowledge time is claiming to have read an
-// article before fetching it — which is exactly the look-ahead bias that makes
-// a backtest look brilliant and a live deployment lose money.
+// KnowledgeTime is the moment this system could first have acted on the item:
+// DiscoveredAt, never PublishedAt. Treating a publisher's timestamp as our own
+// knowledge time claims to have read an article before fetching it, the look-
+// ahead bias that makes a backtest brilliant and a live deployment lose money.
 func (r RawItem) KnowledgeTime() time.Time { return r.DiscoveredAt }
 
 // Latency reports how far behind the publisher we were. It is the metric that
@@ -308,17 +303,9 @@ func ContentHash(canonicalURL, title, description string) string {
 
 func collapseSpace(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-// MarshalJSON omits zero timestamps.
-//
-// Go's `omitempty` has no effect on a time.Time: a struct is never "empty" to
-// encoding/json, so an unset time is serialised as "0001-01-01T00:00:00Z"
-// rather than being left out. That is not a cosmetic problem. A client
-// checking whether `classified_at` is present sees a value and concludes the
-// event has been classified, and a UI formatting the field renders the year 1.
-// Both were observed before this existed.
-//
-// The alias sidesteps the infinite recursion that calling json.Marshal on the
-// same type would otherwise cause.
+// MarshalJSON omits zero timestamps. omitempty has no effect on a time.Time,
+// so an unset time would serialise as year 1, and a client would read
+// classified_at as present. The alias avoids recursing into this method.
 func (e Event) MarshalJSON() ([]byte, error) {
 	type alias Event
 	out := struct {

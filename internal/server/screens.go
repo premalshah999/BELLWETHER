@@ -202,16 +202,9 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pg) && pg.Code == "23505"
 }
 
-// writeFieldErrors reports a rejected definition.
-//
-// Every problem in one response, keyed by field, so the builder can mark the
-// offending rows rather than showing one message at the top.
-//
-// The envelope is the nested {error:{code,message,fields}} shape apiError
-// uses everywhere else -- this used to emit "error" as a bare string, which
-// api.ts's request() cannot parse as an ApiError, so every screen validation
-// failure surfaced to the builder as a generic "Request failed with status
-// 400" instead of the field-by-field detail computed above.
+// writeFieldErrors reports a rejected definition: every problem in one
+// response, keyed by field, in the {error:{code,message,fields}} envelope the
+// client parses, so the builder can mark the offending rows.
 func writeFieldErrors(w http.ResponseWriter, errs []screens.FieldError) {
 	var resp struct {
 		Error struct {

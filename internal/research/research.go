@@ -65,19 +65,8 @@ type Scraper interface {
 type Result struct {
 	Query    string    `json:"query"`
 	Findings []Finding `json:"findings"`
-	// Universe is what the listed master knows about the subject: the
-	// companies in an industry the question named. It is context rather than
-	// a source, and is kept separate from Findings for that reason — it has
-	// no URL and nothing to cite.
-	//
-	// It exists because a question like "which Indian cement companies are
-	// exposed to the coal price" has two halves, and the web only answers
-	// one. No article enumerates the listed cement companies; our own
-	// industry mapping does, for 752 of them.
-	// Measurements are computed from price history rather than read from a
-	// page. They carry no URL because there is nothing to cite: they are
-	// arithmetic over the price series, and a reader checks them by
-	// recomputing rather than by following a link.
+	// Measurements are computed from price history, so they carry no URL: a
+	// reader checks them by recomputing.
 	Measurements []MarketStats `json:"measurements,omitempty"`
 	// Analyses tie each subject company's price history to the news.
 	Analyses []Analysis `json:"analyses,omitempty"`

@@ -11,35 +11,12 @@ func AdditionalOfficialSources() []Source {
 		{"boe-news", "Bank of England news", "https://www.bankofengland.co.uk/rss/news", "GB", "regulatory"},
 		{"eia-energy", "EIA Today in Energy", "https://www.eia.gov/rss/todayinenergy.xml", "US", "energy"},
 
-		// The US agencies whose announcements reprice a sector before any
-		// publisher writes about them, and which nothing else in this
-		// catalogue reached. Each was pulled live from this host before being
-		// added, with the item count it returned:
-		//
-		//   USTR   10 items -- tariff and trade actions, which land on whole
-		//                     import-exposed sectors at once.
-		//   BEA    48 items -- GDP, personal income, trade balance.
-		//   CFTC   10 items -- commodities enforcement and positioning.
-		//   BLS     1 item  -- thin, but it is the CPI and payroll release
-		//                     feed, and those two numbers move every index.
-		//
-		// Two were tried and dropped rather than assumed: SEC's litigation
-		// feed 404s at every documented path, and Treasury's press feed
-		// returns 200 with zero items.
-		//
-		// A third was added and later removed on measurement. DOJ's press
-		// feed was meant for merger challenges and antitrust suits, but it
-		// carries every US Attorney's office too: over 14 days it produced
-		// 104 events, all but one typed as regulatory policy at an average
-		// importance of 5.8, and not one concerned a listed company -- the
-		// ten that resolved to a ticker were false matches ("Salt Lake
-		// County" as LAKE, "New Orleans Man" as WEN). An official source
-		// skips the relevance gate, so this noise went straight to the top
-		// of the policy page. Neither the feed's component filter nor the
-		// JSON API's is honoured, and even the national (/opa/) releases are
-		// mostly criminal cases. The corporate enforcement it was meant to
-		// catch now arrives through disc-us-antitrust in catalog.go, which
-		// does pass the gate.
+		// US agencies whose announcements reprice a sector before any
+		// publisher writes about them: trade actions, GDP and income data,
+		// commodities enforcement. DOJ's press feed is deliberately absent: it
+		// carries every US Attorney's office, skipped the relevance gate as an
+		// official source, and filled the policy page with criminal cases.
+		// Antitrust arrives through disc-us-antitrust instead.
 		{"ustr-press", "USTR trade actions", "https://ustr.gov/rss.xml", "US", "regulatory"},
 		{"bea-news", "BEA economic releases", "https://apps.bea.gov/rss/rss.xml", "US", "economy"},
 		{"cftc-press", "CFTC press releases", "https://www.cftc.gov/RSS/RSSGP/rssgp.xml", "US", "regulatory"},
@@ -55,33 +32,18 @@ func AdditionalOfficialSources() []Source {
 }
 
 // ContactGatedOfficialSources are official feeds that require a declared
-// contact address in the User-Agent, in the SEC_USER_AGENT format
-// ("AppName/1.0 (you@example.com)"). Empty contact returns nothing: a source
-// registered without one would 403 on every poll forever, which reads as a
-// broken feed rather than an unconfigured one.
-//
-// Kept separate from AdditionalOfficialSources rather than gated inside it, so
-// the caller that has the contact can append these without re-adding the
-// keyless feeds the default catalogue already holds.
+// contact in the User-Agent ("AppName/1.0 (you@example.com)"). An empty
+// contact returns nothing: registered without one they would be refused on
+// every poll.
 func ContactGatedOfficialSources(contact string) []Source {
 	if contact == "" {
 		return nil
 	}
 	return []Source{
-		// BLS is specific about this. Measured from this host, it serves 200
-		// to "TradeSys/1.0 (an-address@example.com)" and 403 to both the
-		// catalogue's own URL-style agent and a browser string. A browser
-		// string is not the workaround: the point of that agent is to be
-		// honest about what is fetching.
-		//
-		// Worth the wiring for one feed, because this is the CPI and payroll
-		// release feed and those two numbers move every index in the universe.
-		// FTC had been 403ing for 282 consecutive polls before anyone looked,
-		// for exactly this reason: it was registered with the catalogue's
-		// URL-style agent. Its URL was never wrong. A source that fails this
-		// consistently should have been read as misconfigured rather than
-		// down, which is an argument for the health page distinguishing the
-		// two -- 282 identical failures is not an outage.
+		// BLS and FTC serve a contact-style agent ("TradeSys/1.0
+		// (you@example.com)") and refuse both a URL-style one and a browser
+		// string. FTC failed 282 consecutive polls for exactly this reason:
+		// its URL was never wrong.
 		{
 			ID: "ftc-press", Name: "FTC competition and consumer protection",
 			URL:     "https://www.ftc.gov/feeds/press-release.xml",

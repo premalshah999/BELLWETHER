@@ -12,21 +12,12 @@ import (
 	"github.com/tradesys/dashboard/internal/news"
 )
 
-// SearXNGScraper queries a private metasearch node.
-//
-// SearXNG aggregates many search engines behind one JSON interface. Its value
-// here is not that it is another index — it is that it is *ours*. Every other
-// provider in the fan-out is a company that decides what this system may see
-// and what it costs to see it; this one runs on the same host, needs no key,
-// and costs nothing per query.
-//
-// Measured from this deployment it reaches Google CSE, DuckDuckGo and Bing
-// News. Brave and Startpage refuse it — rate limits and CAPTCHAs — which is
-// the standing caveat: it works by scraping engines that would rather it did
-// not, so any individual engine may stop answering at any moment. That is
-// survivable because it is one provider among several rather than the only
-// one, and the per-engine failures come back in the response rather than
-// silently reducing the result set.
+// SearXNGScraper queries the private metasearch node: many search engines
+// behind one JSON interface, on our own host, with no key and no cost per
+// query. It works by scraping engines that would rather it did not (from here
+// it reaches Google, DuckDuckGo News and Bing News; Brave and Startpage
+// refuse), so any one engine may stop answering, and the per-engine failures
+// come back in the response.
 type SearXNGScraper struct {
 	Client *http.Client
 	// BaseURL of the node, e.g. http://searxng:8080.
@@ -38,15 +29,9 @@ type SearXNGScraper struct {
 	Categories string
 	// TimeRange is SearXNG's recency filter: day, week, month, year.
 	TimeRange string
-	// Pages is how many result pages to request. SearXNG returns roughly ten
-	// results a page, so one page cannot fill a research question that wants
-	// forty readable sources.
-	//
-	// Worth paging here specifically because SearXNG returns the publisher's
-	// own URL, where Google News returns an opaque redirect token that cannot
-	// be resolved to an article. Every extra SearXNG result is a page that
-	// can actually be read; every extra Google News result is another
-	// headline.
+	// Pages is how many result pages to request, about ten results each. Worth
+	// paging because SearXNG returns the publisher's own URL, which can be
+	// read.
 	Pages int
 	// Language scopes results.
 	Language string

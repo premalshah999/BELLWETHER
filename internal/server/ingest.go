@@ -62,15 +62,8 @@ func (s *Server) handleIngestSources(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "Ingestion is not running.")
 		return
 	}
-	// The engine's own registry, not a fresh catalogue.
-	//
-	// This built DefaultRegistry() and reported on that, which is the static
-	// catalogue and nothing else. Every dynamically added source — one per
-	// watched instrument, plus whatever the scanner flagged as moving without
-	// explanation — was therefore invisible here, health and all. On a
-	// fifteen-name watchlist that is fifteen sources the operator was told
-	// nothing about, on a page whose entire purpose is to show that a source
-	// has stopped delivering.
+	// The engine's own registry, which includes the watchlist and scanner
+	// sources added at runtime; a fresh catalogue would hide them.
 	registry := s.deps.Ingest.Registry()
 
 	byID := map[string]news.SourceHealth{}

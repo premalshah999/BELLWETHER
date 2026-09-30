@@ -58,35 +58,16 @@ type SourceHealth struct {
 // Healthy reports whether the source is currently delivering.
 func (h SourceHealth) Healthy() bool { return h.ConsecutiveFailures == 0 }
 
-// chronicFailures is how many consecutive failures stop looking like an
-// outage, and staleSuccess is how long without a success confirms it.
-//
-// Ten and a day, rather than something tuned: the point is to separate a
-// publisher having a bad afternoon from a source that is never going to work
-// until somebody changes something, and those two are orders of magnitude
-// apart. GDELT rate-limiting us looks like four failures with a success two
-// hours ago. FTC refusing our User-Agent looked like 282 failures with the
-// same error every time and no success at all.
 const (
+	// Ten failures and a day without success separate a publisher having a bad
+	// afternoon from a source that will not recover on its own.
 	chronicFailures = 10
 	staleSuccess    = 24 * time.Hour
 )
 
-// Chronic reports a source that has been failing long enough that it is not a
-// transient outage.
-//
-// This distinction was missing, and it hid three real problems for an entire
-// session: FTC had returned 403 on 282 consecutive polls, and BLS and the SEC
-// feeds were failing steadily too. All three were counted the same way as a
-// feed that had been briefly rate-limited, so nothing ever said "this one is
-// not coming back on its own".
-//
-// It deliberately does not claim to know why. The cause could be a wrong
-// User-Agent, a moved URL, a revoked key or a publisher that has blocked this
-// host, and guessing between those from an error string is how a diagnostic
-// becomes misleading. What it does claim is narrow and checkable: this has
-// failed too many times in a row, with no success recently enough to call it
-// an outage, so somebody should look rather than wait.
+// Chronic reports a source that has failed too many times in a row, with no
+// recent success, to be a passing outage: somebody should look rather than
+// wait. It does not claim to know why.
 func (h SourceHealth) Chronic(now time.Time) bool {
 	if h.ConsecutiveFailures < chronicFailures {
 		return false
@@ -150,32 +131,17 @@ func WithEngineClock(now func() time.Time) EngineOption {
 	return func(e *Engine) { e.now = now }
 }
 
-// defaultFetchClient is the HTTP client the engine fetches with.
-//
-// Built explicitly rather than taking http.DefaultTransport, for two reasons
-// that were both costing us a source.
-//
-// Go's default TLS handshake timeout is ten seconds. GDELT is frequently slow
-// to negotiate — measured from this host it takes about 25 seconds to answer
-// at all — so every poll of it failed on the handshake and it accumulated 44
-// consecutive failures without ever being the kind of failure a circuit
-// breaker should act on.
-//
-// And the client-level Timeout is a ceiling over the per-source deadline, not
-// an alternative to it. At 45 seconds it silently capped the 90 seconds the
-// GDELT source asks for, so a timeout written in the catalog was not the
-// timeout being used. Per-request deadlines come from the source's own
-// Timeout, applied through the context; the client-level one exists only to
-// stop a connection hanging forever, and so sits above every source's value.
+// defaultFetchClient is built explicitly because the defaults cost us a
+// source: GDELT takes about 25 seconds to complete a handshake from this host,
+// past Go's ten-second default. The client Timeout only stops a connection
+// hanging forever; each request's real deadline is its source's own, applied
+// through the context.
 func defaultFetchClient() *http.Client {
 	tr := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
-			// Thirty seconds because GDELT, specifically, is slow to accept a
-			// connection at all from inside a container — not slow to answer,
-			// slow to complete the TCP handshake. Every other source in the
-			// catalog connects in well under a second, so this ceiling costs
-			// nothing except on the one endpoint that needs it.
+			// GDELT is slow to accept a connection at all; everything else
+			// connects in well under a second.
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
@@ -222,13 +188,11 @@ const (
 	defaultPerHost = 2
 )
 
-// NewEngine builds an engine over a registry.
-// Registry returns the source registry this engine schedules from.
-//
-// Exposed so that whatever decides a company needs watching can add a source
-// for it and have the engine pick it up on the next tick.
+// Registry returns the source registry, so whatever decides a company needs
+// watching can add a source and have it picked up on the next tick.
 func (e *Engine) Registry() *Registry { return e.registry }
 
+// NewEngine builds an engine over a registry.
 func NewEngine(registry *Registry, store RawStore, opts ...EngineOption) *Engine {
 	e := &Engine{
 		registry: registry,
@@ -349,9 +313,9 @@ func (e *Engine) RunOnce(ctx context.Context) RunResult {
 	return result
 }
 
-// Run fetches on a ticker until the context is cancelled.
-// Run keeps scheduling while slow sources finish. The shared worker gate
-// bounds all batches together; per-source inWork prevents duplicate requests.
+// Run fetches on a ticker until the context is cancelled. It keeps scheduling
+// while slow sources finish: the shared worker gate bounds all batches
+// together, and inWork prevents duplicate requests.
 func (e *Engine) Run(ctx context.Context, tick time.Duration) {
 	if tick <= 0 {
 		tick = 15 * time.Second
@@ -490,27 +454,12 @@ func (e *Engine) get(ctx context.Context, src Source, etag, lastMod string) (bod
 	if err != nil {
 		return nil, "", "", false, fmt.Errorf("news: build request for %s: %w", src.ID, err)
 	}
-	// No User-Agent is sent, and that is a considered choice rather than an
-	// oversight.
-	//
-	// Measured against the live catalog, three header strategies behave very
-	// differently. Go's default "Go-http-client" and any self-identifying
-	// string are refused outright by NSE, which drops the connection, and by
-	// Business Standard, which answers 403 — those publishers block on known
-	// bot patterns. A copied Chrome string gets through everywhere, but it is
-	// a claim to be software we are not.
-	//
-	// Sending nothing works against every source in the catalog and asserts
-	// nothing untrue. We stay a good citizen where it actually counts:
-	// conditional requests, bounded per-host concurrency, cadences matched to
-	// how often a feed really changes, and a circuit breaker that backs off
-	// rather than retrying a struggling host.
+	// No User-Agent unless the source declares one. Go's default and any self-
+	// identifying string are refused by publishers that block on bot patterns,
+	// and a copied browser string claims to be software this is not. Sending
+	// nothing works across the catalog and asserts nothing untrue.
 	req.Header.Set("User-Agent", src.UserAgent)
 	req.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/xml, text/xml, application/json;q=0.9, */*;q=0.8")
-	// Follows the source rather than being fixed at en-IN, which is what it
-	// was when every publisher in the catalog was Indian. A publisher that
-	// varies content or edition by locale should be asked in the locale it
-	// actually serves.
 	req.Header.Set("Accept-Language", acceptLanguageFor(src))
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
@@ -556,8 +505,8 @@ func (e *Engine) get(ctx context.Context, src Source, etag, lastMod string) (bod
 }
 
 const (
-	// maxFeedBytes caps one response. NSE's announcements feed is the largest
-	// we carry at roughly 600KB, so this leaves an order of magnitude spare.
+	// maxFeedBytes caps one response: an order of magnitude above the largest
+	// feed carried.
 	maxFeedBytes = 8 << 20
 )
 
@@ -678,25 +627,17 @@ func (e *Engine) recordSuccess(src Source, now time.Time, items, added int, etag
 	e.persist(h)
 }
 
-// nextInterval decides when to poll a source again.
-//
-// Three influences compose, in this order: the lane and configured cadence
-// set the baseline, recent productivity stretches or compresses it, the market
-// phase scales it for the time of day, and current attention compresses it
-// further for instruments something is happening to. The result is clamped to
-// the lane's bounds so no combination of them can turn a filings feed hourly
-// or hammer a quarterly disclosure.
-//
+// nextInterval decides when to poll a source again: its lane and cadence,
+// stretched by unproductive polls, scaled for the market phase, and compressed
+// when the companies it covers are eventful. Clamped to the lane's bounds.
 // Must be called with e.mu held.
 func (e *Engine) nextInterval(src Source, emptyPolls int, now time.Time) time.Duration {
 	phase := PhaseAt(now)
 	interval := adaptiveInterval(src, emptyPolls, phase)
 
 	if e.heat != nil && len(src.Symbols) > 0 {
-		// A per-company discovery feed inherits the heat of the company it
-		// covers. Broad feeds are left alone: promoting a market-wide feed
-		// because one of its many subjects is eventful would promote it
-		// almost permanently.
+		// A per-company feed inherits its company's heat. Broad feeds do not:
+		// one eventful subject among many would promote them permanently.
 		hottest := HeatNormal
 		for _, sym := range src.Symbols {
 			if h := e.heat.SymbolHeat(sym); h == HeatHot {
@@ -716,13 +657,9 @@ func (e *Engine) nextInterval(src Source, emptyPolls int, now time.Time) time.Du
 	return e.jitter(interval)
 }
 
-// recordFailure applies the circuit breaker.
-//
-// Repeated failure earns exponentially longer silence rather than a retry on
-// the next tick. That protects the publisher from us and protects our worker
-// pool from spending itself on a host that is down, which is the negative
-// caching the architecture calls for expressed as a schedule rather than as a
-// separate cache.
+// recordFailure applies the circuit breaker: repeated failure earns
+// exponentially longer silence, which protects the publisher from us and the
+// worker pool from a host that is down.
 func (e *Engine) recordFailure(src Source, now time.Time, cause error) {
 	e.mu.Lock()
 	st := e.state[src.ID]
@@ -739,10 +676,8 @@ func (e *Engine) recordFailure(src Source, now time.Time, cause error) {
 	}
 	st.health = h
 
-	// A rate limit is honoured on the source's own terms where it states
-	// them, and otherwise earns a deliberately long wait. Backing off by the
-	// ordinary schedule would keep us knocking at a door that has explicitly
-	// asked us to stop.
+	// A rate limit is honoured on the source's own terms where it states them,
+	// and otherwise earns a long wait.
 	var limited *RateLimitedError
 	switch {
 	case errors.As(cause, &limited) && limited.RetryAfter > 0:
@@ -824,12 +759,9 @@ func (e *Engine) backoff(failures int, base time.Duration) time.Duration {
 	return e.jitter(d)
 }
 
-// jitter spreads scheduled fetches so that sources sharing a cadence do not
-// synchronise into a burst every interval.
-//
-// It must be called with e.mu held: the source of randomness is not safe for
-// concurrent use, and every caller already holds the lock while updating the
-// schedule it feeds.
+// jitter spreads fetches so sources sharing a cadence do not synchronise into
+// a burst. Must be called with e.mu held: the random source is not safe for
+// concurrent use.
 func (e *Engine) jitter(d time.Duration) time.Duration {
 	if d <= 0 {
 		return time.Minute
@@ -920,13 +852,9 @@ type gdeltResponse struct {
 	} `json:"articles"`
 }
 
-// parseGDELT reads a GDELT article list.
-//
-// GDELT reports a "seen" date — when its crawler observed the article — which
-// is not the publisher's timestamp and is generally later. It is recorded as
-// PublishedAt because it is the best upper bound available, and the honest
-// consequence is that ingestion latency measured against GDELT understates
-// how far behind the original publication we really are.
+// parseGDELT reads a GDELT article list. Its "seen" date is when the crawler
+// observed the article, generally later than publication; it is recorded as
+// PublishedAt as the best upper bound available.
 func (e *Engine) parseGDELT(src Source, body []byte, discoveredAt time.Time) ([]RawItem, error) {
 	// An empty body means the window held no matching coverage. GDELT answers
 	// that with nothing at all rather than an empty JSON array, so decoding it
@@ -937,12 +865,8 @@ func (e *Engine) parseGDELT(src Source, body []byte, discoveredAt time.Time) ([]
 
 	var doc gdeltResponse
 	if err := json.Unmarshal(body, &doc); err != nil {
-		// GDELT answers both rate-limit violations and malformed queries with
-		// prose rather than JSON, so a decode failure here is an API-level
-		// complaint and the body is the message. Two were hiding behind a TLS
-		// timeout until the transport was fixed: a timespan of 30 minutes,
-		// which it rejects as too short, and its one-request-per-five-seconds
-		// limit.
+		// GDELT answers rate limits and malformed queries with prose rather
+		// than JSON, so the body is the message.
 		return nil, fmt.Errorf("news: parse GDELT response for %s: %w (body starts %q)",
 			src.ID, err, snippet(body))
 	}
@@ -986,15 +910,10 @@ type federalRegisterResponse struct {
 	} `json:"results"`
 }
 
-// parseFederalRegister reads a documents.json search response.
-//
-// The issuing agency is the strongest classification signal this source
-// carries -- stronger than any word in the title -- so it travels with the
-// item as a fact rather than being left for a keyword pass to rediscover.
-// Encoded in the description using NSE's own "|KEY: VALUE" convention
-// (parsePipeFacts, in internal/events) so interpret() reads it back with the
-// same reader every NSE filing already uses, rather than a second parser for
-// one more shape of embedded fact.
+// parseFederalRegister reads a documents.json response. The issuing agency is
+// this source's strongest classification signal, so it travels with the item
+// as a "|KEY: VALUE" fact in the description, which events.parsePipeFacts
+// reads back.
 func (e *Engine) parseFederalRegister(src Source, body []byte, discoveredAt time.Time) ([]RawItem, error) {
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil, nil
@@ -1051,16 +970,9 @@ func parseGDELTDate(s string) time.Time {
 	return t.UTC()
 }
 
-// FetchNow polls one source immediately, ignoring its schedule.
-//
-// The scheduler exists so that nobody has to think about when a source was
-// last read, and for the most part nobody should. But an operator looking at a
-// company's page and expecting news that has not arrived wants to know now
-// rather than at the next cadence, and telling them to wait four minutes is a
-// worse answer than spending one request.
-//
-// It respects the circuit breaker and the in-flight guard: a failing source
-// stays failing, and a source already being fetched is not fetched twice.
+// FetchNow polls one source immediately, for a reader looking at a company's
+// page who wants its news now rather than at the next cadence. It respects the
+// circuit breaker and the in-flight guard.
 func (e *Engine) FetchNow(ctx context.Context, sourceID string) (items, added int, err error) {
 	src, known := e.registry.Get(sourceID)
 	if !known {
@@ -1094,10 +1006,7 @@ func (e *Engine) FetchNow(ctx context.Context, sourceID string) (items, added in
 }
 
 // SourceIDFor returns the watchlist source that follows an instrument, if one
-// is registered. The id is keyed by the full canonical symbol, not the bare
-// ticker: "watch-reliance.nse" and "watch-aapl" are different sources, and a
-// bare "watch-infy" would be ambiguous between the NSE constituent and its
-// NYSE-listed namesake.
+// is registered.
 func (e *Engine) SourceIDFor(sym marketdata.Symbol) (string, bool) {
 	id := "watch-" + strings.ToLower(sym.String())
 	if _, ok := e.registry.Get(id); ok {

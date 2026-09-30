@@ -50,7 +50,7 @@ func (s *Server) handleEventBrief(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.deps.Store.SaveEventBrief(r.Context(), id, brief, model); err != nil {
 		// The brief is worth returning even if it could not be kept; the only
-		// cost is that the next s.deps.Store pays for it again.
+		// cost is that the next reader pays for it again.
 		s.deps.Log.Warn("could not s.deps.Store an event brief", "event", id, "err", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"brief": brief, "cached": false})

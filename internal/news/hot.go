@@ -32,17 +32,10 @@ const (
 	heatCeiling = 20.0
 )
 
-// Tracker records which instruments and sectors are currently eventful.
-//
-// The purpose is to spend polling effort where something is happening. Most of
-// the time nothing is happening to most of the 2,557 listed companies, and a
-// system that polls them all equally is spending almost all of its budget
-// confirming that. When a filing arrives for one company, that company's
-// coverage becomes worth checking far more often — for perhaps an hour, after
-// which it is not.
-//
-// Safe for concurrent use: the ingestion engine reads it while the event
-// processor writes to it.
+// Tracker records which instruments and sectors are currently eventful, so
+// polling effort goes where something is happening: a company with a fresh
+// filing is worth checking far more often, for about an hour. Safe for
+// concurrent use.
 type Tracker struct {
 	mu      sync.RWMutex
 	symbols map[string]*heatEntry
@@ -80,19 +73,10 @@ const (
 	weightReported = 0.4
 )
 
-// Observe records that something happened to a set of symbols.
-//
-// Called by the event processor as events are created, so heat reflects what
-// the system actually found rather than a separate opinion about it.
-// ObserveSignal raises heat by an explicit weight.
-//
-// Observe derives its weight from an article's importance, which is the right
-// model for coverage: one story is worth a little, and a company in the news
-// all morning accumulates. It is the wrong model for a market signal, which
-// arrives once and carries its whole meaning in that one observation. A
-// scanner running three times a day would never accumulate anything on the
-// coverage scale, and its findings would be invisible to the scheduler that
-// is supposed to act on them.
+// ObserveSignal raises heat by an explicit weight. Observe derives its weight
+// from an article's importance, which accumulates over a morning of coverage;
+// a market signal arrives once and carries its whole meaning in that
+// observation.
 func (t *Tracker) ObserveSignal(symbols []string, sectors []string, weight float64, reason string) {
 	if weight <= 0 {
 		return

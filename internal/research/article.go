@@ -14,22 +14,11 @@ import (
 	"golang.org/x/net/html"
 )
 
-// Reading the articles, rather than their headlines.
-//
-// Until this existed, every "source" reaching the model was a title and at
-// best a 400-character snippet — and for Google News, the snippet is the title
-// repeated. A question like "what is driving Suzlon's order book" was answered
-// from forty restatements of the phrase "Suzlon order book", which is why the
-// answers read as thin: they were. Depth in the output requires depth in the
-// input, and no amount of prompt engineering substitutes for the text.
-//
-// On usage: this fetches published pages to read them, and what is read is
-// used to answer a question and then cited back to the publisher by link. The
-// extracted text is never redisplayed — the UI continues to show the headline
-// and the link, which is what the source catalog's discovery-only policy
-// requires. That is the same thing a person does when they click through, and
-// the reason the fetcher identifies itself, stays slow, and honours
-// robots.txt.
+// Reading the articles, not just their headlines: an answer built from titles
+// and snippets is as thin as they are. The fetcher reads a published page the
+// way a person clicking through does, identifies itself, stays slow and
+// honours robots.txt. The text is used to answer and cited by link; it is
+// never redisplayed.
 
 // Article is the readable text of one page.
 type Article struct {
@@ -347,15 +336,9 @@ const bodyFetchLimit = 30
 // one rambling opinion piece cannot crowd out nine other sources.
 const maxBodyWords = 1800
 
-// unreadableHosts are hosts whose links cannot be resolved to an article.
-//
-// Google News item links are opaque Google identifiers rather than encoded
-// publisher URLs — the blob decodes to an internal token, not a location — and
-// the page behind them is a JavaScript shim that redirects in the browser.
-// Fetching them yields zero words every time, so they are skipped rather than
-// retried thirty times per question. Their headlines still count as findings;
-// they simply cannot be read, which is precisely what SearXNG is here to fix:
-// it returns the publisher's own URL.
+// unreadableHosts are hosts whose links cannot be resolved to an article. A
+// Google News link is an opaque token behind a JavaScript redirect, so
+// fetching it yields nothing; its headline still counts as a finding.
 var unreadableHosts = map[string]bool{
 	"news.google.com":    true,
 	"consent.google.com": true,

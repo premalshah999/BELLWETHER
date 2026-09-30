@@ -78,19 +78,15 @@ export function ThemeSwitch() {
   );
 }
 
-const ZONES: { value: ZoneChoice; title: string }[] = [
-  { value: "market", title: "New York time, the market's own" },
-  { value: "local", title: "Your own time zone" },
-  { value: "utc", title: "Coordinated Universal Time" },
+const ZONES: { value: ZoneChoice; label: string; title: string }[] = [
+  { value: "market", label: "ET", title: "New York time, the market's own" },
+  { value: "local", label: "Local", title: `Your own time zone (${Intl.DateTimeFormat().resolvedOptions().timeZone})` },
+  { value: "utc", label: "UTC", title: "Coordinated Universal Time" },
 ];
 
 /** Which zone every clock time in the app is shown in. */
 export function ZoneSwitch() {
   const [zone, setZone] = useTimeZone();
-  const local = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
-    .formatToParts(new Date())
-    .find((p) => p.type === "timeZoneName")?.value;
-  const label = { market: "ET", local: local ?? "Local", utc: "UTC" };
   return (
     <div role="radiogroup" aria-label="Time zone" className="flex rounded-md bg-bg-base p-0.5">
       {ZONES.map((z) => (
@@ -102,11 +98,11 @@ export function ZoneSwitch() {
           title={z.title}
           onClick={() => setZone(z.value)}
           className={
-            "flex h-7 items-center justify-center rounded px-2 font-num text-[11.5px] font-medium transition-colors " +
+            "flex h-7 items-center justify-center rounded px-2 text-[11.5px] font-medium transition-colors " +
             (zone === z.value ? "bg-bg-panel text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary")
           }
         >
-          {label[z.value]}
+          {z.label}
         </button>
       ))}
     </div>

@@ -1,15 +1,7 @@
-// Package scanner finds the instruments worth looking at.
-//
-// It inverts how this system decides where to spend effort. Until now the
-// ingestion engine polled a fixed catalog and hoped something relevant
-// appeared; a company became interesting only once an article about it
-// arrived. That is backwards for a market: the price moves first, and the
-// explanation follows minutes or hours later — sometimes never.
-//
-// So the scanner reads prices and volumes across the listed universe, finds
-// what is behaving abnormally, and hands those names to everything else.
-// Search then answers "why is this moving" for a handful of instruments
-// instead of asking "is anything happening" about two and a half thousand.
+// Package scanner finds the instruments worth looking at from price and volume
+// alone. The price moves first and the explanation follows, so rather than
+// asking "is anything happening" across the whole universe, search answers
+// "why is this moving" for the handful the scan flags.
 package scanner
 
 import (
@@ -33,15 +25,9 @@ func vendorTicker(sym marketdata.Symbol) (vendor string, ok bool) {
 	return sym.Ticker, sym.Exchange == marketdata.ExchangeUS
 }
 
-// Metrics are one instrument's behaviour, reduced to what a scanner reasons
-// about.
-//
-// Everything here is expressed relative to the instrument's own recent normal
-// rather than in absolute terms. A 4% day is unremarkable for a smallcap and
-// extraordinary for a large bank; three times average volume means something
-// different for a stock that trades steadily than for one whose volume already
-// swings by a factor of five. Absolute thresholds would surface the same
-// volatile names every day and miss the quiet one that just woke up.
+// Metrics are one instrument's behaviour relative to its own recent normal.
+// Absolute thresholds would surface the same volatile names every day and miss
+// the quiet one that just woke up.
 type Metrics struct {
 	Symbol string `json:"symbol"`
 
@@ -87,18 +73,11 @@ const (
 	SignalSilentVolume Signal = "volume_without_price"
 )
 
-// Thresholds, in units of the robust z-scores the price service computes.
-//
-// Set from the measured distribution across the 750-name index universe
-// rather than by intuition. On that universe the 95th percentile of volume
-// surprise is 1.66 and the 97th is 2.62; for absolute return surprise the
-// same points are 2.11 and 2.74. A threshold of 2.5 therefore selects
-// roughly the top three percent, which is a defensible reading of "unusual":
-// about one day in thirty for any given instrument.
-//
-// The looser 2.0 that a normal distribution would suggest picks up ten
-// percent of the universe here, because these are not normal distributions
-// and never were.
+// Thresholds, in units of the robust z-scores the price service computes, set
+// from the measured distribution rather than by intuition: 2.5 selects roughly
+// the top three percent, about one day in thirty for any instrument. These are
+// not normal distributions, and the 2.0 a normal one suggests picks up ten
+// percent of the universe.
 const (
 	volumeSpikeZ    = 2.5
 	priceMoveZ      = 2.5

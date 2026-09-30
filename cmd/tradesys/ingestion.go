@@ -100,18 +100,9 @@ func buildRegistry(secUserAgent string) (*news.Registry, error) {
 	return news.NewRegistry(sources...)
 }
 
-// startIngestion builds the source registry and starts the fetch engine.
-//
-// Collection is deliberately independent of everything above it: it needs no
-// LLM, no market-data provider and no watchlist. If every other subsystem is
-// misconfigured, the app still accumulates the filings and headlines that
-// later phases will be built on — and an hour of collection that did not
-// happen cannot be recovered later.
 // syncWatchlistSources rebuilds the per-instrument sources from the watchlist.
-//
 // Polled rather than event-driven: a watchlist change is rare and a few
-// minutes of latency on it is invisible, whereas wiring a notification through
-// the storage layer for this alone would be machinery with one caller.
+// minutes of latency on it is invisible.
 func syncWatchlistSources(
 	ctx context.Context,
 	registry *news.Registry,

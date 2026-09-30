@@ -8,17 +8,11 @@ import (
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
-// storeValuations adapts the fundamentals store to what research needs.
-//
-// It lives here rather than in the research package because research must not
-// import storage: storage already reaches research through the AI layer, and
-// closing that loop is an import cycle. Wiring is main's job.
-//
-// It resolves the peer comparison into plain statements here rather than
-// handing percentiles to the model. "In the most expensive quarter of its
-// sector" is a fact this code can establish exactly; asking a language model
-// to derive it from a percentile and a median is asking it to do arithmetic
-// under a word limit, which is where it is least reliable.
+// storeValuations adapts the fundamentals store to what research needs. It
+// lives here because research must not import storage. It turns the peer
+// comparison into plain statements ("in the most expensive quarter of its
+// sector"), which code can establish exactly and a language model doing
+// arithmetic cannot.
 type storeValuations struct {
 	DB *postgres.DB
 }

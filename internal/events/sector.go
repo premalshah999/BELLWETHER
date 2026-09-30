@@ -135,18 +135,9 @@ func InferSectors(text string) []string {
 	return out
 }
 
-// SectorsForAgency returns the GICS sectors a Federal Register issuing
-// agency's own actions reach, using the agency as structured metadata
-// rather than inferring it from free text -- USTR notices are trade
-// actions regardless of how any one notice happens to be worded, which the
-// keyword map above cannot know without seeing the word "tariff" in the
-// title. Falls back to nil (not found), at which point a caller should try
-// InferSectors on the document's own title instead.
-//
-// Verified against a live Federal Register query (306 matching documents,
-// 2026-09): "Notice of Actions in Section 301 Investigations" (USTR),
-// "Uyghur Forced Labor Prevention Act Entity List" (DHS), "Interference-
-// Tolerant Radio Altimeter Systems" (FAA).
+// agencySectors maps a Federal Register issuing agency to the sectors its
+// actions reach. The agency is structured metadata: a USTR notice is a trade
+// action however it is worded, which a keyword map cannot know.
 var agencySectors = map[string][]string{
 	"Office of the United States Trade Representative": {"US: Industrials", "US: Materials", "US: Consumer Discretionary"},
 	"International Trade Administration":               {"US: Industrials", "US: Materials"},

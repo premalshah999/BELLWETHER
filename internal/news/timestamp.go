@@ -2,20 +2,11 @@ package news
 
 import "time"
 
-// TimestampTrust says how much a source's published_at can be believed.
-//
-// This exists because one source was caught lying. Google News RSS reports a
-// pubDate that is when Google *surfaced* an item, not when the publisher
-// published it: an article from March 2026 arrived stamped 25 August 2026,
-// and was shown at the top of a watchlist as the day's news. Two independent
-// signals contradicted it — the stamp postdated our own fetch of the feed, and
-// the linked article carried a different date.
-//
-// The fix is not to distrust every timestamp equally. An exchange filing's
-// stamp is the filing time and is exact; a publisher's own RSS is close; an
-// aggregator's is when the aggregator noticed. Recording which kind we have
-// lets the interface say "published 14:32" only when that is actually known,
-// and "seen 14:32" when it is not.
+// TimestampTrust says how much a source's published_at can be believed. A
+// filing's stamp is exact and a publisher's own feed is close, but an
+// aggregator's is when it surfaced the item: Google News stamped a March
+// article with an August date. Recording which kind it is lets the interface
+// say "published" only when that is known.
 type TimestampTrust string
 
 const (

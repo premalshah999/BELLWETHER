@@ -7,17 +7,11 @@ import (
 	"time"
 )
 
-// Measured market data for a research question.
-//
-// Kept apart from Findings for the same reason UniverseNote is: these are not
-// sources and there is nothing to cite. The distinction is worth preserving in
-// the type system rather than in a comment, because it is the difference
-// between a fact and a claim. A six-month return computed from the price
-// series is measured; a journalist writing that a stock "has surged this year"
-// is reporting, and may be wrong, stale, or talking about a different window.
-//
-// When a question asks how something has performed, the numbers should answer
-// it and the articles should explain it — not the other way round.
+// Measured market data for a research question. Kept apart from Findings
+// because these are not sources: a return computed from the price series is
+// measured, while an article saying a stock "has surged" is a claim that may
+// be stale or about another window. The numbers answer how something
+// performed; the articles explain it.
 
 // Bar is one price observation. Deliberately minimal so this package depends
 // on no particular market data type.

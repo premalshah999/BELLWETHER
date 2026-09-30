@@ -86,22 +86,10 @@ func startAISchedules(
 		}
 	})
 
-	// The market scan, run once per venue's own trading day rather than
-	// once for the whole (now combined NSE+US) universe at IST-only times --
-	// scanning the US half of the universe only at IST-aligned hours would
-	// mean scanning it three times a day, always while its market is closed.
-	// Each job carries its own CRON_TZ= prefix (robfig/cron's per-job
-	// timezone override) instead of depending on the scheduler's shared
-	// DisplayTZ, so this stays correct regardless of what an operator sets
-	// DISPLAY_TZ to.
-	//
-	// The close scan is the important one in either venue: it sees the full
-	// day's volume, which is the number the statistics are actually about. A
-	// midday scan compares a partial session against complete historical
-	// days and reads every stock as quiet — the comparison is not like for
-	// like. So the intraday scans exist to catch violent moves early and are
-	// understood to under-report; the close scan is the one whose output
-	// should be trusted.
+	// The market scan, pinned to New York with CRON_TZ so it tracks the
+	// session whatever DISPLAY_TZ is. The close scan is the one to trust: it
+	// sees the full day's volume, where an intraday scan compares a partial
+	// session with complete days and under-reports.
 	if marketScanner != nil {
 		scan := func(runCtx context.Context) {
 			if _, err := marketScanner.Run(runCtx); err != nil {
@@ -112,15 +100,9 @@ func startAISchedules(
 		add("market scan (us intraday)", "CRON_TZ=America/New_York 15,45 10-15 * * 1-5", scan)
 		add("market scan (us open)", "CRON_TZ=America/New_York 45 9 * * 1-5", scan)
 
-		// The forward calendar, once a day before the US open.
-		//
-		// Everything else this app stores is a record of what has happened;
-		// this is the only thing it knows about what has not. Earnings dates
-		// move rarely, so daily is ample -- and it runs on a long window
-		// because a 2,254-symbol refresh walks the upstream one name at a
-		// time rather than fanning out, which is deliberate: the scan path
-		// already demonstrated what threading this sidecar does to its
-		// memory.
+		// The forward calendar, once a day before the open: earnings dates
+		// move rarely. It gets a long window because the refresh walks the
+		// universe one name at a time, which keeps the sidecar's memory flat.
 		addWithin("forward calendar", "CRON_TZ=America/New_York 20 7 * * 1-5",
 			90*time.Minute, func(runCtx context.Context) {
 				if _, err := refreshCalendar(runCtx, marketScanner.Client, store, marketScanner.Universe(), log); err != nil {
@@ -158,16 +140,9 @@ func startAISchedules(
 		}
 	})
 
-	// Retention, outside market hours. Events and the evidence behind them
-	// are kept indefinitely — they are the historical record everything later
-	// will be tested against. What is pruned is items that produced no event.
-	// Move aged news to the archive, in the quiet window between the US close
-	// and the next open.
-	//
-	// Given an hour rather than the shared fifteen minutes: the first run on an
-	// existing database has months of news to move, in batches, to a managed
-	// endpoint that is not on this machine. Subsequent runs move a day's worth
-	// and finish in seconds.
+	// Move aged news to the archive in the quiet window after the close. An
+	// hour rather than the shared fifteen minutes: the first run on an
+	// existing database has months to move, later runs a day's worth.
 	if newsArchive != nil {
 		addWithin("news rollover", "CRON_TZ=America/New_York 30 2 * * *", time.Hour,
 			func(runCtx context.Context) {
@@ -208,14 +183,9 @@ func startAISchedules(
 			"before_mb", before.SizeBytes/(1<<20), "after_mb", after.SizeBytes/(1<<20))
 	})
 
-	// Congressional PTR filings, once a day: the House Clerk posts new
-	// disclosures on no fixed schedule, so there is no "close" moment to
-	// chase the way there is for a market scan. Given its own two-hour
-	// budget rather than the shared fifteen minutes -- the first run of a
-	// fresh deploy can find several hundred filings outstanding for the
-	// year, each a separate PDF fetch plus a pdftotext shell-out, and that
-	// backfill should be allowed to actually finish rather than being cut
-	// off partway and repeating the same early filings tomorrow.
+	// Congressional trade disclosures, once a day: the House Clerk posts on no
+	// fixed schedule. Two hours, because the first run of a fresh deploy finds
+	// several hundred PDFs outstanding and should finish rather than repeat.
 	congressUA := cfg.SECUserAgent
 	if congressUA == "" {
 		// The House Clerk is not the SEC and enforces no fair-access
@@ -269,14 +239,8 @@ func startAISchedules(
 	})
 
 	if cfg.LLMConfigured() {
-		// The morning brief, an hour before the US open.
-		//
-		// It used to run at 08:30 in the display timezone, which with
-		// DISPLAY_TZ=Asia/Kolkata fired it at 23:00 ET -- half a day before
-		// the session it is meant to precede, and against an overnight tape
-		// that had not happened yet. Anchored to the venue like the market
-		// scans above, for the same reason: a brief is about a trading day,
-		// not about a wall clock.
+		// The morning brief, an hour before the open, in New York time: a
+		// brief is about a trading day, not a wall clock.
 		add("morning brief", "CRON_TZ=America/New_York 30 8 * * 1-5", func(runCtx context.Context) {
 			if _, err := svc.GenerateMorningBrief(runCtx); err != nil {
 				log.Warn("scheduled morning brief failed", "err", err)
@@ -291,14 +255,8 @@ func startAISchedules(
 		// archive. Anything older, or below the threshold, is still briefed
 		// on demand from the feed.
 		add("event briefs", "50 * * * *", func(runCtx context.Context) {
-			// Sixty, not the hundred-and-twenty this first had.
-			//
-			// Measured: a brief takes about eleven seconds, and this job runs
-			// under the shared fifteen-minute deadline — so a cap of 120 would
-			// be cancelled around the eightieth and the rest of the run
-			// wasted. Sixty finishes in about eleven minutes with margin, and
-			// is still three times the rate at which high-importance events
-			// actually arrive.
+			// Sixty: a brief takes about eleven seconds and the job has
+			// fifteen minutes, so a larger cap would be cancelled partway.
 			n, err := svc.BriefEvents(runCtx, store, 60)
 			if err != nil {
 				log.Warn("scheduled event briefing failed", "err", err)
@@ -323,15 +281,9 @@ func startAISchedules(
 			}
 		})
 
-		// Event classification, hourly. Storage hands these back
-		// most-important-first, so a capped run spends effort on what matters
-		// instead of on whatever happened to arrive last.
-		//
-		// The limit depends on who is classifying. The text model is a slow
-		// reasoning model in batches of six and 300 is what fits the
-		// fifteen-minute window. Jev answers one event in well under a second,
-		// eight at a time, so 3,000 fits with room -- enough to clear the
-		// backlog in about a day rather than months.
+		// Event classification, hourly, most important first. The text model
+		// fits about 300 into the window; Jev answers in under a second, so
+		// 3,000 fits and clears a backlog in a day.
 		classifyLimit := 300
 		if svc.JevConfigured() {
 			classifyLimit = 3000

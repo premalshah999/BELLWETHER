@@ -7,19 +7,10 @@ import (
 	"strings"
 )
 
-// stringArray adapts a Go []string to a Postgres TEXT[].
-//
-// database/sql has no notion of array types, so a TEXT[] column arrives as the
-// literal `{a,b,c}` and a []string parameter is rejected outright. The pgx
-// driver can do this natively through its own interface, but the storage layer
-// is written against database/sql so that the SQL stays legible and the driver
-// stays replaceable — which leaves this conversion to do explicitly.
-//
-// The literal format is quoted only where it must be, which is what Postgres
-// itself emits: an element containing a comma, a brace, a quote, a backslash
-// or whitespace is quoted and its quotes and backslashes escaped. Getting this
-// wrong is silent — a symbol containing a comma would split into two — so the
-// round trip is covered by tests.
+// stringArray adapts a Go []string to a Postgres TEXT[], which database/sql
+// has no notion of. Elements are quoted only where Postgres itself would quote
+// them; getting that wrong is silent (a symbol containing a comma would split
+// in two), so the round trip is tested.
 type stringArray []string
 
 // Value renders the slice as a Postgres array literal.

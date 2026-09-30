@@ -23,16 +23,10 @@ type calendarResponse struct {
 	Total     int                         `json:"total"`
 }
 
-// handleCalendar returns scheduled corporate events inside a horizon.
-//
-// This is the only endpoint in the app that answers a question about the
-// future. Everything else reports what the archive observed; this reports
-// what is already on the schedule -- which is the half a position needs
-// before it is entered rather than after.
-//
-// The historical half is deliberately not computed here. A base rate belongs
-// to an event *type*, not to a symbol, so the page asks /api/eventstudy once
-// for it rather than having this endpoint run the same study for every row.
+// handleCalendar returns scheduled corporate events inside a horizon: what is
+// already on the calendar, which a position needs before it is entered. The
+// historical base rate belongs to the event type, so the page asks
+// /api/eventstudy for it once.
 func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
