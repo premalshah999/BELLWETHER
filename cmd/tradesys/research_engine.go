@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -23,7 +25,7 @@ import (
 // somebody just typed, so it favours breadth and accepts that any individual
 // scraper may be slow or rate-limited. Every one of them degrades
 // independently.
-func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company.Master, router *marketdata.Router, log *slog.Logger) *research.Engine {
+func buildResearchEngine(cfg *config.Config, store *postgres.DB, archive *postgres.Archive, master *company.Master, router *marketdata.Router, log *slog.Logger) *research.Engine {
 	// The same transport reasoning as the ingestion engine: Go's default TLS
 	// handshake timeout of ten seconds is shorter than some of these
 	// endpoints take to negotiate at all. GDELT measured about 25 seconds
@@ -203,9 +205,10 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 		// through the market data router so research inherits its provider
 		// fallback, cache and single-flight rather than opening a second path
 		// to the same upstreams.
-		research.WithPrices(research.RouterPrices{
-			Router: router, Exchange: marketdata.ExchangeNSE,
-		}),
+		research.WithPrices(research.RouterPrices{Router: router}),
+		// Price history tied to the news, insider trading and the calendar:
+		// how the stock behaved, what moved it, and how it reacts.
+		research.WithAnalysis(analysisDeps(store, archive)),
 		// Reads the pages behind the results rather than working from their
 		// headlines. This is the difference between a report and a list of
 		// links: without it the model sees a title and a forty-word snippet,
@@ -217,4 +220,89 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, master *company
 		research.WithValuations(storeValuations{DB: store}))
 	log.Info("research engine ready", "scrapers", len(scrapers), "prices", router != nil)
 	return engine
+}
+
+// analysisDeps connects research's price analysis to the archive.
+func analysisDeps(store *postgres.DB, archive *postgres.Archive) research.AnalysisDeps {
+	return research.AnalysisDeps{
+		Events: func(ctx context.Context, symbol string, since time.Time) ([]research.EventRef, error) {
+			f := postgres.EventFilter{Symbol: symbol, Since: since, Limit: 500, IncludeUnattributedWatchlist: true}
+			var (
+				list []news.Event
+				err  error
+			)
+			if archive != nil {
+				list, err = archive.ListEvents(ctx, f, time.Now())
+			} else {
+				list, err = store.ListEvents(ctx, f)
+			}
+			if err != nil {
+				return nil, err
+			}
+			out := make([]research.EventRef, 0, len(list))
+			for _, e := range list {
+				imp := 0
+				if e.Importance != nil {
+					imp = *e.Importance
+				}
+				out = append(out, research.EventRef{ID: e.ID, Headline: e.Headline, Type: e.Type,
+					Importance: imp, DiscoveredAt: e.DiscoveredAt})
+			}
+			return out, nil
+		},
+		SmartMoney: func(ctx context.Context, symbol string) (*research.SmartMoneyRef, error) {
+			trades, err := store.ListInsiderTrades(ctx, postgres.InsiderFilter{
+				Symbol: symbol, Since: time.Now().AddDate(0, -6, 0), Market: true, Limit: 500,
+			})
+			if err != nil {
+				return nil, err
+			}
+			ref := &research.SmartMoneyRef{}
+			seenBuyer, seenSeller := map[string]bool{}, map[string]bool{}
+			for _, t := range trades {
+				v := 0.0
+				if t.Value != nil {
+					v = *t.Value
+				}
+				if t.Code == "P" {
+					ref.InsiderBuyValue += v
+					if !seenBuyer[t.OwnerName] && len(ref.InsiderBuyers) < 5 {
+						ref.InsiderBuyers = append(ref.InsiderBuyers, t.OwnerName+" ("+t.Role()+")")
+					}
+					seenBuyer[t.OwnerName] = true
+				} else if t.Code == "S" {
+					ref.InsiderSellValue += v
+					if !seenSeller[t.OwnerName] {
+						ref.InsiderSellers++
+					}
+					seenSeller[t.OwnerName] = true
+				}
+			}
+			if moves, err := store.SymbolFundMoves(ctx, symbol); err == nil {
+				for _, m := range moves {
+					if m.Kind == "held" {
+						continue
+					}
+					ref.FundMoves = append(ref.FundMoves, fmt.Sprintf("%s (%s): %s in %s, now %.1f%% of the portfolio",
+						m.Manager, m.FundName, m.Kind, m.PeriodLabel, m.WeightPct))
+				}
+			}
+			if filings, err := store.ListCongressFilings(ctx, postgres.CongressFilingFilter{Symbol: symbol, Limit: 100}); err == nil {
+				ref.CongressFilings = len(filings)
+			}
+			return ref, nil
+		},
+		Catalyst: func(ctx context.Context, symbol string) (*research.CatalystRef, error) {
+			list, err := store.UpcomingCatalysts(ctx, 120*24*time.Hour, []string{symbol}, 1)
+			if err != nil || len(list) == 0 || list[0].NextDate == nil {
+				return nil, err
+			}
+			c := list[0]
+			ref := &research.CatalystRef{Kind: c.NextKind, Date: c.NextDate.Format("2006-01-02"), EPSMean: c.EPSAverage}
+			if c.NextDays != nil {
+				ref.InDays = *c.NextDays
+			}
+			return ref, nil
+		},
+	}
 }

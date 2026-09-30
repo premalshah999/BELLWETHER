@@ -35,7 +35,26 @@ extrapolating:
     volume: {{.Volume}}
 {{end}}
 {{end}}
-{{if .Valued}}Valuation against peers. Computed from reported fundamentals and
+{{if .Analysed}}Price-and-news analysis for the companies this question is about. Computed
+from a year of daily prices against the S&P 500 and joined to the news archive,
+insider filings and the earnings calendar. These are measurements, not claims:
+reason from them, do not cite a source number for them, and mark any section
+that rests on them with "measured": true. Every reaction is measured from the
+first session after the news was discovered, so none of it uses hindsight:
+{{range .Analysed}}
+=== {{.Symbol}} (as of {{.AsOf}}, {{.Bars}} sessions) ===
+{{range .Notes}}- {{.}}
+{{end}}{{if .Moves}}Largest market-adjusted days, newest first:
+{{range .Moves}}  - {{.}}
+{{end}}{{end}}{{if .Reactions}}Reaction by kind of news:
+{{range .Reactions}}  - {{.}}
+{{end}}{{end}}{{if .Notable}}Important events and what followed:
+{{range .Notable}}  - {{.}}
+{{end}}{{end}}{{if .Smart}}Insiders, funds and Congress:
+{{range .Smart}}  - {{.}}
+{{end}}{{end}}{{if .Catalyst}}Calendar: {{.Catalyst}}
+{{end}}{{end}}
+{{end}}{{if .Valued}}Valuation against peers. Computed from reported fundamentals and
 the exchange's own industry classification — facts, not claims, and not to be
 cited to a source. This is what answers whether a company is expensive, which
 no amount of news coverage can. Use it: a company with excellent news flow that
@@ -66,7 +85,8 @@ Write your answer as JSON with this shape:
   "summary": "…",
   "summary_sources": [1, 4],
   "sections": [
-    {"heading": "…", "body": "…", "sources": [1, 4]}
+    {"heading": "…", "body": "…", "sources": [1, 4], "measured": false},
+    {"heading": "…", "body": "…", "sources": [], "measured": true}
   ],
   "findings": [
     {"claim": "…", "sources": [1, 4], "confidence": "high"}
@@ -97,19 +117,46 @@ a source uses it in a non-obvious way.
 establishes, what is genuinely new against what came before, and what the
 reader should take away. Numbers and names, not gestures.
 
-**`sections`** — the body of the report, and where the length lives. Two to
-four sections of one short paragraph each, ordered so the most consequential
-comes first. Give each a heading that states its content ("Order book: 3.1 GW,
-concentrated in two customers"), never a generic label ("Background",
-"Analysis", "Overview"). Cite the sources each section rests on.
+**`sections`** — the body of the report, and where the length and the
+reasoning live. Five to eight sections, each of two to four substantial
+paragraphs, ordered so the most consequential comes first. Give each a
+heading that states its conclusion ("Up 38% on the year, but all of it in
+three sessions"), never a generic label ("Background", "Analysis"). Each
+section carries `sources` for the documents it rests on, and
+`"measured": true` when it rests on the price-and-news analysis.
 
-Choose the sections the material warrants. For a company question that is
-typically what happened and when, the financial detail, the competitive and
-sector context, the balance sheet or funding position, the risks the sources
-themselves raise, and what to watch next. For a sector or macro question it is
-the mechanism, who is exposed and how, the numbers that quantify it, and the
-second-order effects. Do not force a template onto material that does not fit
-it.
+When the question is about a company and its analysis is supplied, the
+report must cover, in whatever order the evidence makes most important:
+
+1. **How the stock has behaved**: return against the S&P 500 over each
+   horizon, beta and correlation, and what that says about whether the
+   stock is being driven by its own story or by the market.
+2. **What has actually moved it**: go through the largest market-adjusted
+   days. For each, say what the news was and whether the size of the move
+   fits it; call out moves with no news at all, and what that could mean
+   (information not yet public, positioning, a sector move).
+3. **How it reacts to news**: which kinds of news have historically moved
+   it, in which direction and how much, and whether the reaction faded or
+   extended over five sessions. Be explicit when the sample is too small to
+   mean anything.
+4. **Who is buying and selling**: insider purchases and sales (open-market
+   buys say far more than scheduled sales), famous funds' last-quarter
+   moves, Congressional disclosures.
+5. **What the sources say is happening now**, cited, with the numbers.
+6. **What comes next**: scheduled catalysts, the analyst expectation, and
+   what would change the picture.
+7. **The case each way**: the strongest evidence-backed argument that the
+   story improves, and the strongest that it deteriorates, each tied to
+   specific measurements or cited sources.
+
+Reason explicitly. When two facts pull in different directions, say which
+carries more weight and why. When a correlation might be coincidence, say
+so. A reader should be able to follow every step from evidence to
+conclusion.
+
+For a sector or macro question, cover the mechanism, who is exposed and how,
+the numbers that quantify it, how the named stocks have actually traded, and
+the second-order effects.
 
 **`findings`** — the specific, checkable claims, each cited. This is the layer a
 reader scans to verify the report.
@@ -123,9 +170,10 @@ finding; "has won several orders recently" is a summary of findings the
 reader cannot check.
 
 **Cite everything.** Every claim in `findings`, and every section, must carry
-the source numbers it rests on, using the exact numbers above. A claim you
-cannot cite does not go in the report — put it in `gaps` as something the
-sources do not establish.
+the source numbers it rests on, using the exact numbers above — except
+sections resting on the measured analysis, which are marked
+`"measured": true` instead. A claim that is neither cited nor measured does
+not go in the report — put it in `gaps`.
 
 **Prefer the measured data over any source that contradicts it**, and say so
 plainly when they disagree: "coverage in [4] describes a rally, but the price
@@ -165,4 +213,4 @@ biggest gaps. Make them queries, not topics.
 
 Return only the JSON.
 
-Keep the entire report under 1,000 words. Cite only the supplied source IDs, which may have gaps. Do not fill gaps using memory.
+Aim for 1,500 to 3,000 words when the material supports it, and less when it does not. Cite only the supplied source IDs, which may have gaps. Do not fill gaps using memory.

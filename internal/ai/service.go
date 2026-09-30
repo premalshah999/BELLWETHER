@@ -58,10 +58,19 @@ type Service struct {
 	loc       *time.Location
 	log       *slog.Logger
 	now       func() time.Time
+
+	// researchModel and researchEffort write deep-research briefs.
+	researchModel  string
+	researchEffort string
 }
 
 // ServiceOption configures a Service.
 type ServiceOption func(*Service)
+
+// WithResearchModel sets the model and reasoning effort for deep research.
+func WithResearchModel(model, effort string) ServiceOption {
+	return func(s *Service) { s.researchModel, s.researchEffort = model, effort }
+}
 
 // WithServiceLogger sets the logger.
 func WithServiceLogger(l *slog.Logger) ServiceOption { return func(s *Service) { s.log = l } }

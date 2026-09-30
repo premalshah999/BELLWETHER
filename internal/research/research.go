@@ -79,6 +79,8 @@ type Result struct {
 	// arithmetic over the price series, and a reader checks them by
 	// recomputing rather than by following a link.
 	Measurements []MarketStats `json:"measurements,omitempty"`
+	// Analyses tie each subject company's price history to the news.
+	Analyses []Analysis `json:"analyses,omitempty"`
 
 	// Valuations are what these companies are worth relative to their peers.
 	// Price history says how a stock has moved; this says whether it is
@@ -129,6 +131,8 @@ type Engine struct {
 	// without it, research still answers from text, which is what it did
 	// before and is better than refusing.
 	prices PriceSource
+	// analysisDeps enables price-and-news analysis. Optional.
+	analysisDeps *AnalysisDeps
 	// articles reads the pages behind the findings. Optional: without it the
 	// engine works from headlines, which is what it did before and is far
 	// thinner.
@@ -297,10 +301,13 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 	ranked := e.rankForMeasurement(query, symbols)
 	measurements := e.measure(ctx, ranked)
 	valuations := e.valuations(ctx, ranked)
+	reportProgress(ctx, "measuring", "Relating price moves to the news and to insider trading")
+	analyses := e.analyse(ctx, ranked)
 
 	return Result{
 		Query: query, Findings: findings, Scrapers: reports, Symbols: symbols,
 		Measurements: measurements,
+		Analyses:     analyses,
 		Valuations:   valuations,
 		Universe:     universe,
 		Elapsed:      time.Since(start).Round(time.Millisecond).String(),

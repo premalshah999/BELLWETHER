@@ -966,6 +966,7 @@ export interface ResearchTurn {
   /** Computed from the price series rather than retrieved. Survives a failed
    *  synthesis, because arithmetic does not depend on the model. */
   measurements?: MarketStats[];
+  analyses?: StockAnalysis[];
   providers?: ResearchScraperReport[];
   model?: string;
   degraded: boolean;
@@ -1231,6 +1232,117 @@ export interface BacktestResponse {
   elapsed: string;
 }
 
+
+// ---------------------------------------------------------------------------
+// Who's buying: insiders (SEC Form 4) and followed funds (SEC 13F)
+// ---------------------------------------------------------------------------
+
+export interface InsiderTrade {
+  accession: string;
+  symbol: string;
+  issuer_name: string;
+  owner_name: string;
+  owner_cik: string;
+  role: string;
+  is_director: boolean;
+  is_officer: boolean;
+  is_ten_pct: boolean;
+  officer_title?: string;
+  security: string;
+  tx_date: string;
+  /** P purchase, S sale, A grant, M exercise, F tax withholding, G gift. */
+  code: string;
+  acquired: boolean;
+  shares: number;
+  price?: number;
+  value?: number;
+  owned_after?: number;
+  direct: boolean;
+  plan_10b5_1: boolean;
+  filed_at: string;
+}
+
+export interface InsiderLeader {
+  symbol: string;
+  issuer: string;
+  buy_value: number;
+  sell_value: number;
+  buyers: number;
+  sellers: number;
+  buys: number;
+  sells: number;
+  last_trade: string;
+  buyer_names?: string[];
+}
+
+export interface FundMove {
+  fund_cik: string;
+  fund_name: string;
+  manager: string;
+  symbol: string;
+  issuer: string;
+  cusip: string;
+  value: number;
+  shares: number;
+  prev_shares: number;
+  prev_value: number;
+  kind: "new" | "added" | "trimmed" | "exited" | "held";
+  change_pct: number;
+  weight_pct: number;
+  period: string;
+}
+
+export interface FundSummary {
+  cik: string;
+  name: string;
+  manager: string;
+  style: string;
+  period?: string;
+  filed?: string;
+  total_value: number;
+  positions: number;
+  top: FundMove[];
+  new_positions: number;
+  exited_positions: number;
+}
+
+export interface SmartMoneyOverview {
+  days: number;
+  top_buys: InsiderLeader[];
+  top_sells: InsiderLeader[];
+  cluster_buys: InsiderLeader[];
+  largest_buys: InsiderTrade[];
+  funds: FundSummary[];
+  fund_buys: FundMove[];
+  insider_count: number;
+}
+
+// Price-and-news analysis attached to a research turn.
+export interface StockAnalysis {
+  symbol: string;
+  benchmark: string;
+  as_of: string;
+  bars: number;
+  series: { d: string; c: number; s: number; b: number }[];
+  beta: number;
+  correlation: number;
+  excess: { horizon: string; percent: number; from: number }[];
+  up_days: number;
+  down_days: number;
+  big_moves: {
+    date: string;
+    return_pct: number;
+    abnormal_pct: number;
+    volume_ratio: number;
+    events?: { id: number; headline: string; type: string; importance: number; discovered_at: string }[];
+  }[];
+  reactions?: { type: string; count: number; day1_mean_pct: number; day5_mean_pct: number; hit_rate: number }[];
+  notable?: { event: { id: number; headline: string; type: string }; session: string; day1_abnormal_pct: number; day5_abnormal_pct: number }[];
+  smart_money?: { insider_buy_value: number; insider_sell_value: number; insider_buyers?: string[]; insider_sellers: number; fund_moves?: string[]; congress_filings: number };
+  catalyst?: { kind: string; date: string; in_days: number; eps_mean?: number };
+  notes: string[];
+}
+
 export const api = {
   /** Whether a session is required, whether this browser has one, and whose. */
   authStatus: () =>
@@ -1332,6 +1444,17 @@ export const api = {
    * breakdown (internal/congress's package doc explains why the source
    * PDFs do not support that split reliably).
    */
+  smartMoneyOverview: (days = 90) => request<SmartMoneyOverview>(`/api/smartmoney/overview?days=${days}`),
+  insiderTrades: (opts: { symbol?: string; days?: number; side?: "buy" | "sell" | "" } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.symbol) p.set("symbol", opts.symbol);
+    if (opts.days) p.set("days", String(opts.days));
+    if (opts.side) p.set("side", opts.side);
+    return request<{ trades: InsiderTrade[] }>(`/api/smartmoney/insiders?${p}`);
+  },
+  fund: (cik: string) => request<{ filing: { period: string; filed: string; total_value: number; positions: number }; moves: FundMove[] }>(`/api/smartmoney/funds/${cik}`),
+  symbolSmartMoney: (symbol: string) =>
+    request<{ symbol: string; trades: InsiderTrade[]; funds: FundMove[]; congress: unknown[] }>(`/api/smartmoney/symbol/${encodeURIComponent(symbol)}`),
   congressFilings: (opts: { symbol?: string; limit?: number } = {}) => {
     const p = new URLSearchParams();
     if (opts.symbol) p.set("symbol", opts.symbol);

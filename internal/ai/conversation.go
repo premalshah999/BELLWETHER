@@ -189,6 +189,7 @@ func (s *Service) runTurn(
 	// exactly these numbers — losing them because a token budget ran out
 	// would throw away the half of the answer that was never at risk.
 	turn.Measurements = result.Measurements
+	turn.Analyses = result.Analyses
 	turn.Providers = nil
 	for _, r := range result.Scrapers {
 		turn.Providers = append(turn.Providers, research.ProviderReport{
@@ -428,7 +429,55 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 		})
 	}
 
+	// Price-and-news analysis: arithmetic over the price series joined to the
+	// archive, written as plain lines so the model reasons from numbers it
+	// does not have to compute.
+	analysed := make([]map[string]any, 0, len(result.Analyses))
+	for _, a := range result.Analyses {
+		var moves, reactions, notable, smart []string
+		for _, m := range a.BigMoves {
+			line := fmt.Sprintf("%s: %+.2f%% against the market (%+.2f%% raw, %.1fx normal volume)", m.Date, m.AbnormalPct, m.ReturnPct, m.VolumeRatio)
+			if len(m.Events) == 0 {
+				line += "; no news in the archive"
+			}
+			for _, ev := range m.Events {
+				line += fmt.Sprintf("; news: \"%s\" (%s)", ev.Headline, strings.ToLower(strings.ReplaceAll(ev.Type, "_", " ")))
+			}
+			moves = append(moves, line)
+		}
+		for _, r := range a.Reactions {
+			reactions = append(reactions, fmt.Sprintf("%s: %d events, next session %+.2f%% vs market on average, five sessions %+.2f%%, positive %.0f%% of the time",
+				strings.ToLower(strings.ReplaceAll(r.Type, "_", " ")), r.Count, r.Day1Mean, r.Day5Mean, r.HitRate))
+		}
+		for _, n := range a.Notable {
+			notable = append(notable, fmt.Sprintf("%s \"%s\": next session %+.2f%%, five sessions %+.2f%% vs market",
+				n.Session, n.Event.Headline, n.Day1Pct, n.Day5Pct))
+		}
+		if sm := a.SmartMoney; sm != nil {
+			smart = append(smart, fmt.Sprintf("insiders bought $%.0f and sold $%.0f on the open market in six months", sm.InsiderBuyValue, sm.InsiderSellValue))
+			if len(sm.InsiderBuyers) > 0 {
+				smart = append(smart, "buyers: "+strings.Join(sm.InsiderBuyers, ", "))
+			}
+			smart = append(smart, sm.FundMoves...)
+			if sm.CongressFilings > 0 {
+				smart = append(smart, fmt.Sprintf("%d House disclosures by members of Congress mention it", sm.CongressFilings))
+			}
+		}
+		cat := ""
+		if c := a.Catalyst; c != nil {
+			cat = fmt.Sprintf("next %s on %s (in %d days)", strings.ReplaceAll(c.Kind, "_", " "), c.Date, c.InDays)
+			if c.EPSMean != nil {
+				cat += fmt.Sprintf(", analysts expect EPS %.2f", *c.EPSMean)
+			}
+		}
+		analysed = append(analysed, map[string]any{
+			"Symbol": a.Symbol, "AsOf": a.AsOf, "Bars": a.Bars, "Notes": a.Notes,
+			"Moves": moves, "Reactions": reactions, "Notable": notable, "Smart": smart, "Catalyst": cat,
+		})
+	}
+
 	prompt, err := UserPrompt(PromptDeepResearch, map[string]any{
+		"Analysed": analysed,
 		"Query":    turn.Question,
 		"Symbols":  strings.Join(result.Symbols, ", "),
 		"Count":    len(indexes),
@@ -447,9 +496,10 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 		Summary        string `json:"summary"`
 		SummarySources []int  `json:"summary_sources"`
 		Sections       []struct {
-			Heading string `json:"heading"`
-			Body    string `json:"body"`
-			Sources []int  `json:"sources"`
+			Heading  string `json:"heading"`
+			Body     string `json:"body"`
+			Sources  []int  `json:"sources"`
+			Measured bool   `json:"measured"`
 		} `json:"sections"`
 		Findings []struct {
 			Claim      string `json:"claim"`
@@ -466,12 +516,22 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 		Followups []string `json:"followups"`
 	}
 
-	resp, err := s.client.CompleteJSON(ctx, Request{
+	req := Request{
 		Feature:     FeatureDeepResearch,
 		Messages:    []Message{SystemMessage(), prompt},
 		Temperature: 0.2,
 		MaxTokens:   6000,
-	}, &out)
+	}
+	// The stronger model thinks before it writes, and thinking spends from
+	// the same allowance, so it gets far more room.
+	if s.researchModel != "" {
+		req.Model = s.researchModel
+		req.MaxTokens = 20000
+		if s.researchEffort != "" {
+			req.Extra = map[string]any{"reasoning_effort": s.researchEffort}
+		}
+	}
+	resp, err := s.client.CompleteJSON(ctx, req, &out)
 	if err != nil {
 		return err
 	}
@@ -479,12 +539,14 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 	turn.Answer = ""
 	turn.Model = resp.Model
 	turn.Sections = nil
-	if refs := citations(out.SummarySources); strings.TrimSpace(out.Summary) != "" && len(refs) > 0 {
+	if refs := citations(out.SummarySources); strings.TrimSpace(out.Summary) != "" && (len(refs) > 0 || len(result.Analyses) > 0) {
 		turn.Sections = append(turn.Sections, research.Section{Heading: "Research brief", Body: strings.TrimSpace(out.Summary), Sources: refs})
 	}
 	for _, sec := range out.Sections {
 		heading, body := strings.TrimSpace(sec.Heading), strings.TrimSpace(sec.Body)
-		if body == "" || len(citations(sec.Sources)) == 0 {
+		// A section rests on cited documents, or on the measured analysis;
+		// the latter is arithmetic, not a claim, and has no source to cite.
+		if body == "" || (len(citations(sec.Sources)) == 0 && !(sec.Measured && len(result.Analyses) > 0)) {
 			continue
 		}
 		turn.Sections = append(turn.Sections, research.Section{
