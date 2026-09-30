@@ -22,9 +22,16 @@ func (s *Server) handleWatchlist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"items": s.enrichWatchlist(r.Context(), entries),
-	})
+	// ?cached=1 reads persisted bars only, for callers that need the list
+	// rather than live prices -- a cold quote refresh took five seconds, and
+	// the page asking only wanted to know which symbols were on it.
+	items := []watchlistItem(nil)
+	if r.URL.Query().Get("cached") == "1" {
+		items = s.enrichWatchlistCached(r.Context(), entries)
+	} else {
+		items = s.enrichWatchlist(r.Context(), entries)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 // enrichWatchlist attaches a quote and a sparkline to every row.
