@@ -21,10 +21,6 @@ type Watched struct {
 	Attention bool
 }
 
-func WatchlistSource(sym marketdata.Symbol, company string) Source {
-	return watchedSource(Watched{Ticker: sym.Ticker, Venue: sym.Exchange, Company: company})
-}
-
 func watchedSource(w Watched) Source {
 	ticker, company := w.Ticker, w.Company
 	query := watchlistQuery(ticker, company, w.Attention)

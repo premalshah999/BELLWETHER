@@ -137,23 +137,6 @@ func Margin(numerator, revenue *float64) *float64 {
 	return &m
 }
 
-// GrowthPercent is the change between two periods, oldest first.
-//
-// Nil when either figure is missing, and nil when the base is negative: a
-// company that lost ₹100 crore and now loses ₹50 crore has not grown by −50%,
-// and reporting a percentage there produces a number with no meaning that a
-// reader will nonetheless try to interpret.
-func GrowthPercent(from, to *float64) *float64 {
-	if from == nil || to == nil || *from <= 0 {
-		return nil
-	}
-	g := (*to/(*from) - 1) * 100
-	if math.IsNaN(g) || math.IsInf(g, 0) {
-		return nil
-	}
-	return &g
-}
-
 // Trend describes how a metric has moved across reported periods.
 type Trend struct {
 	Metric string    `json:"metric"`

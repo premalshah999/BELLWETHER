@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/tradesys/dashboard/internal/config"
 	"github.com/tradesys/dashboard/internal/events"
 	"github.com/tradesys/dashboard/internal/fundamentals"
+	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
 	"github.com/tradesys/dashboard/internal/scanner"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
@@ -239,6 +241,15 @@ func startAISchedules(
 	})
 
 	if cfg.LLMConfigured() {
+		// Outlooks are the forecasts the AI track record scores. A few
+		// watchlist names each morning, those longest without one, so every
+		// name is forecast about once a horizon and the record keeps growing.
+		add("outlooks", "CRON_TZ=America/New_York 45 8 * * 1-5", func(runCtx context.Context) {
+			if n := generateOutlooks(runCtx, svc, store, 4, log); n > 0 {
+				log.Info("outlooks generated", "count", n)
+			}
+		})
+
 		// The morning brief, an hour before the open, in New York time: a
 		// brief is about a trading day, not a wall clock.
 		add("morning brief", "CRON_TZ=America/New_York 30 8 * * 1-5", func(runCtx context.Context) {
@@ -302,4 +313,42 @@ func startAISchedules(
 
 	c.Start()
 	return c
+}
+
+// generateOutlooks writes an outlook for up to max watched symbols, taking
+// those whose last one is oldest and skipping any forecast within the
+// current horizon, so the same outlook is not produced twice.
+func generateOutlooks(ctx context.Context, svc *ai.Service, store *postgres.DB, max int, log *slog.Logger) int {
+	watched, err := store.WatchedSymbols(ctx)
+	if err != nil {
+		log.Warn("outlooks: could not read the watchlist", "err", err)
+		return 0
+	}
+	type candidate struct {
+		sym  marketdata.Symbol
+		last time.Time
+	}
+	var due []candidate
+	for _, sym := range watched {
+		if sym.IsIndex() {
+			continue
+		}
+		c := candidate{sym: sym}
+		if prev, err := store.ListOutlooks(ctx, sym.String(), 1); err == nil && len(prev) > 0 {
+			c.last = prev[0].CreatedAt
+		}
+		if time.Since(c.last) > ai.DefaultHorizonDays*24*time.Hour {
+			due = append(due, c)
+		}
+	}
+	sort.Slice(due, func(i, j int) bool { return due[i].last.Before(due[j].last) })
+	made := 0
+	for _, c := range due[:min(max, len(due))] {
+		if _, _, err := svc.GenerateOutlook(ctx, c.sym); err != nil {
+			log.Warn("outlooks: could not generate", "symbol", c.sym, "err", err)
+			continue
+		}
+		made++
+	}
+	return made
 }

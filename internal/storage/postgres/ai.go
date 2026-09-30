@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/tradesys/dashboard/internal/ai"
@@ -109,37 +108,6 @@ func (d *DB) LatestOutput(ctx context.Context, kind, symbol string) (ai.Output, 
 		return ai.Output{}, false, fmt.Errorf("postgres: latest ai output: %w", err)
 	}
 	return out, true, nil
-}
-
-// ListOutputs returns recent artefacts for the archive page.
-func (d *DB) ListOutputs(ctx context.Context, kind string, limit int) ([]ai.Output, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-	query := `SELECT ` + aiOutputColumns + ` FROM ai_outputs`
-	args := []any{}
-	if kind != "" {
-		query += " WHERE kind = $1"
-		args = append(args, kind)
-	}
-	args = append(args, limit)
-	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d", len(args))
-
-	rows, err := d.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("postgres: list ai outputs: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ai.Output
-	for rows.Next() {
-		o, err := scanOutput(rows)
-		if err != nil {
-			return nil, fmt.Errorf("postgres: scan ai output: %w", err)
-		}
-		out = append(out, o)
-	}
-	return out, rows.Err()
 }
 
 const outlookColumns = `id, symbol, created_at, horizon_days, price_at_creation,
@@ -292,61 +260,6 @@ WHERE id = $6 AND resolved_at IS NULL`,
 	return nil
 }
 
-// DeleteOutput removes one stored AI artefact.
-//
-// Generated output is disposable by nature — a morning brief is a snapshot of
-// a morning, and a wrong or stale one is clutter rather than a record. The
-// events and prices it was drawn from are untouched, so anything deleted here
-// can be regenerated.
-func (d *DB) DeleteOutput(ctx context.Context, id int64) error {
-	res, err := d.db.ExecContext(ctx, `DELETE FROM ai_outputs WHERE id = $1`, id)
-	if err != nil {
-		return fmt.Errorf("postgres: delete ai output: %w", err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// DeleteOutputsOfKind clears every artefact of one kind.
-func (d *DB) DeleteOutputsOfKind(ctx context.Context, kind string) (int, error) {
-	if strings.TrimSpace(kind) == "" {
-		return 0, fmt.Errorf("postgres: no kind given")
-	}
-	res, err := d.db.ExecContext(ctx, `DELETE FROM ai_outputs WHERE kind = $1`, kind)
-	if err != nil {
-		return 0, fmt.Errorf("postgres: delete ai outputs of kind %q: %w", kind, err)
-	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
-}
-
-// DeleteOutlook removes one recorded forecast.
-//
-// Deliberately refuses to delete a resolved one. A resolved outlook is a
-// scored prediction, and the calibration page is only honest if the record it
-// averages cannot be pruned of its failures. Unresolved forecasts have not
-// been scored yet and are safe to discard.
-func (d *DB) DeleteOutlook(ctx context.Context, id int64) error {
-	var resolved bool
-	err := d.db.QueryRowContext(ctx,
-		`SELECT resolved_at IS NOT NULL FROM outlooks WHERE id = $1`, id).Scan(&resolved)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
-	}
-	if err != nil {
-		return fmt.Errorf("postgres: look up outlook: %w", err)
-	}
-	if resolved {
-		return fmt.Errorf("outlook %d has been scored and forms part of the calibration record", id)
-	}
-	if _, err := d.db.ExecContext(ctx, `DELETE FROM outlooks WHERE id = $1`, id); err != nil {
-		return fmt.Errorf("postgres: delete outlook: %w", err)
-	}
-	return nil
-}
-
 // LLMSpendSince sums the cost of calls recorded at or after a moment.
 func (d *DB) LLMSpendSince(ctx context.Context, since time.Time) (float64, error) {
 	var usd float64
@@ -366,15 +279,4 @@ VALUES ($1, $2, $3, $4, $5)`, feature, u.InputTokens, u.OutputTokens, costUSD, a
 		return fmt.Errorf("postgres: record jev usage: %w", err)
 	}
 	return nil
-}
-
-// JevSpendSince sums the cost of Jev requests recorded at or after a moment.
-func (d *DB) JevSpendSince(ctx context.Context, since time.Time) (float64, error) {
-	var usd float64
-	if err := d.db.QueryRowContext(ctx,
-		`SELECT COALESCE(sum(cost_usd), 0) FROM jev_usage WHERE created_at >= $1`,
-		since.UTC()).Scan(&usd); err != nil {
-		return 0, fmt.Errorf("postgres: jev spend since: %w", err)
-	}
-	return usd, nil
 }

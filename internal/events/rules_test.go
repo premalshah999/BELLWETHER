@@ -102,30 +102,6 @@ func TestHeadlineOutranksSummary(t *testing.T) {
 	}
 }
 
-func TestUrgent(t *testing.T) {
-	urgent := []string{
-		"BREAKING: Company X CFO resigns",
-		"Trading halted in Company Y shares",
-		"SEC charges an executive over disclosure failures",
-		"Company Z defaults on bond payment",
-	}
-	routine := []string{
-		"Company files its annual report",
-		"Board meeting scheduled for next Tuesday",
-		"Company publishes newspaper advertisement",
-	}
-	for _, h := range urgent {
-		if !Urgent(h, "") {
-			t.Errorf("%q should be urgent", h)
-		}
-	}
-	for _, h := range routine {
-		if Urgent(h, "") {
-			t.Errorf("%q should not be urgent", h)
-		}
-	}
-}
-
 // TestTroublePrecedesCommerce pins the ordering: a story that is both is
 // primarily the regulatory one.
 func TestTroublePrecedesCommerce(t *testing.T) {

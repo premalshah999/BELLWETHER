@@ -114,40 +114,6 @@ func scanRawItems(rows *sql.Rows) ([]news.RawItem, error) {
 	return out, rows.Err()
 }
 
-// ListRawItems returns recently discovered items, newest first.
-//
-// Ordering is by discovery rather than publication on purpose: publication
-// timestamps come from hundreds of publishers with clocks we do not control,
-// and sorting by them lets one source with a skewed clock dominate the page.
-func (d *DB) ListRawItems(ctx context.Context, limit int) ([]news.RawItem, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	rows, err := d.db.QueryContext(ctx, `
-SELECT `+rawItemColumns+` FROM raw_items
-ORDER BY discovered_at DESC, id DESC LIMIT $1`, limit)
-	if err != nil {
-		return nil, fmt.Errorf("postgres: list raw items: %w", err)
-	}
-	defer rows.Close()
-	return scanRawItems(rows)
-}
-
-// ListRawItemsBySource returns recent items from one source.
-func (d *DB) ListRawItemsBySource(ctx context.Context, sourceID string, limit int) ([]news.RawItem, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	rows, err := d.db.QueryContext(ctx, `
-SELECT `+rawItemColumns+` FROM raw_items WHERE source_id = $1
-ORDER BY discovered_at DESC, id DESC LIMIT $2`, sourceID, limit)
-	if err != nil {
-		return nil, fmt.Errorf("postgres: list raw items for %s: %w", sourceID, err)
-	}
-	defer rows.Close()
-	return scanRawItems(rows)
-}
-
 // ListPendingRawItems returns items not yet through the event pipeline.
 //
 // Oldest first, because events are built by accumulating evidence: processing
@@ -187,16 +153,6 @@ func (d *DB) CountRawItems(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("postgres: count raw items: %w", err)
 	}
 	return n, nil
-}
-
-// PruneRawItems deletes items discovered before the cutoff.
-func (d *DB) PruneRawItems(ctx context.Context, before time.Time) (int, error) {
-	res, err := d.db.ExecContext(ctx, `DELETE FROM raw_items WHERE discovered_at < $1`, before.UTC())
-	if err != nil {
-		return 0, fmt.Errorf("postgres: prune raw items: %w", err)
-	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
 }
 
 // PruneOrphanRawItems deletes old items no event depends on: filtered noise

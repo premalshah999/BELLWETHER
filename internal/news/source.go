@@ -163,17 +163,6 @@ func (s Source) Fetchable() bool {
 	return s.Enabled && s.Usage != UsageDisabled
 }
 
-// Publishable reports whether items from this source may be surfaced to a
-// user. Sources we may read but not reproduce still contribute corroboration.
-func (s Source) Publishable() bool {
-	return s.Display != DisplayInternal
-}
-
-// AllowsSnippet reports whether an item's description may be shown.
-func (s Source) AllowsSnippet() bool {
-	return s.Display == DisplayFull
-}
-
 // Official reports whether this source is an exchange or regulator, which
 // ranking treats as ground truth rather than as reporting.
 func (s Source) Official() bool { return s.Usage == UsageOfficial }
@@ -294,16 +283,5 @@ func (r *Registry) Fetchable() []Source {
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Refresh < out[j].Refresh })
-	return out
-}
-
-// ByCategory returns fetchable sources in one category.
-func (r *Registry) ByCategory(category string) []Source {
-	var out []Source
-	for _, s := range r.Fetchable() {
-		if s.Category == category {
-			out = append(out, s)
-		}
-	}
 	return out
 }

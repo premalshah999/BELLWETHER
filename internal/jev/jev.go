@@ -17,7 +17,6 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 )
@@ -487,15 +486,4 @@ func snippet(b []byte) string {
 		s = s[:300] + "…"
 	}
 	return s
-}
-
-// Keys returns a choice's option keys in a stable order, for callers that
-// need to present or iterate them deterministically.
-func (q Choice) Keys() []string {
-	keys := make([]string, 0, len(q.Criteria))
-	for k := range q.Criteria {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

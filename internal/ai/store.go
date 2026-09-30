@@ -56,18 +56,10 @@ type Outlook struct {
 // Resolved reports whether this outlook has been scored.
 func (o Outlook) Resolved() bool { return o.ResolvedAt != nil }
 
-// DueAt is when this outlook becomes scoreable, approximating trading days by
-// calendar days at the usual 5-in-7 ratio.
-func (o Outlook) DueAt() time.Time {
-	calendarDays := o.HorizonDays * 7 / 5
-	return o.CreatedAt.AddDate(0, 0, calendarDays)
-}
-
 // OutputStore persists AI outputs and outlooks.
 type OutputStore interface {
 	SaveOutput(ctx context.Context, out *Output) (int64, error)
 	LatestOutput(ctx context.Context, kind, symbol string) (Output, bool, error)
-	ListOutputs(ctx context.Context, kind string, limit int) ([]Output, error)
 
 	SaveOutlook(ctx context.Context, o *Outlook) (int64, error)
 	ListOutlooks(ctx context.Context, symbol string, limit int) ([]Outlook, error)

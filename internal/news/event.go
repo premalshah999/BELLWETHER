@@ -49,12 +49,6 @@ type RawItem struct {
 	TimestampNote string `json:"timestamp_note,omitempty"`
 }
 
-// KnowledgeTime is the moment this system could first have acted on the item:
-// DiscoveredAt, never PublishedAt. Treating a publisher's timestamp as our own
-// knowledge time claims to have read an article before fetching it, the look-
-// ahead bias that makes a backtest brilliant and a live deployment lose money.
-func (r RawItem) KnowledgeTime() time.Time { return r.DiscoveredAt }
-
 // Latency reports how far behind the publisher we were. It is the metric that
 // tells us whether the ingestion layer is actually fast, as opposed to
 // merely claiming to be real-time.

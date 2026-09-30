@@ -11,7 +11,6 @@ import (
 // AlgorithmStore persists algorithm definitions.
 type AlgorithmStore interface {
 	ListAlgorithms(ctx context.Context) ([]*algo.Algorithm, error)
-	GetAlgorithm(ctx context.Context, id int64) (*algo.Algorithm, error)
 	CreateAlgorithm(ctx context.Context, a *algo.Algorithm) (int64, error)
 	UpdateAlgorithm(ctx context.Context, a *algo.Algorithm) error
 	DeleteAlgorithm(ctx context.Context, id int64) error
@@ -21,7 +20,6 @@ type AlgorithmStore interface {
 type AlertStore interface {
 	InsertAlert(ctx context.Context, a *Alert) (int64, error)
 	ListAlerts(ctx context.Context, f Filter) ([]Alert, error)
-	MarkAlertRead(ctx context.Context, id int64) error
 	MarkAllAlertsRead(ctx context.Context) error
 	UnreadAlertCount(ctx context.Context) (int, error)
 
@@ -30,9 +28,6 @@ type AlertStore interface {
 	LastFiredAt(ctx context.Context, algorithmID int64, symbol string) (time.Time, bool, error)
 	// RecordEvaluation stores the outcome of an evaluation, firing or not.
 	RecordEvaluation(ctx context.Context, rec EvaluationRecord) error
-	// LastEvaluations returns the most recent outcome per symbol for an
-	// algorithm, for the algorithm detail view.
-	LastEvaluations(ctx context.Context, algorithmID int64) ([]EvaluationRecord, error)
 }
 
 // CandleSource is the market data the evaluator runs against. The router

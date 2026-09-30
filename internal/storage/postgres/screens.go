@@ -137,18 +137,6 @@ func (d *DB) Screens(ctx context.Context) ([]Screen, error) {
 	return out, rows.Err()
 }
 
-// Screen reads one.
-func (d *DB) Screen(ctx context.Context, id int64) (Screen, error) {
-	row := d.db.QueryRowContext(ctx, `
-		SELECT id, name, description, definition, created_at, updated_at, last_run_at
-		FROM screens WHERE id = $1`, id)
-	s, err := scanScreen(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Screen{}, storage.ErrNotFound
-	}
-	return s, err
-}
-
 // CreateScreen saves a new screen.
 func (d *DB) CreateScreen(ctx context.Context, name, description string, def screens.Definition) (Screen, error) {
 	raw, err := json.Marshal(def)
@@ -193,15 +181,6 @@ func (d *DB) DeleteScreen(ctx context.Context, id int64) error {
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return storage.ErrNotFound
-	}
-	return nil
-}
-
-// TouchScreen records that a saved screen was run.
-func (d *DB) TouchScreen(ctx context.Context, id int64) error {
-	_, err := d.db.ExecContext(ctx, `UPDATE screens SET last_run_at = now() WHERE id = $1`, id)
-	if err != nil {
-		return fmt.Errorf("touch screen: %w", err)
 	}
 	return nil
 }

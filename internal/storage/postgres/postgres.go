@@ -187,9 +187,6 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 // Close releases the pool.
 func (d *DB) Close() error { return d.db.Close() }
 
-// Ping reports whether the database is reachable.
-func (d *DB) Ping(ctx context.Context) error { return d.db.PingContext(ctx) }
-
 // nullTime renders a zero time as SQL NULL.
 //
 // The distinction is not cosmetic. A publisher that omits a timestamp must be

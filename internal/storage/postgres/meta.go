@@ -56,14 +56,6 @@ ON CONFLICT (symbol) DO UPDATE SET note = excluded.note`,
 	return nil
 }
 
-// RemoveWatchlist drops a symbol. Removing an absent symbol is not an error.
-func (d *DB) RemoveWatchlist(ctx context.Context, sym marketdata.Symbol) error {
-	if _, err := d.db.ExecContext(ctx, `DELETE FROM watchlist WHERE symbol = $1`, sym.String()); err != nil {
-		return fmt.Errorf("postgres: remove watchlist: %w", err)
-	}
-	return nil
-}
-
 // ConsumeBudget claims one unit of a provider's period allowance in a single
 // conditional statement, so concurrent fetchers cannot overrun a small daily
 // limit. No row back means the limit is reached.
@@ -135,41 +127,6 @@ ON CONFLICT (provider) DO UPDATE SET
 		return fmt.Errorf("postgres: record health: %w", err)
 	}
 	return nil
-}
-
-// ListHealth returns every known dependency's health record.
-func (d *DB) ListHealth(ctx context.Context) ([]storage.ProviderHealth, error) {
-	rows, err := d.db.QueryContext(ctx, `
-SELECT provider, kind, status, message, last_ok_at, last_error_at, updated_at
-FROM provider_health ORDER BY kind, provider`)
-	if err != nil {
-		return nil, fmt.Errorf("postgres: list health: %w", err)
-	}
-	defer rows.Close()
-
-	var out []storage.ProviderHealth
-	for rows.Next() {
-		var (
-			h           storage.ProviderHealth
-			status      string
-			okAt, errAt sql.NullTime
-		)
-		if err := rows.Scan(&h.Provider, &h.Kind, &status, &h.Message, &okAt, &errAt, &h.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("postgres: scan health: %w", err)
-		}
-		h.Status = storage.HealthStatus(status)
-		if okAt.Valid {
-			t := okAt.Time.UTC()
-			h.LastOKAt = &t
-		}
-		if errAt.Valid {
-			t := errAt.Time.UTC()
-			h.LastErrorAt = &t
-		}
-		h.UpdatedAt = h.UpdatedAt.UTC()
-		out = append(out, h)
-	}
-	return out, rows.Err()
 }
 
 // WatchedSymbols is the watchlist as parsed symbols.

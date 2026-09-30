@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -137,46 +136,6 @@ func (s *Server) handleCreatePosition(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": id})
 }
 
-// handleUpdatePosition edits a position's own fields directly -- correcting
-// a mistake, or adding to a holding at a new blended cost the operator has
-// already worked out. It is not how a position is reduced; see
-// handleClosePosition for that.
-func (s *Server) handleUpdatePosition(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "position")
-	if !ok {
-		return
-	}
-	var body struct {
-		Quantity  float64 `json:"quantity"`
-		CostBasis float64 `json:"cost_basis"`
-		OpenedAt  string  `json:"opened_at"`
-		Account   string  `json:"account"`
-		Notes     string  `json:"notes"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "Send a JSON body describing the position.")
-		return
-	}
-	if body.Quantity <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Quantity must be greater than zero.")
-		return
-	}
-	if body.CostBasis < 0 {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Cost basis cannot be negative.")
-		return
-	}
-	opened, err := parseDateOrToday(body.OpenedAt)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "opened_at must be a date like 2026-03-15.")
-		return
-	}
-	if err := s.deps.Store.UpdatePosition(r.Context(), id, body.Quantity, body.CostBasis, opened, strings.TrimSpace(body.Account), body.Notes); err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "That position does not exist.")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
 // handleDeletePosition removes a position with no trade recorded -- for
 // fixing a mis-entered position, not for exiting a real one.
 func (s *Server) handleDeletePosition(w http.ResponseWriter, r *http.Request) {
@@ -226,28 +185,6 @@ func (s *Server) handleClosePosition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, tradeViewOf(trade))
-}
-
-// handleListTrades returns closed trades, optionally filtered to one symbol.
-func (s *Server) handleListTrades(w http.ResponseWriter, r *http.Request) {
-	symbol := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("symbol")))
-	limit := 0
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil {
-			limit = n
-		}
-	}
-	trades, err := s.deps.Store.ListTrades(r.Context(), symbol, limit)
-	if err != nil {
-		s.deps.Log.Error("could not list trades", "err", err)
-		writeError(w, http.StatusInternalServerError, "storage", "Could not read trades.")
-		return
-	}
-	views := make([]tradeView, len(trades))
-	for i, t := range trades {
-		views[i] = tradeViewOf(t)
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"trades": views})
 }
 
 // tradeView is a Trade with its DATE columns rendered as plain calendar

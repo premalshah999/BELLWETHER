@@ -158,39 +158,6 @@ func (s *Server) handleDeleteScreen(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleRunSavedScreen runs a stored screen by id.
-//
-// Separate from the ad-hoc run because this one is a deliberate act rather
-// than a keystroke, so it is worth recording when it last happened.
-func (s *Server) handleRunSavedScreen(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "screen")
-	if !ok {
-		return
-	}
-	sc, err := s.deps.Store.Screen(r.Context(), id)
-	if errors.Is(err, storage.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "not_found", "No such screen.")
-		return
-	}
-	if err != nil {
-		s.deps.Log.Error("could not read screen", "id", id, "err", err)
-		writeError(w, http.StatusInternalServerError, "storage", "Could not read that screen.")
-		return
-	}
-	res, err := s.deps.Store.RunScreen(r.Context(), sc.Definition)
-	if err != nil {
-		s.deps.Log.Error("could not run screen", "id", id, "err", err)
-		writeError(w, http.StatusInternalServerError, "storage", "Could not run that screen.")
-		return
-	}
-	// Best effort: the run succeeded, and failing the request because a
-	// bookkeeping column did not update would throw away the answer.
-	if err := s.deps.Store.TouchScreen(r.Context(), id); err != nil {
-		s.deps.Log.Warn("could not record screen run", "id", id, "err", err)
-	}
-	writeJSON(w, http.StatusOK, res)
-}
-
 // isUniqueViolation reports whether an error is Postgres rejecting a
 // duplicate.
 //

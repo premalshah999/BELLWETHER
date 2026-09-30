@@ -304,7 +304,7 @@ func (m *memOutputStore) DueOutlooks(_ context.Context, before time.Time) ([]Out
 	defer m.mu.Unlock()
 	var out []Outlook
 	for _, o := range m.outlooks {
-		if !o.Resolved() && o.DueAt().Before(before) {
+		if !o.Resolved() && o.CreatedAt.AddDate(0, 0, o.HorizonDays*7/5).Before(before) {
 			out = append(out, o)
 		}
 	}
@@ -531,14 +531,5 @@ func TestCalibrationWithNoData(t *testing.T) {
 	}
 	if len(cal.Buckets) != 10 {
 		t.Errorf("got %d buckets, want 10 even when empty so the chart has an axis", len(cal.Buckets))
-	}
-}
-
-func TestOutlookDueAt(t *testing.T) {
-	created := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC) // a Monday
-	o := Outlook{CreatedAt: created, HorizonDays: 10}
-	// Ten trading days is fourteen calendar days at the usual 5-in-7 ratio.
-	if got := o.DueAt(); !got.Equal(created.AddDate(0, 0, 14)) {
-		t.Errorf("DueAt = %v, want %v", got, created.AddDate(0, 0, 14))
 	}
 }

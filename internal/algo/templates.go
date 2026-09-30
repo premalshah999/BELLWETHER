@@ -1,7 +1,5 @@
 package algo
 
-import "fmt"
-
 // Template is a starting point an operator can copy and edit. Templates are
 // seeded into an empty installation so the builder has something concrete to
 // show rather than a blank JSON editor.
@@ -125,14 +123,4 @@ func Templates() []Template {
 			},
 		},
 	}
-}
-
-// TemplateByKey looks up one template.
-func TemplateByKey(key string) (Template, error) {
-	for _, t := range Templates() {
-		if t.Key == key {
-			return t, nil
-		}
-	}
-	return Template{}, fmt.Errorf("no template named %q", key)
 }

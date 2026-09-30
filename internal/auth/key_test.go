@@ -97,9 +97,6 @@ func TestRolePermissions(t *testing.T) {
 		if p.CanWrite() != c.write {
 			t.Errorf("%s CanWrite = %v, want %v", c.role, p.CanWrite(), c.write)
 		}
-		if p.CanManageKeys() != c.mgr {
-			t.Errorf("%s CanManageKeys = %v, want %v", c.role, p.CanManageKeys(), c.mgr)
-		}
 	}
 	if (Role("admin")).Valid() {
 		t.Error("an unknown role was accepted")

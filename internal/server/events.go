@@ -220,16 +220,6 @@ func (s *Server) handleEventTypes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"types": out})
 }
 
-// handleStorageStats reports what the database holds.
-func (s *Server) handleStorageStats(w http.ResponseWriter, r *http.Request) {
-	st, err := s.deps.Store.Stats(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "storage", "Could not read storage stats.")
-		return
-	}
-	writeJSON(w, http.StatusOK, st)
-}
-
 // now is the server clock, injectable so tests are deterministic.
 func (s *Server) now() time.Time {
 	if s.deps.Now != nil {
@@ -268,84 +258,6 @@ func atoiDefault(s string, def int) int {
 		return def
 	}
 	return n
-}
-
-// handleClassifyEvents runs the model over unclassified events on demand.
-//
-// The classifier is scheduled hourly, which is the right cadence for a token
-// budget but the wrong one for an operator who has just corrected a prompt and
-// wants to see the effect. It sits alongside the other model-backed triggers,
-// takes the same budget, and reports what it actually did.
-func (s *Server) handleClassifyEvents(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAI(w, r) {
-		return
-	}
-	// The ceiling is set by this route's own budget. With three batches in
-	// flight a batch of six takes roughly fifty seconds, so about seventy
-	// events fit inside the five-minute request timeout. The hourly job has a
-	// fifteen-minute budget and is where large backlogs are cleared; this is
-	// for seeing the effect of a change straight away.
-	limit := clampInt(intParam(r, "limit", 60), 1, 72)
-	n, err := s.deps.AI.ClassifyEvents(r.Context(), limit)
-	if err != nil {
-		s.deps.Log.Warn("event classification failed", "err", err)
-		writeError(w, http.StatusBadGateway, "ai_unavailable",
-			"Classification failed: "+err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"classified": n, "requested": limit})
-}
-
-// handleSymbolEvents serves the news and filings for one instrument, from the
-// same event pipeline as the feed.
-func (s *Server) handleSymbolEvents(w http.ResponseWriter, r *http.Request) {
-	sym, err := marketdata.ParseSymbol(chi.URLParam(r, "symbol"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "Unrecognised symbol.")
-		return
-	}
-
-	q := r.URL.Query()
-	filter := storage.EventFilter{
-		Symbol: sym.String(),
-		Limit:  atoiDefault(q.Get("limit"), 40),
-		Offset: atoiDefault(q.Get("offset"), 0),
-		// This page is about one instrument, so everything collected for it
-		// belongs here — including results from its own watchlist search that
-		// resolved to no listed company, which is every foreign holding.
-		IncludeUnattributedWatchlist: true,
-		// Ordered by how recent the *content* is rather than by when we
-		// happened to find it. A symbol page answers "what is the latest on
-		// this company", and discovery order put a July article above this
-		// morning's because an aggregator resurfaced it overnight.
-		OrderByContentAge: true,
-	}
-	// Unbounded by default. A company's filing history is the point of
-	// keeping it, and a window would reintroduce exactly the amnesia this
-	// replaces. Callers that want only today pass hours.
-	if hours := atoiDefault(q.Get("hours"), 0); hours > 0 {
-		filter.Since = s.now().Add(-time.Duration(hours) * time.Hour)
-	}
-	if v := q.Get("min_importance"); v != "" {
-		filter.MinImportance = atoiDefault(v, 0)
-	}
-
-	list, err := s.deps.Store.ListEvents(r.Context(), filter)
-	if err != nil {
-		s.deps.Log.Error("symbol events failed", "symbol", sym.String(), "err", err)
-		writeError(w, http.StatusInternalServerError, "storage", "Could not read events.")
-		return
-	}
-
-	now := s.now()
-	out := eventListResponse{
-		Events: make([]eventEnvelope, 0, len(list)),
-		Total:  len(list), Limit: filter.Limit, Offset: filter.Offset,
-	}
-	for _, e := range list {
-		out.Events = append(out.Events, s.envelope(e, now))
-	}
-	writeJSON(w, http.StatusOK, out)
 }
 
 // handleSymbolDebrief writes an account of everything collected about an
@@ -393,66 +305,6 @@ func (s *Server) handleSymbolDebrief(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "ai_unavailable", "The debrief failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, out)
-}
-
-// refreshResult reports what a manual refresh did.
-type refreshResult struct {
-	SourceID   string `json:"source_id"`
-	Items      int    `json:"items"`
-	New        int    `json:"new"`
-	Processed  int    `json:"processed"`
-	Events     int    `json:"events"`
-	DurationMS int64  `json:"duration_ms"`
-	Note       string `json:"note,omitempty"`
-}
-
-// handleRefreshSymbolNews polls an instrument's own source now, for someone
-// looking at its page and expecting news. It also processes what it fetched,
-// so "3 new" changes what is on screen.
-func (s *Server) handleRefreshSymbolNews(w http.ResponseWriter, r *http.Request) {
-	if s.deps.Ingest == nil {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Ingestion is not running.")
-		return
-	}
-	sym, err := marketdata.ParseSymbol(chi.URLParam(r, "symbol"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "Unrecognised symbol.")
-		return
-	}
-	sourceID, ok := s.deps.Ingest.SourceIDFor(sym)
-	if !ok {
-		writeError(w, http.StatusNotFound, "not_found",
-			"This instrument is not on the watchlist, so nothing follows it specifically.")
-		return
-	}
-
-	start := s.now()
-	items, added, err := s.deps.Ingest.FetchNow(r.Context(), sourceID)
-	if err != nil {
-		s.deps.Log.Warn("manual refresh failed", "source", sourceID, "err", err)
-		writeError(w, http.StatusBadGateway, "refresh", err.Error())
-		return
-	}
-
-	out := refreshResult{SourceID: sourceID, Items: items, New: added}
-	if added == 0 {
-		out.Note = "Nothing new since the last check."
-	}
-
-	// Turn what arrived into events straight away. Anything else would report
-	// a number the page cannot show.
-	if s.deps.Processor != nil && added > 0 {
-		res, err := s.deps.Processor.ProcessBatch(r.Context(), added*2+20)
-		if err != nil {
-			s.deps.Log.Warn("refresh processing failed", "err", err)
-			out.Note = "Collected, but processing them failed; they will be picked up shortly."
-		} else {
-			out.Processed = res.Items
-			out.Events = res.Created
-		}
-	}
-	out.DurationMS = s.now().Sub(start).Milliseconds()
 	writeJSON(w, http.StatusOK, out)
 }
 

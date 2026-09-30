@@ -26,22 +26,6 @@ func TestMarginRefusesToInventZero(t *testing.T) {
 	}
 }
 
-// TestGrowthRefusesNegativeBase: a company that lost 100 and now loses 50 has
-// not grown by -50%. Any percentage off a negative base is a number a reader
-// will try to interpret and cannot.
-func TestGrowthRefusesNegativeBase(t *testing.T) {
-	if g := GrowthPercent(f(-100), f(-50)); g != nil {
-		t.Errorf("growth from a loss = %v, want nil", *g)
-	}
-	if g := GrowthPercent(f(0), f(50)); g != nil {
-		t.Errorf("growth from zero = %v, want nil", *g)
-	}
-	g := GrowthPercent(f(100), f(125))
-	if g == nil || math.Abs(*g-25) > 1e-9 {
-		t.Errorf("growth = %v, want 25", g)
-	}
-}
-
 // TestTrendNeedsEnoughPoints guards the opposite failure from the one that
 // shipped. Requiring every period to report a metric produced no trends at
 // all; accepting two points would call one weak quarter a collapse.

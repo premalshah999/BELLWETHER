@@ -2,11 +2,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"sync"
-
-	"github.com/go-chi/chi/v5"
 
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/storage"
@@ -142,37 +139,4 @@ func (s *Server) fillWatchlistItemFromSeries(item *watchlistItem, series marketd
 			}
 		}
 	}
-}
-
-func (s *Server) handleWatchlistAdd(w http.ResponseWriter, r *http.Request) {
-	var req addWatchlistRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "Could not read the request body.")
-		return
-	}
-	sym, err := marketdata.ParseSymbol(req.Symbol)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_symbol", err.Error())
-		return
-	}
-	if err := s.deps.Store.AddWatchlist(r.Context(), sym, req.Note); err != nil {
-		s.deps.Log.Error("could not add to watchlist", "symbol", sym, "err", err)
-		writeError(w, http.StatusInternalServerError, "watchlist_write_failed", "Could not save to the watchlist.")
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]any{"symbol": sym.String()})
-}
-
-func (s *Server) handleWatchlistRemove(w http.ResponseWriter, r *http.Request) {
-	sym, err := marketdata.ParseSymbol(chi.URLParam(r, "symbol"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_symbol", err.Error())
-		return
-	}
-	if err := s.deps.Store.RemoveWatchlist(r.Context(), sym); err != nil {
-		s.deps.Log.Error("could not remove from watchlist", "symbol", sym, "err", err)
-		writeError(w, http.StatusInternalServerError, "watchlist_write_failed", "Could not update the watchlist.")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }

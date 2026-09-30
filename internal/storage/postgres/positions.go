@@ -81,46 +81,6 @@ func (d *DB) ListPositions(ctx context.Context) ([]Position, error) {
 	return out, rows.Err()
 }
 
-// GetPosition reads one position by id.
-func (d *DB) GetPosition(ctx context.Context, id int64) (Position, bool, error) {
-	var p Position
-	err := d.db.QueryRowContext(ctx, `
-		SELECT id, symbol, quantity, cost_basis, opened_at, account, notes, created_at, updated_at
-		FROM positions WHERE id = $1`, id,
-	).Scan(&p.ID, &p.Symbol, &p.Quantity, &p.CostBasis,
-		&p.OpenedAt, &p.Account, &p.Notes, &p.CreatedAt, &p.UpdatedAt)
-	if err == sql.ErrNoRows {
-		return Position{}, false, nil
-	}
-	if err != nil {
-		return Position{}, false, fmt.Errorf("get position: %w", err)
-	}
-	return p, true, nil
-}
-
-// UpdatePosition edits an existing position's own fields (correcting a typo,
-// adding to a holding at a new blended cost). It never touches quantity via
-// this path in a way that should produce a trade -- use ClosePosition for
-// that, since reducing a position is a realized event, not an edit.
-func (d *DB) UpdatePosition(ctx context.Context, id int64, quantity, costBasis float64, openedAt time.Time, account, notes string) error {
-	res, err := d.db.ExecContext(ctx, `
-		UPDATE positions
-		SET quantity = $2, cost_basis = $3, opened_at = $4, account = $5, notes = $6, updated_at = now()
-		WHERE id = $1`,
-		id, quantity, costBasis, openedAt, account, notes)
-	if err != nil {
-		return fmt.Errorf("update position: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
-}
-
 // DeletePosition removes a position outright, with no trade recorded -- for
 // correcting a mis-entered position, not for exiting a real one.
 func (d *DB) DeletePosition(ctx context.Context, id int64) error {
@@ -198,65 +158,4 @@ func (d *DB) ClosePosition(ctx context.Context, id int64, quantity, exitPrice fl
 		return Trade{}, fmt.Errorf("close position: commit: %w", err)
 	}
 	return t, nil
-}
-
-// ListTrades returns closed trades, most recently closed first, optionally
-// filtered to one symbol.
-func (d *DB) ListTrades(ctx context.Context, symbol string, limit int) ([]Trade, error) {
-	if limit <= 0 || limit > 500 {
-		limit = 200
-	}
-	query := `SELECT id, symbol, quantity, entry_price, exit_price, opened_at, closed_at, realized_pnl, account, notes, created_at
-	           FROM trades`
-	args := []any{}
-	if symbol != "" {
-		query += ` WHERE symbol = $1`
-		args = append(args, symbol)
-	}
-	query += fmt.Sprintf(` ORDER BY closed_at DESC, id DESC LIMIT $%d`, len(args)+1)
-	args = append(args, limit)
-
-	rows, err := d.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list trades: %w", err)
-	}
-	defer rows.Close()
-
-	var out []Trade
-	for rows.Next() {
-		var t Trade
-		if err := rows.Scan(&t.ID, &t.Symbol, &t.Quantity, &t.EntryPrice, &t.ExitPrice,
-			&t.OpenedAt, &t.ClosedAt, &t.RealizedPnL, &t.Account, &t.Notes, &t.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
-}
-
-// PositionsForSymbols returns the open quantity held per symbol, for
-// callers that need to know exposure without the full Position record --
-// the Geopolitics page's "does this touch real money" check, in particular.
-func (d *DB) PositionsForSymbols(ctx context.Context, symbols []string) (map[string]float64, error) {
-	if len(symbols) == 0 {
-		return map[string]float64{}, nil
-	}
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT symbol, sum(quantity) FROM positions
-		WHERE symbol = ANY($1::text[]) GROUP BY symbol`, stringArray(symbols))
-	if err != nil {
-		return nil, fmt.Errorf("positions for symbols: %w", err)
-	}
-	defer rows.Close()
-
-	out := map[string]float64{}
-	for rows.Next() {
-		var sym string
-		var qty float64
-		if err := rows.Scan(&sym, &qty); err != nil {
-			return nil, err
-		}
-		out[sym] = qty
-	}
-	return out, rows.Err()
 }

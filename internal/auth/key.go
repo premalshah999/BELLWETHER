@@ -72,14 +72,8 @@ type Profile struct {
 	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
 }
 
-// Active reports whether this key may still be used.
-func (p Profile) Active() bool { return p.RevokedAt == nil }
-
 // CanWrite reports whether this profile may change anything.
 func (p Profile) CanWrite() bool { return p.Role == RoleOwner || p.Role == RoleOperator }
-
-// CanManageKeys reports whether this profile may issue or revoke keys.
-func (p Profile) CanManageKeys() bool { return p.Role == RoleOwner }
 
 // Generate mints a new key.
 //

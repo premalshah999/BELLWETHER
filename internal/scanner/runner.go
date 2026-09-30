@@ -15,7 +15,6 @@ import (
 // Store is the persistence the runner needs.
 type Store interface {
 	SaveScan(ctx context.Context, res Result) (int64, error)
-	MarkExplained(ctx context.Context, findingID int64, explained bool) error
 	// SaveCandles persists one symbol's daily bars -- the same method the
 	// market-data router uses for a chart's cache, reused here for the
 	// event study engine's price-history prerequisite rather than adding a

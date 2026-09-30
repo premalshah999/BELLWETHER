@@ -137,18 +137,6 @@ type FastClassification struct {
 	Matched string
 }
 
-// urgentPattern marks wording that means an item should skip the queue.
-//
-// Not a classification — an item can be urgent and of unclear type. What it
-// controls is ordering: these reach the model first, and their companies are
-// marked eventful immediately rather than after the next processing pass.
-var urgentPattern = compile(
-	"breaking", "just in", "halt(ed|s)? trading", "trading halt(ed|s)?", "circuit breaker",
-	"resign(s|ed)", "steps down", "insolvency", "bankruptcy", "fraud",
-	"SEC charges", "raid", "default(s|ed)?", "downgrade", "emergency",
-	"chapter 11", "guidance cut", "recall", "short report",
-)
-
 // ClassifyHeadline gives an item a type and an importance without a model.
 //
 // The second return reports whether any rule matched at all. An unmatched item
@@ -189,14 +177,6 @@ func ClassifyHeadline(headline, summary string) (FastClassification, bool) {
 		}, true
 	}
 	return FastClassification{Type: TypeUnclassified, Importance: TypeUnclassified.BaselineImportance()}, false
-}
-
-// Urgent reports whether an item should be prioritised ahead of the queue.
-func Urgent(headline, summary string) bool {
-	if urgentPattern.MatchString(headline) {
-		return true
-	}
-	return urgentPattern.MatchString(firstSentences(summary, 1))
 }
 
 // firstSentences returns at most n sentences from a string.

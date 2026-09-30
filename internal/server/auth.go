@@ -143,7 +143,6 @@ func (s *Server) authenticate(r *http.Request) (auth.Profile, bool) {
 // fall into the set.
 var readOnlyPosts = map[string]bool{
 	"/api/screens/run":         true,
-	"/api/algorithms/validate": true,
 	"/api/algorithms/preview":  true,
 	"/api/algorithms/backtest": true,
 }

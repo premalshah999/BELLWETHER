@@ -17,8 +17,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
 // RawStore persists fetched items and per-source health. Declared here, at the
@@ -792,30 +790,6 @@ type Schedule struct {
 	EmptyPolls int           `json:"empty_polls"`
 }
 
-// Schedules returns the current plan, soonest first.
-func (e *Engine) Schedules() []Schedule {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	out := make([]Schedule, 0, len(e.state))
-	for id, st := range e.state {
-		src, ok := e.registry.Get(id)
-		if !ok {
-			continue
-		}
-		out = append(out, Schedule{
-			SourceID: id, Lane: src.Lane(), NextDue: st.nextDue.UTC(),
-			Interval: st.lastInterval, IntervalMS: st.lastInterval.Milliseconds(),
-			EmptyPolls: st.emptyPolls,
-		})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].NextDue.Before(out[j].NextDue) })
-	return out
-}
-
-// Phase reports the current market phase, which drives cadence.
-func (e *Engine) Phase() MarketPhase { return PhaseAt(e.now()) }
-
 // Health returns the current health of every registered source.
 func (e *Engine) Health() []SourceHealth {
 	e.mu.Lock()
@@ -968,49 +942,4 @@ func parseGDELTDate(s string) time.Time {
 		return time.Time{}
 	}
 	return t.UTC()
-}
-
-// FetchNow polls one source immediately, for a reader looking at a company's
-// page who wants its news now rather than at the next cadence. It respects the
-// circuit breaker and the in-flight guard.
-func (e *Engine) FetchNow(ctx context.Context, sourceID string) (items, added int, err error) {
-	src, known := e.registry.Get(sourceID)
-	if !known {
-		return 0, 0, fmt.Errorf("news: no source %q", sourceID)
-	}
-	if !src.Fetchable() {
-		return 0, 0, fmt.Errorf("news: source %q is not enabled", sourceID)
-	}
-
-	e.mu.Lock()
-	if e.inWork[sourceID] {
-		e.mu.Unlock()
-		// Already running. Reporting that honestly beats queueing a second
-		// fetch that would race the first for the conditional-request token.
-		return 0, 0, nil
-	}
-	st, ok := e.state[sourceID]
-	if !ok {
-		st = &sourceState{health: SourceHealth{SourceID: sourceID}}
-		e.state[sourceID] = st
-	}
-	if st.health.ConsecutiveFailures > 0 && e.now().Before(st.nextDue) {
-		e.mu.Unlock()
-		return 0, 0, fmt.Errorf("news: source %q is backing off after %d failures: %s",
-			sourceID, st.health.ConsecutiveFailures, st.health.LastError)
-	}
-	e.inWork[sourceID] = true
-	e.mu.Unlock()
-
-	return e.fetchSource(ctx, src)
-}
-
-// SourceIDFor returns the watchlist source that follows an instrument, if one
-// is registered.
-func (e *Engine) SourceIDFor(sym marketdata.Symbol) (string, bool) {
-	id := "watch-" + strings.ToLower(sym.String())
-	if _, ok := e.registry.Get(id); ok {
-		return id, true
-	}
-	return "", false
 }

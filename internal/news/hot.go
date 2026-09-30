@@ -1,7 +1,6 @@
 package news
 
 import (
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -169,13 +168,6 @@ func (t *Tracker) SymbolHeat(symbol string) Heat {
 	return classify(t.current(t.symbols, strings.ToUpper(symbol)))
 }
 
-// SectorHeat reports the current heat of one industry.
-func (t *Tracker) SectorHeat(sector string) Heat {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return classify(t.current(t.sectors, sector))
-}
-
 func (t *Tracker) current(m map[string]*heatEntry, key string) float64 {
 	e, ok := m[key]
 	if !ok {
@@ -203,44 +195,6 @@ type HotEntry struct {
 	Heat   Heat    `json:"heat"`
 	Reason string  `json:"reason,omitempty"`
 	Since  string  `json:"since,omitempty"`
-}
-
-// HotSymbols returns the currently elevated instruments, hottest first.
-func (t *Tracker) HotSymbols(limit int) []HotEntry {
-	return t.hot(t.symbols, limit)
-}
-
-// HotSectors returns the currently elevated industries.
-func (t *Tracker) HotSectors(limit int) []HotEntry {
-	return t.hot(t.sectors, limit)
-}
-
-func (t *Tracker) hot(m map[string]*heatEntry, limit int) []HotEntry {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	now := t.now()
-
-	var out []HotEntry
-	for key, e := range m {
-		score := decay(e.score, e.updatedAt, now)
-		if score < warmThreshold {
-			continue
-		}
-		out = append(out, HotEntry{
-			Key: key, Score: round2(score), Heat: classify(score),
-			Reason: e.reason, Since: e.updatedAt.UTC().Format(time.RFC3339),
-		})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Score != out[j].Score {
-			return out[i].Score > out[j].Score
-		}
-		return out[i].Key < out[j].Key
-	})
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
-	return out
 }
 
 // Sweep drops entries that have decayed to nothing.
@@ -280,5 +234,3 @@ func (h Heat) Multiplier() float64 {
 		return 1
 	}
 }
-
-func round2(f float64) float64 { return float64(int(f*100+0.5)) / 100 }

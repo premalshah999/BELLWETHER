@@ -1273,6 +1273,28 @@ export interface StockAnalysis {
   notes: string[];
 }
 
+/** An AI explanation of today's move, with the sources it was given. */
+export interface Explanation {
+  symbol: string;
+  generated_at: string;
+  explanation: string;
+  confidence: string;
+  caveat: string;
+  citations: { index: number; title: string; url: string; source: string; used: boolean }[];
+}
+
+/** An AI account of everything collected about one stock over a period. */
+export interface Debrief {
+  symbol: string;
+  period: string;
+  headline: string;
+  sections?: { title: string; body: string }[];
+  blind_spots?: string[];
+  event_count: number;
+  official_count: number;
+  generated_at: string;
+}
+
 /** One headline found on the open web. */
 export interface WebResult {
   title: string;
@@ -1412,6 +1434,10 @@ export const api = {
       `/api/web/search?q=${encodeURIComponent(q)}&kind=${kind}&limit=${limit}`,
     ),
 
+  /** The scanner's recent findings on one symbol. */
+  scanHistory: (symbol: string, limit = 5) =>
+    request<{ findings: ScanFinding[] | null }>(`/api/scan/symbols/${encodeURIComponent(symbol)}?limit=${limit}`),
+
   scanLatest: (limit = 40) =>
     request<{ findings: ScanFinding[] | null; count: number }>(
       `/api/scan/latest?limit=${limit}`,
@@ -1496,6 +1522,16 @@ export const api = {
       : `/api/ai/outlooks?${q}`;
     return request<{ outlooks: Outlook[] }>(path);
   },
+
+  explainMove: (symbol: string) =>
+    request<Explanation>(`/api/symbols/${encodeURIComponent(symbol)}/explain`, { method: "POST" }),
+
+  debrief: (symbol: string, days = 30) =>
+    request<Debrief>(`/api/symbols/${encodeURIComponent(symbol)}/debrief?days=${days}`, { method: "POST" }),
+
+  /** Writes a new scenario outlook, which the track record later scores. */
+  generateOutlook: (symbol: string) =>
+    request<Outlook>(`/api/symbols/${encodeURIComponent(symbol)}/outlook`, { method: "POST" }),
 
   calibration: () => request<Calibration>("/api/ai/calibration"),
 

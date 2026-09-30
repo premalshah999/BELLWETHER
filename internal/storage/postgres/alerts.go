@@ -136,27 +136,6 @@ FROM alerts`
 	return out, rows.Err()
 }
 
-// MarkAlertRead marks one alert read.
-func (d *DB) MarkAlertRead(ctx context.Context, id int64) error {
-	var marked bool
-	// One statement decides both outcomes: the RETURNING gives a row when the
-	// alert exists, whether or not this call was the one that marked it, so
-	// "already read" and "no such alert" are distinguished without a second
-	// query racing the first.
-	err := d.db.QueryRowContext(ctx, `
-WITH updated AS (
-    UPDATE alerts SET read_at = now() WHERE id = $1 AND read_at IS NULL RETURNING id
-)
-SELECT EXISTS (SELECT 1 FROM updated) OR EXISTS (SELECT 1 FROM alerts WHERE id = $1)`, id).Scan(&marked)
-	if err != nil {
-		return fmt.Errorf("postgres: mark alert read: %w", err)
-	}
-	if !marked {
-		return ErrNotFound
-	}
-	return nil
-}
-
 // MarkAllAlertsRead clears the unread badge.
 func (d *DB) MarkAllAlertsRead(ctx context.Context) error {
 	if _, err := d.db.ExecContext(ctx,
@@ -207,35 +186,6 @@ ON CONFLICT (algorithm_id, symbol) DO UPDATE SET
 		return fmt.Errorf("postgres: record evaluation: %w", err)
 	}
 	return nil
-}
-
-// LastEvaluations returns the most recent evaluation per symbol.
-func (d *DB) LastEvaluations(ctx context.Context, algorithmID int64) ([]alerts.EvaluationRecord, error) {
-	rows, err := d.db.QueryContext(ctx, `
-SELECT symbol, last_evaluated_at, last_status, last_reason, last_summary
-FROM algorithm_symbol_state
-WHERE algorithm_id = $1 AND last_evaluated_at IS NOT NULL
-ORDER BY symbol`, algorithmID)
-	if err != nil {
-		return nil, fmt.Errorf("postgres: last evaluations: %w", err)
-	}
-	defer rows.Close()
-
-	var out []alerts.EvaluationRecord
-	for rows.Next() {
-		var (
-			rec    alerts.EvaluationRecord
-			status string
-		)
-		if err := rows.Scan(&rec.Symbol, &rec.At, &status, &rec.Reason, &rec.Summary); err != nil {
-			return nil, fmt.Errorf("postgres: scan evaluation: %w", err)
-		}
-		rec.AlgorithmID = algorithmID
-		rec.At = rec.At.UTC()
-		rec.Status = algo.Status(status)
-		out = append(out, rec)
-	}
-	return out, rows.Err()
 }
 
 // RecentAlertSummaries feeds the morning brief.

@@ -64,27 +64,3 @@ func TestSessionSecretsAreDistinct(t *testing.T) {
 		t.Error("two generated secrets were identical")
 	}
 }
-
-// TestAuthOpensOnlyWhatItMust. Health must answer an unauthenticated monitor,
-// and login must be reachable to obtain a session at all. Everything else,
-// including every write, must not.
-func TestAuthOpensOnlyWhatItMust(t *testing.T) {
-	open := map[string]bool{
-		"/api/auth/login":  true,
-		"/api/auth/status": true,
-		"/api/health":      true,
-	}
-	closed := []string{
-		"/api/watchlist", "/api/events", "/api/algorithms", "/api/scan/run",
-		"/api/research/ask", "/api/stream", "/api/symbols/RELIANCE/fundamentals",
-		"/api/ai/brief/generate", "/api/alerts",
-	}
-	for _, p := range closed {
-		if open[p] {
-			t.Errorf("%s is in the open list; it must require a session", p)
-		}
-	}
-	if len(open) != 3 {
-		t.Errorf("the open list has %d entries; every addition needs justifying", len(open))
-	}
-}

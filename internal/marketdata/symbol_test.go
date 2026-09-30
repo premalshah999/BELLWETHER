@@ -70,18 +70,6 @@ func TestParseInterval(t *testing.T) {
 	}
 }
 
-func TestIntervalIntraday(t *testing.T) {
-	intraday := map[Interval]bool{
-		Interval1m: true, Interval5m: true, Interval15m: true, Interval1h: true,
-		Interval1d: false, Interval1wk: false,
-	}
-	for iv, want := range intraday {
-		if got := iv.Intraday(); got != want {
-			t.Errorf("%s.Intraday() = %v, want %v", iv, got, want)
-		}
-	}
-}
-
 func TestSortCandles(t *testing.T) {
 	at := func(s int64) time.Time { return time.Unix(s, 0).UTC() }
 
