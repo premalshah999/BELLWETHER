@@ -35,3 +35,8 @@ export function useUrlList(key: string): [string[], (v: string[]) => void] {
   const set = useCallback((v: string[]) => setRaw(v.join(",")), [setRaw]);
   return [list, set];
 }
+
+/** A link from data, kept only if it is http(s): feeds are untrusted input. */
+export function safeHref(u: string | undefined | null): string | undefined {
+  return u && /^https?:\/\//i.test(u.trim()) ? u.trim() : undefined;
+}

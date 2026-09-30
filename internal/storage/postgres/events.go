@@ -53,8 +53,8 @@ func (d *DB) SaveRawItems(ctx context.Context, items []news.RawItem) (int, error
 		}
 		sourceIDs = append(sourceIDs, it.SourceID)
 		hashes = append(hashes, it.ContentHash)
-		urls = append(urls, it.URL)
-		canonicals = append(canonicals, it.CanonicalURL)
+		urls = append(urls, webURL(it.URL))
+		canonicals = append(canonicals, webURL(it.CanonicalURL))
 		titles = append(titles, it.Title)
 		descs = append(descs, it.Description)
 		publishers = append(publishers, it.Publisher)
@@ -729,4 +729,14 @@ func (d *DB) ResetEvents(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("postgres: commit reset events: %w", err)
 	}
 	return before, nil
+}
+
+// webURL keeps only http(s) links. A feed is untrusted input, and a
+// "javascript:" link stored here would run in the reader's session on click.
+func webURL(u string) string {
+	l := strings.ToLower(strings.TrimSpace(u))
+	if strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "http://") {
+		return strings.TrimSpace(u)
+	}
+	return ""
 }

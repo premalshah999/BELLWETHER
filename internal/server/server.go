@@ -150,6 +150,9 @@ type Server struct {
 	mux  *chi.Mux
 	// aiLimiter bounds what a loop against the model-backed routes can spend.
 	aiLimiter *rateLimiter
+	// loginLimiter bounds guessing: ten attempts per caller, refilled over
+	// five minutes.
+	loginLimiter *rateLimiter
 	// sessionSecret signs session cookies.
 	sessionSecret []byte
 	// studies caches computed event studies; see studyTTL.
@@ -181,7 +184,8 @@ func New(d Deps) *Server {
 		// Twelve model-backed calls a minute per caller. A person clicking
 		// through a page generates two or three; a loop generates thousands,
 		// and each one costs tokens from a fixed monthly budget.
-		aiLimiter: newRateLimiter(12, time.Minute, d.Log),
+		aiLimiter:    newRateLimiter(12, time.Minute, d.Log),
+		loginLimiter: newRateLimiter(10, 5*time.Minute, d.Log),
 	}
 	// Idle callers are swept so the map does not grow once per address
 	// forever. Cheap enough that a plain ticker is the whole mechanism.
@@ -190,6 +194,7 @@ func New(d Deps) *Server {
 		defer t.Stop()
 		for range t.C {
 			s.aiLimiter.sweep()
+			s.loginLimiter.sweep()
 		}
 	}()
 	s.routes()
@@ -200,6 +205,7 @@ func New(d Deps) *Server {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
 
 func (s *Server) routes() {
+	s.mux.Use(securityHeaders)
 	s.mux.Use(middleware.RequestID)
 	s.mux.Use(requestLogger(s.deps.Log))
 	s.mux.Use(recoverer(s.deps.Log))
@@ -215,7 +221,7 @@ func (s *Server) routes() {
 		// default rather than by remembering to protect it.
 		r.Use(s.requireAuth)
 
-		r.Post("/auth/login", s.handleLogin)
+		r.With(s.loginLimiter.middleware).Post("/auth/login", s.handleLogin)
 		r.Post("/auth/logout", s.handleLogout)
 		r.Get("/auth/status", s.handleAuthStatus)
 
