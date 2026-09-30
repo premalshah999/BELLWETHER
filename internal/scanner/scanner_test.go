@@ -240,7 +240,8 @@ func TestScanSeriesCandlesFiltersBadRows(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("candles = %d, want 1 (only 2026-03-10 is clean); got %+v", len(got), got)
 	}
-	want := time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
+	// Midnight New York: the same stamp charts write, so one session is one row.
+	want := time.Date(2026, 3, 10, 0, 0, 0, 0, marketdata.Market)
 	if !got[0].Time.Equal(want) {
 		t.Errorf("Time = %v, want %v", got[0].Time, want)
 	}

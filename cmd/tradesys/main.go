@@ -63,6 +63,8 @@ func main() {
 		"fetch new House Clerk PTR filings for the current year, then exit")
 	backfillInsiders := flag.Int("backfill-insiders", 0,
 		"load the newest N quarters of SEC's insider transaction datasets, then exit")
+	backfillHistory := flag.Bool("backfill-history", false,
+		"store five years of daily bars for the whole universe, then exit")
 	backfillEarnings := flag.Bool("backfill-earnings", false,
 		"store past earnings announcements for the whole universe, then exit")
 	refreshCal := flag.Bool("refresh-calendar", false,
@@ -129,6 +131,13 @@ func main() {
 	if *backfillInsiders > 0 {
 		if err := runBackfillInsiders(*backfillInsiders); err != nil {
 			slog.Error("insider backfill failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *backfillHistory {
+		if err := runBackfillHistory(); err != nil {
+			slog.Error("history backfill failed", "err", err)
 			os.Exit(1)
 		}
 		return
@@ -344,7 +353,8 @@ func run() error {
 				// Generous: a 750-name scan is one request that fans out
 				// inside the sidecar, and cutting it off halfway wastes the
 				// work already done rather than saving anything.
-				HTTP: &http.Client{Timeout: 8 * time.Minute},
+				HTTP:   &http.Client{Timeout: 8 * time.Minute},
+				Adjust: cfg.YFinanceAdjust,
 			},
 			Store:     store,
 			Explainer: store,

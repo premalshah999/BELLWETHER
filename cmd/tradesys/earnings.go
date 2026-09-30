@@ -81,3 +81,50 @@ func runBackfillEarnings() error {
 	_, err = refreshEarnings(ctx, client, store, universe.Symbols(), 28, log)
 	return err
 }
+
+// runBackfillHistory stores five years of daily bars for every universe
+// member, so the event study and backtests can reach back that far. The
+// scheduled scan keeps the latest year current afterwards.
+func runBackfillHistory() error {
+	ctx := context.Background()
+	cfg, err := config.Load(".env")
+	if err != nil {
+		return err
+	}
+	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	if cfg.YFinanceURL == "" {
+		return fmt.Errorf("history: YFINANCE_URL is not configured")
+	}
+	store, err := openStore(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	master, err := company.Load()
+	if err != nil {
+		return err
+	}
+	universe := buildScanUniverse(master)
+	symbols := append(universe.Symbols(), marketdata.MustParseSymbol("SPY"))
+	client := &scanner.Client{BaseURL: cfg.YFinanceURL, HTTP: &http.Client{Timeout: 10 * time.Minute},
+		Adjust: cfg.YFinanceAdjust, Period: "5y"}
+	saved := 0
+	for start := 0; start < len(symbols); start += 100 {
+		batch := symbols[start:min(start+100, len(symbols))]
+		res, err := client.Scan(ctx, batch, 1)
+		if err != nil {
+			log.Warn("history batch failed", "from", start, "err", err)
+			continue
+		}
+		for sym, candles := range res.Series {
+			if err := store.SaveCandles(ctx, sym, marketdata.Interval1d, "yfinance", marketdata.Bars{Candles: candles}, len(candles)); err != nil {
+				log.Warn("history not saved", "symbol", sym.String(), "err", err)
+				continue
+			}
+			saved++
+		}
+		log.Info("history batch saved", "through", start+len(batch), "of", len(symbols))
+	}
+	log.Info("history backfill complete", "symbols", saved)
+	return nil
+}

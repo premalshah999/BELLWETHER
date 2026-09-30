@@ -218,7 +218,7 @@ func ParseForm4(doc []byte, accession string, filed time.Time) (form4Doc, []Trad
 	if m == nil {
 		return d, nil, fmt.Errorf("smartmoney: %s has no ownership document", accession)
 	}
-	if err := xml.NewDecoder(bytes.NewReader(m)).Decode(&d); err != nil {
+	if err := xmlDecoder(m).Decode(&d); err != nil {
 		return d, nil, fmt.Errorf("smartmoney: parse %s: %w", accession, err)
 	}
 	if len(d.Owners) == 0 {
@@ -325,7 +325,7 @@ type infoTable struct {
 // (filings since 2023 report whole dollars, not thousands).
 func ParseInfoTable(b []byte) ([]Holding, error) {
 	var t infoTable
-	if err := xml.Unmarshal(b, &t); err != nil {
+	if err := xmlDecoder(b).Decode(&t); err != nil {
 		return nil, fmt.Errorf("smartmoney: parse information table: %w", err)
 	}
 	type key struct{ cusip, pc string }
@@ -373,4 +373,13 @@ func (f FilingIndex) InfoTableName() string {
 		}
 	}
 	return ""
+}
+
+// xmlDecoder reads a filing's XML whatever encoding it declares. Filers
+// declare ISO-8859-1 or windows-1252 on documents that are ASCII in practice
+// (tickers, numbers, CUSIPs), and refusing them lost whole portfolios.
+func xmlDecoder(b []byte) *xml.Decoder {
+	dec := xml.NewDecoder(bytes.NewReader(b))
+	dec.CharsetReader = func(_ string, r io.Reader) (io.Reader, error) { return r, nil }
+	return dec
 }

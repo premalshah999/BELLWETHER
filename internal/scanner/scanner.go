@@ -204,6 +204,10 @@ type Result struct {
 type Client struct {
 	HTTP    *http.Client
 	BaseURL string
+	// Adjust asks for dividend-adjusted prices, matching YFINANCE_ADJUST.
+	Adjust bool
+	// Period is how much daily history a scan fetches: "1y" unless set.
+	Period string
 }
 
 type scanResponse struct {
@@ -253,7 +257,9 @@ func (s scanSeries) candles() []marketdata.Candle {
 			continue
 		}
 		out = append(out, marketdata.Candle{
-			Time: time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC),
+			// Midnight New York, the session's own date: the stamp every
+			// other writer of daily bars uses, so the same session is one row.
+			Time: time.Date(y, time.Month(m), d, 0, 0, 0, 0, marketdata.Market),
 			Open: o, High: h, Low: l, Close: c, Volume: v,
 		})
 	}
@@ -290,7 +296,7 @@ func (c *Client) Scan(ctx context.Context, symbols []marketdata.Symbol, maxFindi
 		symbolOf[vendor] = sym
 	}
 
-	body, err := json.Marshal(map[string]any{"symbols": suffixed})
+	body, err := json.Marshal(map[string]any{"symbols": suffixed, "adjust": c.Adjust, "period": c.Period})
 	if err != nil {
 		return Result{}, fmt.Errorf("scanner: encode request: %w", err)
 	}

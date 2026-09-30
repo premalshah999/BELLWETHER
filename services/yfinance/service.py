@@ -751,8 +751,18 @@ def calendar(symbols: list[str]) -> dict:
             "as_of": datetime.now(timezone.utc).isoformat()}
 
 
-def scan(symbols: list[str]) -> dict:
-    """Fetch a universe in batches and reduce each symbol to its metrics."""
+# Periods a caller may ask a scan to cover: the scheduled scan reads a year,
+# a history backfill up to five.
+SCAN_PERIODS = {"1y", "2y", "5y"}
+
+
+def scan(symbols: list[str], period: str = SCAN_PERIOD, adjust: bool = False) -> dict:
+    """Fetch a universe in batches and reduce each symbol to its metrics.
+
+    adjust follows the app's YFINANCE_ADJUST: by default prices as traded
+    (split-adjusted only), the same convention as every chart, so the bars
+    this stores and the bars a chart stores are the same bars.
+    """
     import yfinance as yf
 
     out: dict[str, dict] = {}
@@ -763,8 +773,8 @@ def scan(symbols: list[str]) -> dict:
         chunk = symbols[start:start + SCAN_CHUNK]
         try:
             frame = yf.download(
-                " ".join(chunk), period=SCAN_PERIOD, interval="1d",
-                group_by="ticker", auto_adjust=True, progress=False,
+                " ".join(chunk), period=period, interval="1d",
+                group_by="ticker", auto_adjust=adjust, progress=False,
                 threads=True, timeout=30,
             )
         except Exception as exc:
@@ -965,8 +975,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, result)
             return
 
+        period = str(payload.get("period") or SCAN_PERIOD)
+        if period not in SCAN_PERIODS:
+            self._send(400, {"error": "period must be 1y, 2y or 5y"})
+            return
         try:
-            result = scan(symbols)
+            result = scan(symbols, period, bool(payload.get("adjust")))
         except Exception as exc:
             log.warning("scan failed: %s", exc)
             self._send(502, {"error": f"{type(exc).__name__}: {exc}"[:300]})

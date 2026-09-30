@@ -151,3 +151,15 @@ func TestInsiderDatasetURLsNewestFirst(t *testing.T) {
 		t.Errorf("urls = %v", got)
 	}
 }
+
+func TestParseInfoTableAcceptsDeclaredLatin1(t *testing.T) {
+	doc := []byte(`<?xml version="1.0" encoding="ISO-8859-1"?>
+<informationTable xmlns="http://www.sec.gov/edgar/document/thirteenf/informationtable">
+<infoTable><nameOfIssuer>APPLE INC</nameOfIssuer><cusip>037833100</cusip><value>1000</value>
+<shrsOrPrnAmt><sshPrnamt>10</sshPrnamt><sshPrnamtType>SH</sshPrnamtType></shrsOrPrnAmt></infoTable>
+</informationTable>`)
+	hs, err := ParseInfoTable(doc)
+	if err != nil || len(hs) != 1 || hs[0].CUSIP != "037833100" {
+		t.Fatalf("holdings = %+v, %v", hs, err)
+	}
+}
