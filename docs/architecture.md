@@ -6,8 +6,8 @@ optional adapter.
 
 ```
                 ┌──────────────────────── sources ────────────────────────┐
-                │ SEC EDGAR · Federal Register · Fed · Treasury · BLS ·   │
-                │ White House · DOJ/FTC · House Clerk · GDELT · RSS ·     │
+                │ SEC EDGAR · Federal Register · Fed · White House · BLS ·│
+                │ FTC · USTR · House Clerk · GDELT · press RSS ·          │
                 │ Google News discovery · per-symbol watch queries        │
                 └───────────────────────────┬─────────────────────────────┘
                                             │ lanes (per-host rate limits)
@@ -24,6 +24,8 @@ optional adapter.
    └─────┬─────┘                                     ├──▶ event study
          │                                           ├──▶ alerts → Telegram
          └──────────────▶ algorithms · backtests     └──▶ research (cited, text model)
+                                                              ▲
+                          open web: SearXNG · Bing News · Google News
 ```
 
 ## Layout
@@ -32,25 +34,25 @@ optional adapter.
 cmd/tradesys/          wiring: the only package that names a concrete adapter
 internal/
   config/              environment loading and validation
-  marketdata/          Provider interface, Router, Symbol, Candle, Quote
+  marketdata/          Provider interface, Router, Symbol, Candle, Quote, sessions
     yfin/ twelvedata/ alphavantage/ fixture/
-  storage/             persistence ports
-    postgres/          production store; migrations embedded here
+  storage/             shared storage types
+    postgres/          the store; migrations embedded here
   news/                lane-based ingestion: fetch → normalize → dedupe
     company/           the listed-instrument master (SEC-derived US universe)
   events/              type taxonomy, sector inference, SEC / Federal Register parsers
   scanner/             statistical "what's abnormal" pass over the universe
   congress/            House Clerk STOCK Act disclosures
-  eventstudy/          abnormal returns against a venue benchmark
+  smartmoney/          SEC Form 4 insider trades and 13F fund holdings
+  eventstudy/          abnormal returns against the S&P 500
   fundamentals/        valuation snapshots, statements, forward catalyst dates
   indicators/          SMA/EMA/RSI/MACD/ATR/VWAP, session-aware
   screens/             saved multi-factor screens over the universe
-  research/            multi-source research with citation-gated synthesis
+  research/            archive + official feeds + open-web search, citation-gated synthesis
   backtest/            leakage-free strategy backtesting
   algo/                the rule language: parse, validate, evaluate
   alerts/              evaluation scheduler → cooldown → notify
   notify/              Telegram delivery
-  search/              Tavily and Brave search adapters (SearXNG lives in research/)
   auth/                API keys, roles, session cookies
   stream/              server-sent quote stream
   ai/                  text-model client, prompts as files, spend guards
@@ -65,15 +67,15 @@ scripts/               data generators (the S&P 1500 universe)
 
 ## Seams that matter
 
-**Every external dependency sits behind an interface.** `cmd/tradesys` is the
-only package that imports a concrete adapter. Storage, market data, search,
-both model providers and notifications are swappable and fakeable in tests.
+**Every network dependency sits behind an interface.** `cmd/tradesys` is the
+only package that imports a concrete adapter. Market data, search, both model
+providers and notifications are swappable and fakeable in tests. Storage is
+Postgres and is used directly: its tests, and the HTTP tests, run against a
+real scratch schema rather than a fake that could drift from the SQL.
 
 **The market-data Router owns graceful degradation.** Per request it serves
 fresh cache, falls through providers in priority order, serves stale cache
-flagged `stale` before giving up, and writes through on success. A chart
-never silently substitutes one instrument's data for another's without saying
-so in `resolved_symbol`.
+flagged `stale` before giving up, and writes through on success.
 
 **Deterministic before AI, everywhere.** The scanner is pure statistics. The
 universe, sector taxonomy and entity resolution are rule-based. Models are
@@ -105,21 +107,40 @@ Each event links to its evidence — every raw item from every source that
 reported it — with a per-source trust tier. The feed shows the most
 trustworthy reporter, and `+N` for the independent sources behind it.
 
+## The open web
+
+The archive only holds what the catalogued sources published. For everything
+else, `research.Engine.Web` asks three keyless search sources in parallel — a
+private SearXNG node, Bing News RSS and Google News RSS — and merges what
+they return by URL. Research uses it for every question; the news search, the
+chart's context panel and an unexplained scanner signal show it directly
+(`GET /api/web/search`).
+
+Web results are *discovery*: a headline and a link to the publisher. They are
+labelled as such, never stored as events, and can only back a research
+citation once the article itself has been fetched and read.
+
 ## Symbols
 
-Canonical form is `TICKER` for US listings and `TICKER.VENUE` otherwise
-(`GSPC.INDEX` is the S&P 500, rendered `^GSPC` to Yahoo). Class shares use a
-hyphen the way the SEC does (`BRK-B`); a dot is reserved for the venue
-separator, and `BRK.B` typed by a user is rewritten to `BRK-B`.
-
-Every stored symbol round-trips through `marketdata.ParseSymbol` /
-`.String()`. No vendor suffix (`.NS`, `.BO`) can reach storage — `CHECK`
-constraints reject it.
+A symbol is a US ticker (`AAPL`). Class shares use a hyphen the way the SEC
+does (`BRK-B`); `BRK.B` typed by a user is rewritten to it. The one dot a
+symbol can carry marks a benchmark index: `GSPC.INDEX` is the S&P 500, sent
+to Yahoo as `^GSPC`. Every stored symbol round-trips through
+`marketdata.ParseSymbol` / `.String()`.
 
 The universe is the S&P 1500 joined to SEC's own exchange file for CIK
 (`internal/news/company/data/us_listings.csv`, rebuilt by
 `scripts/build_us_listings.py`). It gates more than the scanner: the default
 feed admits an event only when one of its companies is a constituent.
+
+## Time
+
+Everything is stored in UTC. The server keeps one clock for the market —
+`marketdata.Market`, New York — and every schedule, session boundary and
+date written into a prompt uses it. The browser shows clock times in the
+viewer's choice of New York, their own zone or UTC, and always names the
+zone beside the time. Date-only values (an earnings date, a filing date) are
+never shifted.
 
 ## News storage across two databases
 
@@ -133,7 +154,6 @@ archive degrades to the primary rather than failing the feed.
 
 ## Migrations
 
-Embedded, applied at startup under an advisory lock, recorded in
-`schema_migrations`. SQL and Go migrations interleave by name; a numbered Go
-migration that is not registered in code is a hard startup failure. Never
-edit a shipped migration — append a new one.
+SQL files embedded in the binary, applied in name order at startup under an
+advisory lock, and recorded in `schema_migrations`. Never edit a shipped
+migration — append a new one.

@@ -6,7 +6,7 @@ prices render, algorithms evaluate and alerts fire with both switched off.
 | | Jev (TypeSafe AI) | Text model (any OpenAI-compatible) |
 | --- | --- | --- |
 | **Job** | decisions | prose |
-| **Examples** | event type, importance, "is this an event at all?", direction per company, article relevance and sentiment | morning brief, event briefs, research answers, move explanations |
+| **Examples** | event type, importance, "is this an event at all?", direction per company, article relevance and sentiment | morning brief, event briefs, research answers, move explanations, monthly debriefs, outlooks |
 | **Output** | a typed choice, score or yes/no, with a calibrated confidence | text, with citations checked against supplied sources |
 | **Config** | `TYPESAFE_API_KEY`, `JEV_MODEL` | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` |
 | **Guard** | per-call cost recorded | daily USD cap + monthly token cap |
@@ -49,7 +49,7 @@ finding with no valid citation is dropped, not softened.
 **Prompts are files, not Go strings** (`internal/ai/prompts/*.md`). A prompt
 is the specification of a feature's behaviour; burying it in source hides it
 from anyone not reading the code. Every prompt is parsed at startup, so a
-malformed one fails the boot, not a 08:30 cron job — and
+malformed one fails the boot, not the 08:30 brief — and
 `TestEveryPromptParsesAndRenders` exercises all of them.
 
 ## Spend guards
@@ -74,7 +74,9 @@ Every call is recorded with its cost: `llm_usage` for the text model,
 
 ## Calibration
 
-Every AI outlook is logged with a horizon and stated probabilities. Once the
+An outlook is a forecast with a horizon and stated probabilities for up, flat
+and down. One is written for a few watchlist names each weekday at 08:45 ET,
+and for any symbol on request from its chart. Every one is logged. Once the
 horizon passes, the realised move scores it with a multi-category Brier score
 against a uniform-guess baseline (0.667) — of the forecasts where the model
 said 70%, about 70% should have come true — and the result is plotted as a

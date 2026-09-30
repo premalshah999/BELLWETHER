@@ -71,16 +71,21 @@ happened, and the track record is on its own page.
 
 | | |
 | --- | --- |
-| **News** | 80+ sources — SEC EDGAR (8-K, Form 4, 13F), the Federal Register, the Fed, Treasury, BLS, the White House, DOJ/FTC, GDELT and targeted discovery queries — deduplicated, entity-resolved, and classified into ~50 event types. |
+| **News** | SEC EDGAR (8-K, Form 4, 13F), the Federal Register, the Fed, the White House, BLS, the FTC, the wires and financial press, GDELT, targeted discovery queries and one source per watched stock — deduplicated, entity-resolved, and classified into ~50 event types. A search also shows what the open web has. |
 | **Today** | What changed overnight: unexplained moves, alerts, upcoming catalysts and a cited morning brief. |
-| **Signals** | The statistical scanner: abnormal price and volume across the universe, every half hour of the session. |
-| **Geopolitics & policy** | Macro, regulatory and trade events fanned out to the sectors they touch, and to *your* holdings. |
-| **Congress** | House STOCK Act disclosures: who traded what, and how late they disclosed it against the 45-day deadline. |
+| **Charts** | Candles with studies and drawing tools, and beside them what is known about the stock: valuation against its sector, recent news and signals, insider and fund activity, web headlines, and the AI's explanation, debrief and scored outlook. |
+| **Signals** | The statistical scanner: abnormal price and volume across the universe, every half hour of the session. A move nothing in the archive explains is one click from a web search. |
+| **Policy & macro** | Macro, regulatory and trade events fanned out to the sectors they touch, and to *your* holdings. |
+| **Who's buying** | Insider trades from SEC Form 4, the quarterly moves of 14 well-known funds from their 13Fs, and House STOCK Act disclosures with how late each was filed. |
 | **Event study** | For any event type: mean and median abnormal return vs. the S&P 500, hit rate, sample size, and honest small-sample warnings. |
 | **Catalysts** | Upcoming earnings and dividends across the universe, each with the event study's base rate attached. |
-| **Research** | Ask a question; get a cited answer from filings, official releases and the open web — or evidence only, with no model at all. |
+| **Research** | Ask a question; get a cited answer from filings, official releases, measured price history and the open web (a private SearXNG node, Bing News and Google News) — or evidence only, with no model at all. |
+| **Positions & journal** | What you hold and what you closed, each trade set against the event that preceded it. |
 | **Algorithms & backtests** | A JSON rule language over indicators with unknown-aware logic, run on a schedule, with a leakage-free backtester. |
 | **Alerts** | Rule triggers to Telegram and the in-app feed, with the full evaluation snapshot kept for audit. |
+| **AI track record** | Every AI outlook scored against what happened: calibration, skill against a baseline, and the forecasts themselves. |
+
+Every clock time names its zone — New York by default, your own or UTC by choice.
 
 <table>
 <tr>
@@ -107,7 +112,8 @@ docker compose exec tradesys tradesys -issue-key -name "alice" -role owner
 Open <http://localhost:8080> and sign in with the key it printed.
 
 Out of the box you get the official sources, prices from the bundled yfinance
-sidecar, the scanner, Congress, the event study and evidence-only research.
+sidecar, the scanner, Congress, the event study, web search through the
+bundled SearXNG node, and evidence-only research.
 Each key you add switches on more:
 
 | Add | To get |
@@ -126,10 +132,11 @@ Every variable is annotated in [`.env.example`](.env.example).
 flowchart LR
     subgraph Sources
         SEC[SEC EDGAR]
-        FR[Federal Register<br/>Fed · Treasury · BLS]
+        FR[Federal Register<br/>Fed · White House · BLS]
         HC[House Clerk]
         NEWS[RSS · GDELT<br/>discovery queries]
     end
+    WEB[Open web<br/>SearXNG · Bing · Google News]
     Sources --> ING[Ingestion lanes<br/>fetch · normalize · dedupe]
     ING --> RES[Entity resolution<br/>S&P 1500 + SEC CIK]
     RES --> CLS{Classify}
@@ -143,6 +150,7 @@ flowchart LR
     CAND --> STUDY
     EV --> ALERT[Alerts → Telegram]
     EV --> RSCH[Research<br/>cited, text model]
+    WEB --> RSCH
 ```
 
 One Go binary with the React frontend embedded, one Postgres, and a small
@@ -181,7 +189,9 @@ docker compose exec postgres createdb -U tradesys tradesys_test
 TEST_DATABASE_URL=postgres://tradesys:<password>@localhost:5433/tradesys_test?sslmode=disable make test
 ```
 
-Tests that need it skip cleanly when it is unset.
+Each test gets its own schema there and drops it afterwards. The storage and
+HTTP tests need it and skip when it is unset; CI always sets it, and also runs
+the browser smoke tests in `web/tests/`.
 
 ## Contributing
 
