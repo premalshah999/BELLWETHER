@@ -17,6 +17,7 @@ export const loaders = {
   "/journal": () => import("../components/pages/JournalPage"),
   "/positions": () => import("../components/pages/PositionsPage"),
   "/paper": () => import("../components/pages/PaperPage"),
+  "/forecast": () => import("../components/pages/ForecastPage"),
   "/news": () => import("../components/pages/NewsPage"),
   "/research": () => import("../components/pages/ResearchPage"),
   "/scanner": () => import("../components/pages/ScannerPage"),

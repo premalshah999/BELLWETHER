@@ -85,9 +85,25 @@ All reuse the exact code path their scheduled job runs.
 | `-sync-smartmoney N` | fetch insider trades for the last N days and the followed funds' 13Fs |
 | `-refresh-calendar` | rebuild the forward earnings/dividend calendar (~3 min for the universe) |
 | `-merge-duplicates N` | clean headlines and merge duplicate events from the last N days |
+| `-backfill-history` | store five years of daily bars for the whole universe (about 15 minutes); run once on a new install |
+| `-backfill-earnings` | store every past earnings announcement with its EPS surprise (about 30 minutes) |
+| `-backfill-insiders N` | load the newest N quarters of SEC's insider-transaction datasets |
+| `-forecast` | validate the forecast model and store today's ranking |
 | `-reprocess` | discard derived events and rebuild them from stored raw items, after a classification rule changes |
 | `-rollover-news` | move aged news to the archive database now rather than at 02:30 ET |
 | `-reclaim-space` | with `-rollover-news`: return freed space to the OS. Takes an exclusive lock per table; ingestion stalls while it runs |
+
+## A new install
+
+The event study, the forecast and the insider history need history the live
+feeds cannot supply. Load it once, in this order:
+
+```bash
+docker compose exec tradesys tradesys -backfill-history
+docker compose exec tradesys tradesys -backfill-earnings
+docker compose exec tradesys tradesys -backfill-insiders 12
+docker compose exec tradesys tradesys -forecast
+```
 
 ## Backups
 
@@ -160,6 +176,11 @@ model market holidays.
 | 02:30 daily | news rollover to the archive |
 | 02:00 Saturday | fundamentals refresh for the universe |
 | hourly | event briefs, news digest, event classification |
+| 16:40 weekdays | forecast model: validate and rank the universe |
+| every 30 s in the session | paper trading: fill orders, run agents; equity marked every 15 min and at the close |
+| 05:00 Sunday | earnings history (latest quarters) |
+| 04:00 on the 3rd | SEC insider dataset for the newest quarter |
+| :10 hourly | tickers for unresolved 13F holdings |
 
 In the browser each viewer picks New York, their own zone or UTC from the
 status menu; every clock time names the zone it is shown in.

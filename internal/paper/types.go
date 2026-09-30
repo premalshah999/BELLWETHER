@@ -128,6 +128,8 @@ type AgentConfig struct {
 	// UseScanner adds the scanner's latest unusual movers to an AI agent's
 	// candidates.
 	UseScanner bool `json:"use_scanner"`
+	// UseForecast adds the forecast model's highest-ranked stocks.
+	UseForecast bool `json:"use_forecast"`
 	// EveryMinutes is how often it decides during the session.
 	EveryMinutes int `json:"every_minutes"`
 	// MaxPositions bounds how many names it holds at once.

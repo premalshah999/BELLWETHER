@@ -1880,6 +1880,8 @@ export interface PaperPerformance {
   max_drawdown_pct: number;
   sharpe?: number;
   volatility_pct?: number;
+  beta?: number;
+  alpha_pct?: number;
   weeks: { week: string; return_pct: number; benchmark_pct?: number }[];
   weekly_goal_pct: number;
   goal_hit_weeks: number;
@@ -1898,6 +1900,7 @@ export interface PaperAgentConfig {
   symbols?: string[];
   watchlist_ids?: number[];
   use_scanner: boolean;
+  use_forecast?: boolean;
   every_minutes: number;
   max_positions: number;
   intraday: boolean;
@@ -1969,4 +1972,68 @@ export const paperApi = {
   deleteAgent: (id: number, agentID: number) => request<void>(`${w(id)}/agents/${agentID}`, { method: "DELETE" }),
   runAgent: (id: number, agentID: number) => request<PaperDecision>(`${w(id)}/agents/${agentID}/run`, { method: "POST" }),
   decisions: (id: number) => request<{ decisions: PaperDecision[] }>(`${w(id)}/decisions`),
+};
+
+// ---- forecast model ----------------------------------------------------------
+
+export interface ForecastYear {
+  year: number;
+  days: number;
+  rank_ic: number;
+  t: number;
+  spread_pct: number;
+  top_hit_pct: number;
+}
+
+export interface ForecastFactor {
+  key: string;
+  label: string;
+  why: string;
+  rank_ic: number;
+  t: number;
+  weight: number;
+}
+
+export interface ForecastReport {
+  at: string;
+  as_of: string;
+  horizon: number;
+  symbols: number;
+  train_rows: number;
+  years: ForecastYear[] | null;
+  overall: ForecastYear;
+  factors: ForecastFactor[];
+}
+
+export interface ForecastPick {
+  symbol: string;
+  name?: string;
+  sector?: string;
+  score: number;
+  percentile: number;
+  drivers: { key: string; label: string; contribution: number }[];
+}
+
+export interface ForecastLiveRun {
+  as_of: string;
+  stocks: number;
+  rank_ic: number;
+  top_pct: number;
+  avg_pct: number;
+}
+
+export const forecastApi = {
+  latest: (q = "", limit = 30) =>
+    request<{
+      report: ForecastReport;
+      top: ForecastPick[];
+      bottom: ForecastPick[];
+      total: number;
+      live: ForecastLiveRun[];
+      live_summary: { runs: number; rank_ic?: number; t?: number; top_edge_pct?: number };
+    }>(`/api/forecast?limit=${limit}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
+  symbol: (symbol: string) =>
+    request<{ symbol: string; latest: ForecastPick & { as_of: string }; history: (ForecastPick & { as_of: string })[]; horizon: number; stale: boolean }>(
+      `/api/forecast/symbols/${encodeURIComponent(symbol)}`,
+    ),
 };

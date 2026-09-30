@@ -34,3 +34,15 @@ A representative slice — the full route table is `internal/server/server.go`:
 | `POST` | `/api/symbols/{symbol}/outlook` | A probabilistic outlook, logged and later scored |
 | `GET` | `/api/ai/calibration` | The model's measured forecasting track record |
 | `POST` | `/api/research/ask` | Multi-source deep research, cited |
+| `GET` | `/api/forecast` | The forecast model's ranking, walk-forward record and live record |
+| `GET` | `/api/forecast/symbols/{symbol}` | One stock's model rank and drivers |
+| `GET` | `/api/smartmoney/funds`, `/api/smartmoney/funds/search?q=` | Followed funds; search any 13F filer on SEC |
+| `POST` | `/api/smartmoney/funds` | Follow a 13F filer by CIK |
+| `GET` | `/api/smartmoney/funds/{cik}?q=&kind=&sort=&offset=` | A fund's holdings, searched, filtered and paged |
+| `GET` | `/api/eventstudy?type=EARNINGS_SURPRISE&days=5` | Reaction and drift, split by group |
+| `POST` | `/api/journal` | Record a closed trade |
+| `GET` | `/api/paper/wallets`, `POST /api/paper/wallets` | Paper-trading wallets |
+| `POST` | `/api/paper/wallets/{id}/deposits` | Add simulated funds (idempotency key required) |
+| `POST` | `/api/paper/wallets/{id}/orders` | Place a paper order |
+| `GET` | `/api/paper/wallets/{id}/performance` | Returns, alpha, weekly results, skill-or-luck test |
+| `POST` | `/api/paper/wallets/{id}/agents/{aid}/run` | Run a trading agent once |

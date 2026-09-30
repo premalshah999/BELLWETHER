@@ -21,9 +21,10 @@ have actually moved prices before.
 
 </div>
 
-> **Bellwether places no orders.** There is no order-placement code path of
-> any kind. It watches, measures and explains. Analysis tool, not investment
-> advice; data may be delayed.
+> **Bellwether places no real orders.** Paper trading uses simulated money,
+> and there is no code path to a broker of any kind. It watches, measures,
+> forecasts and explains. Analysis tool, not investment advice; data may be
+> delayed.
 
 ---
 
@@ -117,6 +118,20 @@ drawing tools and multi-chart layouts. The **Context** tab sits beside it:
 - **Outlook** — a probabilistic forecast that is logged and later scored.
 - **On the web** — fresh headlines from outside the archive.
 
+### Forecast — which stocks are likely to outperform next
+
+![The forecast model's ranking with its out-of-sample record](docs/images/forecast.png)
+
+After every close a model ranks the whole universe by how likely each stock is
+to beat the others over the next five sessions. It reads factors with decades
+of research behind them — 12-month momentum, short-term reversal, low
+volatility, the 52-week high, the latest earnings surprise and opportunistic
+insider buying — and combines them with a ridge regression whose weights are
+on the page. It is validated **walk-forward**: each year is scored by a model
+fit only on the three years before it, and every live prediction is logged and
+scored once its five sessions have passed. The page leads with that record,
+not with the picks.
+
 ### Signals — the scanner
 
 ![The scanner's flagged moves, each with its z-scores and whether any news explains it](docs/images/signals.png)
@@ -151,9 +166,13 @@ Three official, free sources of "who is putting money where":
 
 ![Insider transactions from SEC Form 4](docs/images/insiders.png)
 
-- **Insiders** — officers' and directors' trades from SEC Form 4, within
-  minutes of filing.
-- **Funds** — the quarterly moves of 14 well-known funds from their 13F filings.
+- **Insiders** — officers' and directors' trades from SEC Form 4 for every US
+  listing, within minutes of filing, with three years of history from SEC's
+  quarterly datasets.
+- **Funds** — 64 well-known managers, from Berkshire and Pershing Square to
+  Citadel, Norges Bank and Saudi Arabia's PIF, and any other 13F filer you
+  search for by name and follow. Each portfolio is searchable, filterable by
+  what changed, sortable and paged, however many thousand positions it holds.
 
 ![House STOCK Act disclosures, with how late each was filed against the 45-day deadline](docs/images/congress.png)
 
@@ -172,10 +191,12 @@ same kind of report. A base rate, not a forecast.
 
 ![Abnormal returns after an event type, with sample size and small-sample warnings](docs/images/eventstudy.png)
 
-Pick an event type and see the mean and median **abnormal return** against the
-S&P 500 over the following days, the hit rate, the sample size and honest
-warnings when the sample is too small to mean anything. Each case is timed from
-the moment Bellwether discovered the event, so the study cannot leak the future.
+Pick a kind of event and see two numbers against the S&P 500: the **reaction**
+(the close before the news to the first close after) and the **drift** a
+buyer would have earned over the following days, split into groups — earnings
+beats and misses by size from 60,000+ announcements since 1999, insider buying
+by who bought, news by how it was read. Each case is timed from the moment the
+news was knowable, so the study cannot leak the future.
 
 ### Research — a cited answer, or just the evidence
 
@@ -187,18 +208,41 @@ it can, and either shows you the **evidence only** (the default, no AI call) or
 writes a cited **AI brief**. Claims without a valid citation are dropped, and
 sources that failed or could not be read are listed as gaps.
 
+### Paper trading — does the strategy actually make money?
+
+![A paper wallet: equity, holdings, and the account against the S&P 500](docs/images/paper.png)
+
+Open a wallet with simulated money and trade it at real market prices. It is
+built to be as strict as a real account so the answer means something:
+
+- **Money is whole cents in a double-entry ledger** — every deposit, fill and
+  fee is a balanced transaction, and each payment goes through a provider
+  lifecycle with an idempotency key, so a card processor can replace the
+  simulator later without touching the books.
+- **Fills are realistic** — market orders only in session hours, slippage,
+  the SEC and FINRA fees a broker passes on, limits that fill only when the
+  market trades through them, stops that gap, the pattern-day-trader rule
+  under $25,000, and stop-loss and take-profit exits that cancel each other.
+- **Agents trade it for you** — an AI agent, one of your saved algorithms, or
+  your own code over a signed webhook, each on a schedule, all held to the
+  wallet's risk limits (position size, daily loss, drawdown halt, trades a
+  day). Every decision is logged with what the agent saw and why.
+- **Skill or luck** — performance is read against the S&P 500 with beta and
+  alpha, week by week against your goal, and against 1,000 random traders who
+  made the same number of trades in the same stocks and period.
+
 ### Positions & journal — your money, in context
 
 ![What you hold, and the news that reached it](docs/images/positions.png)
 
 **Positions** records what you hold so Bellwether can tell you when news
-reaches real money.
+reaches real money. Closed paper trades land in the journal too.
 
 ![Closed trades, each set against the events that surrounded it](docs/images/journal.png)
 
 The **journal** sets each closed trade against the events that came before it,
 using only what was already known — never a later one — so you can see what
-you acted on.
+you acted on. Record any trade you closed elsewhere with *Record a trade*.
 
 ### Algorithms, backtests and alerts
 
@@ -301,6 +345,7 @@ no archive database, and the app still boots.
 | [Operations](docs/operations.md) | deploying, access keys, one-off commands, backups, the schedule |
 | [Algorithms](docs/algorithms.md) | the rule language and the backtester |
 | [API](docs/api.md) | REST endpoints and the error envelope |
+| [Forecast and paper trading](docs/forecast-and-paper.md) | the model, its validation, the ledger and the execution rules |
 | [Research workflow](docs/research-workflow.md) | retrieval, ranking, citation rules and limits |
 
 ## Development

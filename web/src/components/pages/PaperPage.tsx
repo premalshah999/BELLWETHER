@@ -818,6 +818,7 @@ function AgentEditor({ wallet: w, agent, aiAvailable, onClose, onSaved }: { wall
             </div>
           )}
           <Switch checked={cfg.use_scanner} onChange={(v) => set({ use_scanner: v })} label="Also consider the scanner's latest unusual movers" />
+          <Switch checked={!!cfg.use_forecast} onChange={(v) => set({ use_forecast: v })} label="Also consider the forecast model's top-ranked stocks" />
 
           <h3 className="text-meta font-semibold uppercase tracking-wide text-text-muted">How it trades</h3>
           <div className="grid grid-cols-2 gap-3">
@@ -904,6 +905,7 @@ function PerformanceTab({ wallet: w }: { wallet: PaperWallet }) {
     { term: "Return", value: pct(p.return_pct), note: p.since ? `since ${formatDateTime(p.since)}` : "not marked yet", cls: tone(p.return_pct) },
     { term: "S&P 500", value: pct(p.benchmark_pct), note: p.excess_pct !== undefined ? `${pct(p.excess_pct)} against it` : "same period" },
     { term: "Sharpe", value: p.sharpe?.toFixed(2) ?? "—", note: p.volatility_pct !== undefined ? `${p.volatility_pct.toFixed(1)}% annual volatility` : "needs five sessions" },
+    { term: "Alpha", value: p.alpha_pct !== undefined ? pct(p.alpha_pct, 1) : "—", note: p.beta !== undefined ? `a year, after a beta of ${p.beta.toFixed(2)} to the market` : "needs five sessions", cls: tone(p.alpha_pct) },
     { term: "Worst drawdown", value: p.max_drawdown_pct ? `−${p.max_drawdown_pct.toFixed(2)}%` : "0%", note: "peak to trough" },
     { term: "Closed trades", value: String(p.trades), note: p.trades ? `${p.win_rate.toFixed(0)}% won · avg ${pct(p.avg_win_pct, 1)} / ${pct(p.avg_loss_pct, 1)}` : "none yet" },
     { term: "Profit factor", value: p.profit_factor?.toFixed(2) ?? "—", note: `fees paid ${usd(p.fees_cents)}` },
@@ -926,7 +928,7 @@ function PerformanceTab({ wallet: w }: { wallet: PaperWallet }) {
         </div>
       </Card>
 
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-6">
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4 lg:grid-cols-7">
         {stats.map((t) => (
           <div key={t.term}>
             <dt className="text-meta text-text-muted">{t.term}</dt>

@@ -14,6 +14,7 @@ import {
   ScrollText,
   Search,
   SlidersHorizontal,
+  Sparkles,
   Sunrise,
   TestTubeDiagonal,
   Wallet,
@@ -56,6 +57,7 @@ export const NAV: NavSection[] = [
   {
     label: "Markets",
     items: [
+      { to: "/forecast", label: "Forecast", icon: Sparkles },
       { to: "/calendar", label: "Catalysts", icon: CalendarClock },
       { to: "/geopolitics", label: "Policy & macro", icon: ScrollText },
       { to: "/smartmoney/overview", label: "Who's buying", icon: Landmark, match: ["/smartmoney", "/congress"] },

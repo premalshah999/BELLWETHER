@@ -1,6 +1,7 @@
 import { Fundamentals } from "../Fundamentals";
 import { SymbolBrief } from "../SymbolBrief";
 import { SymbolOutlook } from "../SymbolOutlook";
+import { SymbolForecast } from "../SymbolForecast";
 import { SymbolSmartMoney } from "../SymbolSmartMoney";
 import { Watchlist } from "../Watchlist";
 import { WebHeadlines } from "../WebHeadlines";
@@ -50,6 +51,7 @@ export function RightRail({
         <div className="min-h-0 flex-1 overflow-y-auto">
           <Fundamentals symbol={symbol} />
           <SymbolBrief symbol={symbol} />
+          <SymbolForecast symbol={symbol} />
           <SymbolOutlook symbol={symbol} />
           <SymbolSmartMoney symbol={symbol} />
           <WebHeadlines

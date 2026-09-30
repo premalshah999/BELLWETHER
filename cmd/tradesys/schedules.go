@@ -99,6 +99,15 @@ func startAISchedules(
 				}
 			})
 
+		// The forecast after the close scan has stored the day's bars.
+		if master != nil {
+			addWithin("forecast", "40 16 * * 1-5", 30*time.Minute, func(runCtx context.Context) {
+				if err := runForecast(runCtx, store, master, log); err != nil {
+					log.Warn("forecast failed", "err", err)
+				}
+			})
+		}
+
 		// Earnings history weekly: the last two quarters are enough to pick
 		// up new results, since the full history was backfilled once.
 		addWithin("earnings history", "0 5 * * 0", 3*time.Hour, func(runCtx context.Context) {
@@ -355,6 +364,21 @@ func generateOutlooks(ctx context.Context, svc *ai.Service, store *postgres.DB, 
 		}
 	}
 	sort.Slice(due, func(i, j int) bool { return due[i].last.Before(due[j].last) })
+	// The forecast model's three strongest picks get an outlook too, so the
+	// AI's read of them is scored beside the model's.
+	if _, preds, err := store.LatestForecast(ctx); err == nil {
+		for _, p := range preds[:min(3, len(preds))] {
+			sym, err := marketdata.ParseSymbol(p.Symbol)
+			if err != nil {
+				continue
+			}
+			if prev, err := store.ListOutlooks(ctx, p.Symbol, 1); err == nil && len(prev) > 0 && time.Since(prev[0].CreatedAt) < ai.DefaultHorizonDays*24*time.Hour {
+				continue
+			}
+			due = append([]candidate{{sym: sym}}, due...)
+			max++
+		}
+	}
 	made := 0
 	for _, c := range due[:min(max, len(due))] {
 		if _, _, err := svc.GenerateOutlook(ctx, c.sym); err != nil {

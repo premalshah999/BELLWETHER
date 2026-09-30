@@ -17,7 +17,12 @@ type Performance struct {
 	ExcessPct      *float64   `json:"excess_pct,omitempty"`
 	MaxDrawdownPct float64    `json:"max_drawdown_pct"`
 	// Sharpe is annualised from daily returns with no risk-free rate.
-	Sharpe        *float64     `json:"sharpe,omitempty"`
+	Sharpe *float64 `json:"sharpe,omitempty"`
+	// Beta is how much of the account's daily move is the market's; Alpha is
+	// the annualised return left over once that exposure is taken out. A
+	// high return with a beta near one and no alpha is the market, not skill.
+	Beta          *float64     `json:"beta,omitempty"`
+	AlphaPct      *float64     `json:"alpha_pct,omitempty"`
 	VolatilityPct *float64     `json:"volatility_pct,omitempty"`
 	Weeks         []WeekResult `json:"weeks"`
 	WeeklyGoalPct float64      `json:"weekly_goal_pct"`
@@ -115,6 +120,9 @@ func Analyze(marks []EquityPoint, fills []Fill, trips []RoundTrip, s Settings, p
 			sh := round2(mean / sd * math.Sqrt(252))
 			vol := round2(sd * math.Sqrt(252) * 100)
 			p.Sharpe, p.VolatilityPct = &sh, &vol
+		}
+		if beta, alpha, ok := attribution(daily); ok {
+			p.Beta, p.AlphaPct = &beta, &alpha
 		}
 	}
 	p.Weeks = weekly(daily)
@@ -295,6 +303,34 @@ func verdict(p Performance) string {
 	default:
 		return "Behind the S&P 500 so far."
 	}
+}
+
+// attribution regresses the account's daily returns on the S&P 500's.
+func attribution(daily []EquityPoint) (beta, alphaPct float64, ok bool) {
+	var ra, rb []float64
+	for i := 1; i < len(daily); i++ {
+		a, b := daily[i-1], daily[i]
+		if a.EquityCents <= 0 || a.Benchmark == nil || b.Benchmark == nil || *a.Benchmark <= 0 {
+			continue
+		}
+		ra = append(ra, float64(b.EquityCents)/float64(a.EquityCents)-1)
+		rb = append(rb, *b.Benchmark / *a.Benchmark - 1)
+	}
+	if len(ra) < 5 {
+		return 0, 0, false
+	}
+	ma, _ := meanSD(ra)
+	mb, sdb := meanSD(rb)
+	if sdb == 0 {
+		return 0, 0, false
+	}
+	var cov float64
+	for i := range ra {
+		cov += (ra[i] - ma) * (rb[i] - mb)
+	}
+	cov /= float64(len(ra) - 1)
+	beta = cov / (sdb * sdb)
+	return round2(beta), round2((ma - beta*mb) * 252 * 100), true
 }
 
 func pctChange(from, to float64) float64 {

@@ -312,6 +312,8 @@ func (s *Server) routes() {
 				r.With(s.aiLimiter.middleware).Post("/{id}/agents/{aid}/run", s.handleRunPaperAgent)
 				r.Get("/{id}/decisions", s.handlePaperDecisions)
 			})
+			r.Get("/forecast", s.handleForecast)
+			r.Get("/forecast/symbols/{symbol}", s.handleSymbolForecast)
 			r.Get("/journal", s.handleJournal)
 			r.Post("/journal", s.handleRecordTrade)
 			r.Delete("/journal/{id}", s.handleDeleteTrade)

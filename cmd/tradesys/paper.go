@@ -69,7 +69,7 @@ type paperCandidates struct {
 
 const maxCandidates = 25
 
-func (c paperCandidates) Candidates(ctx context.Context, symbols []string, watchlists []int64, useScanner bool) ([]paper.Candidate, error) {
+func (c paperCandidates) Candidates(ctx context.Context, symbols []string, watchlists []int64, useScanner, useForecast bool) ([]paper.Candidate, error) {
 	signals := map[string]string{}
 	seen := map[string]bool{}
 	var list []string
@@ -101,6 +101,15 @@ func (c paperCandidates) Candidates(ctx context.Context, symbols []string, watch
 			}
 		}
 	}
+	pct := map[string]float64{}
+	if _, preds, err := c.store.LatestForecast(ctx); err == nil {
+		for i, p := range preds {
+			pct[p.Symbol] = p.Percentile
+			if useForecast && i < 12 {
+				add(p.Symbol)
+			}
+		}
+	}
 	if len(list) > maxCandidates {
 		list = list[:maxCandidates]
 	}
@@ -111,6 +120,9 @@ func (c paperCandidates) Candidates(ctx context.Context, symbols []string, watch
 			continue
 		}
 		cand.Signal = signals[s]
+		if v, ok := pct[s]; ok {
+			cand.ModelPercentile = &v
+		}
 		out = append(out, cand)
 	}
 	return out, nil

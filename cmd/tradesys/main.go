@@ -63,6 +63,8 @@ func main() {
 		"fetch new House Clerk PTR filings for the current year, then exit")
 	backfillInsiders := flag.Int("backfill-insiders", 0,
 		"load the newest N quarters of SEC's insider transaction datasets, then exit")
+	runForecastFlag := flag.Bool("forecast", false,
+		"validate the forecast model and store today's ranking, then exit")
 	backfillHistory := flag.Bool("backfill-history", false,
 		"store five years of daily bars for the whole universe, then exit")
 	backfillEarnings := flag.Bool("backfill-earnings", false,
@@ -131,6 +133,13 @@ func main() {
 	if *backfillInsiders > 0 {
 		if err := runBackfillInsiders(*backfillInsiders); err != nil {
 			slog.Error("insider backfill failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *runForecastFlag {
+		if err := runForecastCmd(); err != nil {
+			slog.Error("forecast failed", "err", err)
 			os.Exit(1)
 		}
 		return

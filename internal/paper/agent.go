@@ -21,17 +21,20 @@ import (
 
 // Candidate is one stock an agent may consider, with what is known about it.
 type Candidate struct {
-	Symbol       string   `json:"symbol"`
-	Name         string   `json:"name,omitempty"`
-	Sector       string   `json:"sector,omitempty"`
-	Price        float64  `json:"price"`
-	ChangePct    float64  `json:"change_pct"`
-	Change5dPct  float64  `json:"change_5d_pct"`
-	RSI14        float64  `json:"rsi14"`
-	VolumeRatio  float64  `json:"volume_ratio"`
-	FromSMA20Pct float64  `json:"from_sma20_pct"`
-	Signal       string   `json:"signal,omitempty"`
-	Headlines    []string `json:"headlines,omitempty"`
+	Symbol       string  `json:"symbol"`
+	Name         string  `json:"name,omitempty"`
+	Sector       string  `json:"sector,omitempty"`
+	Price        float64 `json:"price"`
+	ChangePct    float64 `json:"change_pct"`
+	Change5dPct  float64 `json:"change_5d_pct"`
+	RSI14        float64 `json:"rsi14"`
+	VolumeRatio  float64 `json:"volume_ratio"`
+	FromSMA20Pct float64 `json:"from_sma20_pct"`
+	Signal       string  `json:"signal,omitempty"`
+	// ModelPercentile is the forecast model's rank for the stock: 100 is the
+	// most likely to outperform over the next five sessions.
+	ModelPercentile *float64 `json:"model_percentile,omitempty"`
+	Headlines       []string `json:"headlines,omitempty"`
 }
 
 // HoldingView is a holding as an agent sees it.
@@ -70,7 +73,7 @@ type Strategy interface {
 
 // Candidates builds the list of stocks an agent may consider.
 type Candidates interface {
-	Candidates(ctx context.Context, symbols []string, watchlists []int64, useScanner bool) ([]Candidate, error)
+	Candidates(ctx context.Context, symbols []string, watchlists []int64, useScanner, useForecast bool) ([]Candidate, error)
 }
 
 // AgentStore is what the runner reads and writes beyond the engine's store.
@@ -201,7 +204,7 @@ func (r *Runner) snapshot(ctx context.Context, a Agent, w Wallet, acct Account, 
 			}
 		}
 	}
-	cands, err := r.Candidates.Candidates(ctx, append(append([]string{}, a.Config.Symbols...), held...), a.Config.WatchlistIDs, a.Config.UseScanner)
+	cands, err := r.Candidates.Candidates(ctx, append(append([]string{}, a.Config.Symbols...), held...), a.Config.WatchlistIDs, a.Config.UseScanner, a.Config.UseForecast)
 	if err != nil {
 		return snap, fmt.Errorf("candidates: %w", err)
 	}

@@ -34,6 +34,9 @@ func TestAnalyzeReturnsDrawdownAndWeeks(t *testing.T) {
 	if p.Sharpe == nil {
 		t.Error("seven sessions of marks should give a Sharpe ratio")
 	}
+	if p.Beta == nil || p.AlphaPct == nil {
+		t.Error("seven sessions beside the S&P 500 should give a beta and an alpha")
+	}
 }
 
 // A trader who only ever buys before a rise must beat nearly every random
