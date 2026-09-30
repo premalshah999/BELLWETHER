@@ -2,6 +2,7 @@ package ai
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -353,7 +354,7 @@ func (c *Client) complete(ctx context.Context, req Request) (Response, error) {
 	choice := parsed.Choices[0]
 	out := Response{
 		Text:         choice.Message.Content,
-		Model:        firstNonEmpty(parsed.Model, model),
+		Model:        cmp.Or(parsed.Model, model),
 		FinishReason: choice.FinishReason,
 		Usage: Usage{
 			PromptTokens:     parsed.Usage.PromptTokens,
@@ -506,15 +507,6 @@ func snippet(b []byte) string {
 		return s[:max] + "…"
 	}
 	return s
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // redact removes the API key from an error, since transport errors can carry

@@ -4,6 +4,7 @@ package news
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -42,11 +43,11 @@ func (a Article) Age(now time.Time) string {
 	case d < time.Minute:
 		return "just now"
 	case d < time.Hour:
-		return itoa(int(d.Minutes())) + "m ago"
+		return strconv.Itoa(int(d.Minutes())) + "m ago"
 	case d < 24*time.Hour:
-		return itoa(int(d.Hours())) + "h ago"
+		return strconv.Itoa(int(d.Hours())) + "h ago"
 	default:
-		return itoa(int(d.Hours()/24)) + "d ago"
+		return strconv.Itoa(int(d.Hours()/24)) + "d ago"
 	}
 }
 
@@ -85,23 +86,4 @@ func GoogleNewsFeed(symbol, company string) string {
 		query = "\"" + company + "\""
 	}
 	return GoogleNewsSearch(query)
-}
-
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	neg := i < 0
-	if neg {
-		i = -i
-	}
-	var b []byte
-	for i > 0 {
-		b = append([]byte{byte('0' + i%10)}, b...)
-		i /= 10
-	}
-	if neg {
-		return "-" + string(b)
-	}
-	return string(b)
 }
