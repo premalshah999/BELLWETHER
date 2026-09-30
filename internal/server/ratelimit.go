@@ -117,8 +117,7 @@ func (r *rateLimiter) middleware(next http.Handler) http.Handler {
 			"retry_after", wait.Round(time.Second))
 		w.Header().Set("Retry-After", formatSeconds(wait))
 		writeError(w, http.StatusTooManyRequests, "rate_limited",
-			"Too many requests to a model-backed endpoint. Try again in "+
-				wait.Round(time.Second).String()+".")
+			"Too many requests. Try again in "+wait.Round(time.Second).String()+".")
 	})
 }
 

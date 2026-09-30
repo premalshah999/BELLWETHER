@@ -3,7 +3,7 @@ import { ExternalLink, Landmark, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
-import { useUrlState } from "../../lib/url";
+import { safeHref, useUrlState } from "../../lib/url";
 import { PageHeader, SkeletonRows } from "../ui/controls";
 
 /**
@@ -148,7 +148,7 @@ export function CongressPage({ onSelect, embedded }: { onSelect: (symbol: string
                   <tr key={f.doc_id} className="border-t border-border-subtle align-top transition-colors hover:bg-bg-panel-hover">
                     <td className="px-6 py-3">
                       <a
-                        href={f.doc_url}
+                        href={safeHref(f.doc_url)}
                         target="_blank"
                         rel="noreferrer noopener"
                         className="group inline-flex items-center gap-1.5 font-medium text-text-primary hover:text-brand"

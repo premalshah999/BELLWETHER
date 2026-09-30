@@ -57,3 +57,24 @@ func recoverer(log *slog.Logger) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// csp allows only this origin's own scripts. Inline styles stay allowed for
+// React's style attributes; there is no inline script anywhere.
+const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; " +
+	"base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+
+// securityHeaders sets the browser protections on every response, so they
+// hold even when the app is reached without the reverse proxy.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", csp)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		next.ServeHTTP(w, r)
+	})
+}

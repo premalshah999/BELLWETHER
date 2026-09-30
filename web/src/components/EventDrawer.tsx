@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { safeHref } from "../lib/url";
 import { ArrowDownRight, ArrowUpRight, ExternalLink, Link2, Minus, ShieldCheck, Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import { api, type EventEntity, type Evidence, type MarketEvent } from "../lib/api";
@@ -92,7 +93,7 @@ export function EventDrawer({
               </div>
               <div className="mt-1 flex flex-wrap gap-2">
                 {e.primary_url && (
-                  <a href={e.primary_url} target="_blank" rel="noreferrer noopener" className="action-primary">
+                  <a href={safeHref(e.primary_url)} target="_blank" rel="noreferrer noopener" className="action-primary">
                     Open original <ExternalLink size={14} />
                   </a>
                 )}
@@ -272,7 +273,7 @@ function EvidenceRow({ ev }: { ev: Evidence }) {
   return (
     <li>
       <a
-        href={ev.url}
+        href={safeHref(ev.url)}
         target="_blank"
         rel="noreferrer noopener"
         className="group block rounded-lg border border-border-subtle px-3.5 py-3 transition-colors hover:border-border-focus hover:bg-bg-panel-hover"
