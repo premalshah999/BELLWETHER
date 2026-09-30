@@ -1,16 +1,5 @@
-// Package postgres is the production storage implementation.
-//
-// It replaces an SQLite implementation that had become the wrong shape for the
-// system built on top of it. The deciding constraint was concurrency: the
-// ingestion pipeline runs fetchers, processors and AI workers at the same
-// time, and SQLite serialises every writer behind one lock. That was already
-// observable — a bulk reprocess had to stop the application first, because two
-// processes could not write to the same file.
-//
-// Postgres also lets the schema carry invariants the application previously
-// only intended: real timestamps instead of integers, enumerations instead of
-// free strings, CHECK constraints, partial indexes on the work queues, and
-// full-text search instead of a LIKE scan.
+// Package postgres is the storage layer: one Postgres database, migrated on
+// open from the embedded SQL files.
 package postgres
 
 import (
@@ -19,8 +8,9 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
-	"sort"
+	"os"
 	"strings"
 	"time"
 
@@ -29,15 +19,13 @@ import (
 	"github.com/tradesys/dashboard/internal/storage"
 )
 
-//go:embed migrations/*.sql migrations/*.manifest
+//go:embed migrations/*.sql
 var migrationFS embed.FS
 
 // DB is the storage handle.
 type DB struct {
 	db  *sql.DB
 	log *slog.Logger
-
-	goMigrations []goMigration
 }
 
 // Option configures a DB.
@@ -45,27 +33,6 @@ type Option func(*DB)
 
 // WithLogger sets the logger used for migration and maintenance reporting.
 func WithLogger(l *slog.Logger) Option { return func(d *DB) { d.log = l } }
-
-// goMigration pairs a migration name with the Go function that applies it.
-type goMigration struct {
-	name string
-	run  func(ctx context.Context, tx *sql.Tx) error
-}
-
-// WithGoMigration registers a migration that cannot be plain SQL — one that
-// needs to resolve data against something only Go code can read, such as an
-// embedded company master. It runs inside the same transaction-per-migration,
-// same-ledger discipline as every embedded .sql file, in the same sorted
-// sequence: name should sort exactly where the change belongs, e.g.
-// "0019_venue_qualify.go" runs immediately after "0018_listings.sql".
-//
-// Every name listed in migrations/go_migrations.manifest must be registered
-// through this before Open is called, or migrate fails outright — a Go
-// migration silently skipped because nobody wired it into main is worse than
-// the process refusing to start.
-func WithGoMigration(name string, fn func(ctx context.Context, tx *sql.Tx) error) Option {
-	return func(d *DB) { d.goMigrations = append(d.goMigrations, goMigration{name: name, run: fn}) }
-}
 
 // Pool sizing.
 //
@@ -177,98 +144,44 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 		return fmt.Errorf("postgres: create migrations table: %w", err)
 	}
 
-	entries, err := migrationFS.ReadDir("migrations")
+	// fs.ReadDir returns names sorted, and the numbered names are the apply order.
+	entries, err := fs.ReadDir(migrationFS, "migrations")
 	if err != nil {
 		return fmt.Errorf("postgres: read migrations: %w", err)
 	}
-
-	// migrationStep is one schema change, whether it came from an embedded
-	// .sql file or a registered Go function. Both are applied and ledgered
-	// identically from this point on.
-	type migrationStep struct {
-		name string
-		sql  string                                      // empty for a Go step
-		run  func(ctx context.Context, tx *sql.Tx) error // nil for a SQL step
-	}
-
-	steps := make([]migrationStep, 0, len(entries)+len(d.goMigrations))
-	var required []string
 	for _, e := range entries {
-		switch {
-		case strings.HasSuffix(e.Name(), ".sql"):
-			body, err := migrationFS.ReadFile("migrations/" + e.Name())
-			if err != nil {
-				return fmt.Errorf("postgres: read migration %s: %w", e.Name(), err)
-			}
-			steps = append(steps, migrationStep{name: e.Name(), sql: string(body)})
-		case strings.HasSuffix(e.Name(), ".manifest"):
-			body, err := migrationFS.ReadFile("migrations/" + e.Name())
-			if err != nil {
-				return fmt.Errorf("postgres: read manifest %s: %w", e.Name(), err)
-			}
-			for _, line := range strings.Split(string(body), "\n") {
-				line = strings.TrimSpace(line)
-				if line == "" || strings.HasPrefix(line, "#") {
-					continue
-				}
-				required = append(required, line)
-			}
-		}
-	}
-	for _, g := range d.goMigrations {
-		steps = append(steps, migrationStep{name: g.name, run: g.run})
-	}
-	for _, name := range required {
-		found := false
-		for _, g := range d.goMigrations {
-			if g.name == name {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("postgres: migration %q is required by the manifest but was never registered via WithGoMigration", name)
-		}
-	}
-	// Lexical order is the apply order, which is why the files (and the Go
-	// migration names, which follow the same numbering) are numbered.
-	sort.Slice(steps, func(i, j int) bool { return steps[i].name < steps[j].name })
-
-	for _, st := range steps {
+		name := e.Name()
 		var applied bool
 		if err := conn.QueryRowContext(ctx,
-			`SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE name = $1)`, st.name).Scan(&applied); err != nil {
-			return fmt.Errorf("postgres: check migration %s: %w", st.name, err)
+			`SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE name = $1)`, name).Scan(&applied); err != nil {
+			return fmt.Errorf("postgres: check migration %s: %w", name, err)
 		}
 		if applied {
 			continue
 		}
 
-		// Each migration is one transaction. Postgres supports transactional
-		// DDL, so a migration that fails halfway leaves nothing behind —
-		// which is the single biggest practical reason to prefer it here.
+		body, err := migrationFS.ReadFile("migrations/" + name)
+		if err != nil {
+			return fmt.Errorf("postgres: read migration %s: %w", name, err)
+		}
+		// One transaction per file: Postgres DDL is transactional, so a
+		// failed migration leaves nothing behind.
 		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
-			return fmt.Errorf("postgres: begin migration %s: %w", st.name, err)
+			return fmt.Errorf("postgres: begin migration %s: %w", name, err)
 		}
-		if st.run != nil {
-			if err := st.run(ctx, tx); err != nil {
-				_ = tx.Rollback()
-				return fmt.Errorf("postgres: apply migration %s: %w", st.name, err)
-			}
-		} else if _, err := tx.ExecContext(ctx, st.sql); err != nil {
+		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("postgres: apply migration %s: %w", st.name, err)
+			return fmt.Errorf("postgres: apply migration %s: %w", name, err)
 		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO schema_migrations (name) VALUES ($1)`, st.name); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (name) VALUES ($1)`, name); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("postgres: record migration %s: %w", st.name, err)
+			return fmt.Errorf("postgres: record migration %s: %w", name, err)
 		}
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("postgres: commit migration %s: %w", st.name, err)
+			return fmt.Errorf("postgres: commit migration %s: %w", name, err)
 		}
-		d.log.Info("applied migration", "name", st.name)
+		d.log.Info("applied migration", "name", name)
 	}
 	return nil
 }
@@ -278,11 +191,6 @@ func (d *DB) Close() error { return d.db.Close() }
 
 // Ping reports whether the database is reachable.
 func (d *DB) Ping(ctx context.Context) error { return d.db.PingContext(ctx) }
-
-// SQL exposes the underlying handle for the data-migration command, which
-// needs to read from one database and write to another. Nothing in the
-// application should use it.
-func (d *DB) SQL() *sql.DB { return d.db }
 
 // nullTime renders a zero time as SQL NULL.
 //
@@ -304,13 +212,6 @@ func timeOrZero(t sql.NullTime) time.Time {
 	return t.Time.UTC()
 }
 
-func nullString(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
 func nullInt(p *int) any {
 	if p == nil {
 		return nil
@@ -325,8 +226,35 @@ func nullFloat(p *float64) any {
 	return *p
 }
 
-// Compile-time assertion that this implementation satisfies every port the
-// application depends on. It is the cheapest possible guarantee that a method
-// was not missed during the port, and it fails at build time rather than when
-// a page is first opened.
 var _ storage.Store = (*DB)(nil)
+
+// OpenScratch opens a migrated, empty schema of its own inside dsn's
+// database, so tests can run in parallel without seeing each other's rows.
+// drop removes the schema and closes both connections.
+func OpenScratch(ctx context.Context, dsn string) (db *DB, drop func(), err error) {
+	admin, err := Open(ctx, dsn)
+	if err != nil {
+		return nil, nil, err
+	}
+	schema := fmt.Sprintf("test_%d_%d", time.Now().UnixNano(), os.Getpid())
+	if _, err := admin.db.ExecContext(ctx, `CREATE SCHEMA `+schema); err != nil {
+		admin.Close()
+		return nil, nil, err
+	}
+	drop = func() {
+		if db != nil {
+			db.Close()
+		}
+		_, _ = admin.db.ExecContext(context.Background(), `DROP SCHEMA `+schema+` CASCADE`)
+		admin.Close()
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	if db, err = Open(ctx, dsn+sep+"search_path="+schema); err != nil {
+		drop()
+		return nil, nil, err
+	}
+	return db, drop, nil
+}

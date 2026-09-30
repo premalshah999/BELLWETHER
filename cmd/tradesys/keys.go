@@ -29,11 +29,7 @@ func runIssueKey(ctx context.Context, databaseURL, name, roleName, note string) 
 		return fmt.Errorf("a key needs a name: -name \"alice\"")
 	}
 
-	migrationOpt, err := venueMigrationOption()
-	if err != nil {
-		return fmt.Errorf("prepare venue migration: %w", err)
-	}
-	store, err := postgres.Open(ctx, databaseURL, migrationOpt)
+	store, err := postgres.Open(ctx, databaseURL)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
@@ -66,11 +62,7 @@ func runIssueKey(ctx context.Context, databaseURL, name, roleName, note string) 
 
 // runListKeys prints every profile.
 func runListKeys(ctx context.Context, databaseURL string) error {
-	migrationOpt, err := venueMigrationOption()
-	if err != nil {
-		return fmt.Errorf("prepare venue migration: %w", err)
-	}
-	store, err := postgres.Open(ctx, databaseURL, migrationOpt)
+	store, err := postgres.Open(ctx, databaseURL)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
@@ -106,11 +98,7 @@ func runListKeys(ctx context.Context, databaseURL string) error {
 
 // runRevokeKey withdraws a key.
 func runRevokeKey(ctx context.Context, databaseURL, prefix string) error {
-	migrationOpt, err := venueMigrationOption()
-	if err != nil {
-		return fmt.Errorf("prepare venue migration: %w", err)
-	}
-	store, err := postgres.Open(ctx, databaseURL, migrationOpt)
+	store, err := postgres.Open(ctx, databaseURL)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}

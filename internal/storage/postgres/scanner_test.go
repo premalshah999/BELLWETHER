@@ -22,7 +22,7 @@ func TestScanRoundTrip(t *testing.T) {
 		t.Skip("TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	db, err := Open(ctx, dsn, WithGoMigration(goMigrationNameForTests, noopGoMigration))
+	db, err := Open(ctx, dsn)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestEventEvidenceRoundTrip(t *testing.T) {
 		t.Skip("TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	db, err := Open(ctx, dsn, WithGoMigration(goMigrationNameForTests, noopGoMigration))
+	db, err := Open(ctx, dsn)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

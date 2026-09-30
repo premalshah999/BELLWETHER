@@ -24,7 +24,7 @@ func archivePair(t *testing.T) (*Archive, context.Context) {
 	hot := testDB(t)
 	ctx := context.Background()
 
-	cold, err := Open(ctx, coldDSN, WithGoMigration(goMigrationNameForTests, noopGoMigration))
+	cold, err := Open(ctx, coldDSN)
 	if err != nil {
 		t.Fatalf("open archive: %v", err)
 	}

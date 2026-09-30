@@ -28,11 +28,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	degraded := s.deps.Health.DegradedProviders()
 	// Anonymous callers (uptime checks) learn only whether the app is up; the
 	// provider inventory and budgets are for signed-in users.
-	if _, signedIn := s.authenticate(r); !signedIn {
-		if _, hasKeys := s.keyStore(); hasKeys {
-			writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "degraded": len(degraded) > 0})
-			return
-		}
+	if _, signedIn := s.authenticate(r); !signedIn && !s.openAccess(r.Context()) {
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "degraded": len(degraded) > 0})
+		return
 	}
 	if degraded == nil {
 		degraded = []string{}

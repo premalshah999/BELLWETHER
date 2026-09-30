@@ -47,9 +47,6 @@ func (s *classifyStore) SaveEventFacts(_ context.Context, id int64, f map[string
 	s.facts[id] = f
 	return nil
 }
-func (s *classifyStore) ResolveTicker(context.Context, string) (string, bool, error) {
-	return "", false, nil
-}
 
 // jevServer answers every question with a canned answer, and records what it
 // was asked.

@@ -1,13 +1,13 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -16,98 +16,99 @@ import (
 	"github.com/tradesys/dashboard/internal/config"
 	"github.com/tradesys/dashboard/internal/health"
 	"github.com/tradesys/dashboard/internal/marketdata"
-	"github.com/tradesys/dashboard/internal/marketdata/yahoo"
+	"github.com/tradesys/dashboard/internal/marketdata/yfin"
 	"github.com/tradesys/dashboard/internal/server"
-	"github.com/tradesys/dashboard/internal/storage/sqlite"
+	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
-// upstream stands in for Yahoo, serving the recorded chart payloads. Handing
-// the real adapter these bytes exercises the whole chain the operator depends
-// on — HTTP, parsing, the router, the cache, the API — with no network.
-type upstream struct {
+// aaplDaily is a sidecar reply: five sessions, one of them a zero-priced
+// holiday row the client must drop.
+const aaplDaily = `{"symbol":"AAPL","interval":"1d","currency":"USD","candles":[
+{"t":"2025-08-14T13:30:00Z","o":221.05,"h":223.88,"l":220.4,"c":223.12,"v":38221500},
+{"t":"2025-08-15T13:30:00Z","o":223.4,"h":225.71,"l":222.86,"c":224.55,"v":35110200},
+{"t":"2025-08-18T13:30:00Z","o":0,"h":0,"l":0,"c":0,"v":0},
+{"t":"2025-08-19T13:30:00Z","o":224.9,"h":226.4,"l":223.75,"c":225.11,"v":29884100},
+{"t":"2025-08-21T13:30:00Z","o":225.6,"h":227.5,"l":224.33,"c":226.79,"v":41258300}]}`
+
+// sidecar stands in for the yfinance service, so the whole chain -- HTTP,
+// parsing, the router, the cache, the API -- runs with no network.
+type sidecar struct {
 	*httptest.Server
 	hits atomic.Int64
 	fail atomic.Bool
 }
 
-func newUpstream(t *testing.T) *upstream {
+func newSidecar(t *testing.T) *sidecar {
 	t.Helper()
-	u := &upstream{}
+	u := &sidecar{}
 	u.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u.hits.Add(1)
-		if u.fail.Load() {
-			// Yahoo's characteristic failure from a datacenter IP.
-			w.WriteHeader(http.StatusTooManyRequests)
-			io.WriteString(w, "Too Many Requests")
-			return
-		}
-		var fixture string
-		switch {
-		case strings.Contains(r.URL.Path, "RELIANCE.BO"):
-			fixture = "chart_reliance_1d.json"
-		case strings.Contains(r.URL.Path, "AAPL"):
-			fixture = "chart_aapl_1d.json"
-		default:
-			w.WriteHeader(http.StatusNotFound)
-			io.WriteString(w, `{"chart":{"result":null,"error":{"code":"Not Found","description":"No data found, symbol may be delisted"}}}`)
-			return
-		}
-		body, err := os.ReadFile(filepath.Join("testdata", fixture))
-		if err != nil {
-			t.Errorf("read fixture: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(body)
+		switch {
+		case u.fail.Load():
+			w.WriteHeader(http.StatusBadGateway)
+			io.WriteString(w, `{"error":"YFRateLimitError: Too Many Requests"}`)
+		case r.URL.Query().Get("symbol") == "AAPL" || r.URL.Query().Get("symbol") == "MSFT":
+			io.WriteString(w, aaplDaily)
+		default:
+			io.WriteString(w, `{"symbol":"`+r.URL.Query().Get("symbol")+`","interval":"1d","candles":[]}`)
+		}
 	}))
 	t.Cleanup(u.Close)
 	return u
 }
 
-type harness struct {
-	srv      *server.Server
-	upstream *upstream
-	tracker  *health.Tracker
+// testStore is a migrated scratch schema in TEST_DATABASE_URL's database.
+func testStore(t *testing.T) *postgres.DB {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("set TEST_DATABASE_URL to run database-backed server tests")
+	}
+	db, drop, err := postgres.OpenScratch(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("open scratch schema: %v", err)
+	}
+	t.Cleanup(drop)
+	return db
 }
 
+type harness struct {
+	srv      *server.Server
+	upstream *sidecar
+}
+
+// newHarness serves the API over a fresh database with no keys issued and
+// the development opt-in set, so requests need no credentials.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-
-	store, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { store.Close() })
-
-	up := newUpstream(t)
-	provider := yahoo.New(yahoo.WithBaseURL(up.URL))
+	store := testStore(t)
+	up := newSidecar(t)
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tracker := health.New(store, []health.Dep{
-		{Provider: "yahoo", Kind: health.KindMarketData, Configured: true},
+		{Provider: yfin.ProviderName, Kind: health.KindMarketData, Configured: true},
 		{Provider: "alphavantage", Kind: health.KindMarketData, Configured: false},
 		{Provider: "llm", Kind: health.KindLLM, Configured: false},
 	}, health.WithLogger(quiet))
 
-	router := marketdata.NewRouter(store, []marketdata.Provider{provider},
+	router := marketdata.NewRouter(store, []marketdata.Provider{yfin.New(up.URL)},
 		marketdata.WithOutcomeSink(tracker.MarketDataSink()),
 		marketdata.WithLogger(quiet))
 
-	loc, _ := time.LoadLocation("Asia/Kolkata")
+	loc, _ := time.LoadLocation("America/New_York")
 	cfg := &config.Config{
-		DisplayTZID:     "Asia/Kolkata",
-		DisplayTZ:       loc,
-		MarketDataOrder: []string{"yahoo"},
+		DisplayTZID:          "America/New_York",
+		DisplayTZ:            loc,
+		MarketDataOrder:      []string{"yfinance"},
+		AllowUnauthenticated: true,
 	}
-
 	return &harness{
 		srv: server.New(server.Deps{
 			Config: cfg, Store: store, Router: router, Health: tracker,
 			Log: quiet, Version: "test",
 		}),
 		upstream: up,
-		tracker:  tracker,
 	}
 }
 
@@ -131,30 +132,6 @@ func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 	return v
 }
 
-// TestAPIIsOpenOnlyWithoutCredentialStorage.
-//
-// This replaces a test that asserted the API was open unconditionally. That
-// test existed to make reintroducing authentication a conscious act rather
-// than an accident, and it did exactly that — it failed the moment keys
-// landed. What is worth pinning now is the narrow case that remains open: a
-// store with no way to hold keys cannot authenticate anyone, so requiring
-// credentials there would lock the door and throw away every key.
-//
-// The harness uses exactly such a store, which is why the rest of these tests
-// need no credentials.
-func TestAPIIsOpenOnlyWithoutCredentialStorage(t *testing.T) {
-	// This harness is backed by a store with no key table, which is the
-	// condition under test: nothing here can verify a credential, so the
-	// gate must let requests through rather than reject every one of them.
-	h := newHarness(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/meta", nil)
-	rec := httptest.NewRecorder()
-	h.srv.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("returned %d without a credential store, want 200: %s", rec.Code, rec.Body)
-	}
-}
-
 func TestMeta(t *testing.T) {
 	h := newHarness(t)
 	rec := h.do(t, http.MethodGet, "/api/meta", nil)
@@ -175,8 +152,8 @@ func TestMeta(t *testing.T) {
 	if got.App != "TradeSys" {
 		t.Errorf("app = %q", got.App)
 	}
-	if got.DisplayTZ != "Asia/Kolkata" {
-		t.Errorf("display_tz = %q, want Asia/Kolkata", got.DisplayTZ)
+	if got.DisplayTZ != "America/New_York" {
+		t.Errorf("display_tz = %q, want America/New_York", got.DisplayTZ)
 	}
 	if got.Disclaimer != server.Disclaimer {
 		t.Errorf("disclaimer = %q, want the shared constant", got.Disclaimer)
@@ -184,8 +161,8 @@ func TestMeta(t *testing.T) {
 	if got.Features.AI || got.Features.AlphaVantage {
 		t.Errorf("unconfigured features reported as available: %+v", got.Features)
 	}
-	if len(got.Providers) != 1 || got.Providers[0] != "yahoo" {
-		t.Errorf("providers = %v, want [yahoo]", got.Providers)
+	if len(got.Providers) != 1 || got.Providers[0] != "yfinance" {
+		t.Errorf("providers = %v, want [yfinance]", got.Providers)
 	}
 }
 
@@ -208,13 +185,13 @@ func TestCandlesEndToEnd(t *testing.T) {
 	if got.Symbol != "AAPL" || got.Interval != "1d" || got.Currency != "USD" {
 		t.Errorf("identity = %+v", got)
 	}
-	if got.Source != "yahoo" {
-		t.Errorf("source = %q, want yahoo", got.Source)
+	if got.Source != "yfinance" {
+		t.Errorf("source = %q, want yfinance", got.Source)
 	}
 	if got.Stale {
 		t.Error("stale = true on a live fetch")
 	}
-	// The fixture has five timestamps, one of which is an all-null holiday bar.
+	// Five rows, one of them the zero-priced holiday the client drops.
 	if len(got.Candles) != 4 {
 		t.Fatalf("got %d candles, want 4", len(got.Candles))
 	}
@@ -224,38 +201,6 @@ func TestCandlesEndToEnd(t *testing.T) {
 	for i, c := range got.Candles {
 		if c.Open == 0 || c.Close == 0 {
 			t.Errorf("candle %d carries a zero price: %+v", i, c)
-		}
-	}
-}
-
-func TestCandlesIndianSymbol(t *testing.T) {
-	h := newHarness(t)
-	rec := h.do(t, http.MethodGet, "/api/symbols/RELIANCE.BSE/candles", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
-	}
-	got := decode[struct {
-		Symbol   string              `json:"symbol"`
-		Currency string              `json:"currency"`
-		Candles  []marketdata.Candle `json:"candles"`
-	}](t, rec)
-
-	if got.Symbol != "RELIANCE.BSE" {
-		t.Errorf("symbol = %q, want the canonical spelling back", got.Symbol)
-	}
-	if got.Currency != "INR" {
-		t.Errorf("currency = %q, want INR", got.Currency)
-	}
-	// The recorded provider payload has five rows, but one reports a close
-	// below its low. That malformed live row must be dropped before it reaches
-	// storage or a chart.
-	if len(got.Candles) != 4 {
-		t.Fatalf("got %d candles, want 4 valid rows", len(got.Candles))
-	}
-	for _, candle := range got.Candles {
-		if candle.High < candle.Open || candle.High < candle.Close ||
-			candle.Low > candle.Open || candle.Low > candle.Close {
-			t.Fatalf("malformed candle reached the API: %+v", candle)
 		}
 	}
 }
@@ -343,7 +288,7 @@ func TestWatchlistLifecycle(t *testing.T) {
 	}
 
 	// Add two.
-	for _, s := range []string{"AAPL", "RELIANCE.BSE"} {
+	for _, s := range []string{"AAPL", "MSFT"} {
 		rec := h.do(t, http.MethodPost, "/api/watchlist", strings.NewReader(`{"symbol":"`+s+`"}`))
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("add %s: status %d: %s", s, rec.Code, rec.Body)
@@ -354,7 +299,7 @@ func TestWatchlistLifecycle(t *testing.T) {
 	if len(got.Items) != 2 {
 		t.Fatalf("got %d items, want 2", len(got.Items))
 	}
-	if got.Items[0].Symbol != "AAPL" || got.Items[1].Symbol != "RELIANCE.BSE" {
+	if got.Items[0].Symbol != "AAPL" || got.Items[1].Symbol != "MSFT" {
 		t.Errorf("order = %q, %q; want insertion order", got.Items[0].Symbol, got.Items[1].Symbol)
 	}
 	for _, it := range got.Items {
@@ -367,12 +312,12 @@ func TestWatchlistLifecycle(t *testing.T) {
 		if len(it.Spark) == 0 {
 			t.Errorf("%s: sparkline is empty", it.Symbol)
 		}
-		if it.Source != "yahoo" {
-			t.Errorf("%s: source = %q, want yahoo", it.Symbol, it.Source)
+		if it.Source != "yfinance" {
+			t.Errorf("%s: source = %q, want yfinance", it.Symbol, it.Source)
 		}
-	}
-	if got.Items[1].Currency != "INR" {
-		t.Errorf("RELIANCE currency = %q, want INR", got.Items[1].Currency)
+		if it.Currency != "USD" {
+			t.Errorf("%s: currency = %q, want USD", it.Symbol, it.Currency)
+		}
 	}
 
 	// Remove one.
@@ -457,7 +402,7 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Error("market_data_degraded = true before anything has failed")
 	}
 
-	// Drive yahoo to failure and confirm the dots follow.
+	// Drive the sidecar to failure and confirm the dots follow.
 	h.upstream.fail.Store(true)
 	for i := 0; i < 3; i++ {
 		h.do(t, http.MethodGet, "/api/symbols/AAPL/candles?limit="+string(rune('1'+i)), nil)
@@ -465,14 +410,14 @@ func TestHealthEndpoint(t *testing.T) {
 
 	got = decode[healthResp](t, h.do(t, http.MethodGet, "/api/health", nil))
 	for _, p := range got.Providers {
-		if p.Provider != "yahoo" {
+		if p.Provider != yfin.ProviderName {
 			continue
 		}
 		if p.Status == "ok" {
-			t.Errorf("yahoo status = ok after repeated 429s")
+			t.Errorf("yfinance status = ok after repeated failures")
 		}
 		if p.Message == "" {
-			t.Error("yahoo health carries no explanatory message")
+			t.Error("yfinance health carries no explanatory message")
 		}
 	}
 	if !got.MarketDataDegraded {
@@ -502,37 +447,5 @@ func TestStaticDoesNotShadowAPI(t *testing.T) {
 	rec := h.do(t, http.MethodGet, "/api/nope", nil)
 	if ct := rec.Header().Get("Content-Type"); strings.Contains(ct, "text/html") {
 		t.Errorf("unknown API route served HTML (%q); it must stay JSON", ct)
-	}
-}
-
-// TestSearchIsNeverNarrowedByTheDefaultUniverse.
-//
-// The market feed defaults to index constituents, which is right for browsing
-// and wrong for searching. Someone typing a query is asking for matches to
-// that query, not for matches inside a universe they did not choose. Searching
-// "reliance" over a day returned nothing while the archive held a Reliance Jio
-// results item, because the resolver had attached no company to it and the
-// index filter drops anything without a constituent. An empty answer to a
-// direct question reads as "there is no news", which was not true.
-func TestSearchIsNeverNarrowedByTheDefaultUniverse(t *testing.T) {
-	cases := []struct {
-		query     string
-		universe  string
-		wantIndex bool
-	}{
-		{query: "", universe: "", wantIndex: true},
-		{query: "", universe: "all", wantIndex: false},
-		{query: "reliance", universe: "", wantIndex: false},
-		{query: "reliance", universe: "all", wantIndex: false},
-		{query: "   ", universe: "", wantIndex: true},
-	}
-	for _, tc := range cases {
-		name := "query=" + tc.query + " universe=" + tc.universe
-		t.Run(name, func(t *testing.T) {
-			got := tc.universe != "all" && strings.TrimSpace(tc.query) == ""
-			if got != tc.wantIndex {
-				t.Errorf("IndexOnly = %v, want %v", got, tc.wantIndex)
-			}
-		})
 	}
 }

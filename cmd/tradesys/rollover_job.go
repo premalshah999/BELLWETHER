@@ -37,12 +37,8 @@ func runRolloverNews(reclaim bool) error {
 	}
 	defer store.Close()
 
-	opt, err := venueMigrationOption()
-	if err != nil {
-		return err
-	}
 	archive, err := postgres.OpenArchive(ctx, store, cfg.NewsArchiveURL, cfg.NewsHotWindow,
-		postgres.WithLogger(log), opt)
+		postgres.WithLogger(log))
 	if err != nil {
 		return err
 	}

@@ -9,7 +9,6 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata/alphavantage"
 	"github.com/tradesys/dashboard/internal/marketdata/fixture"
 	"github.com/tradesys/dashboard/internal/marketdata/twelvedata"
-	"github.com/tradesys/dashboard/internal/marketdata/yahoo"
 	"github.com/tradesys/dashboard/internal/marketdata/yfin"
 	"github.com/tradesys/dashboard/internal/search"
 	"github.com/tradesys/dashboard/internal/search/brave"
@@ -34,11 +33,6 @@ func buildProviders(cfg *config.Config, store storage.Store, log *slog.Logger) (
 
 	for _, name := range cfg.MarketDataOrder {
 		switch name {
-		case "yahoo":
-			providers = append(providers, yahoo.New())
-			// Yahoo needs no credentials, so it counts as configured always.
-			deps = append(deps, health.Dep{Provider: "yahoo", Kind: health.KindMarketData, Configured: true})
-
 		case "alphavantage":
 			av := alphavantage.New(cfg.AlphaVantageKey, cfg.AlphaVantageDailyLimit, store)
 			deps = append(deps, health.Dep{
