@@ -110,10 +110,7 @@ func TestTemplatesEvaluateWithoutError(t *testing.T) {
 func TestBreakoutTemplateCanActuallyTrigger(t *testing.T) {
 	// The point of shift:1 on the 52-week high. Without it this rule could
 	// never fire, because a close cannot exceed its own bar's high.
-	tpl, err := TemplateByKey("52w_breakout")
-	if err != nil {
-		t.Fatal(err)
-	}
+	tpl := templateByKey(t, "52w_breakout")
 
 	// 300 flat bars, then a decisive breakout on heavy volume.
 	closes := make([]float64, 300)
@@ -134,10 +131,7 @@ func TestBreakoutTemplateCanActuallyTrigger(t *testing.T) {
 }
 
 func TestGoldenCrossTemplateFiresOnceOnTheCross(t *testing.T) {
-	tpl, err := TemplateByKey("golden_cross")
-	if err != nil {
-		t.Fatal(err)
-	}
+	tpl := templateByKey(t, "golden_cross")
 
 	// A long decline followed by a sustained rise produces exactly one
 	// upward crossing of the 200-bar average by the 50-bar average.
@@ -168,8 +162,13 @@ func TestGoldenCrossTemplateFiresOnceOnTheCross(t *testing.T) {
 	}
 }
 
-func TestTemplateByKeyUnknown(t *testing.T) {
-	if _, err := TemplateByKey("nope"); err == nil {
-		t.Error("want an error for an unknown template key")
+func templateByKey(t *testing.T, key string) Template {
+	t.Helper()
+	for _, tpl := range Templates() {
+		if tpl.Key == key {
+			return tpl
+		}
 	}
+	t.Fatalf("no template named %q", key)
+	return Template{}
 }

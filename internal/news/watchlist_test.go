@@ -9,12 +9,16 @@ import (
 
 func us(ticker string) marketdata.Symbol { return marketdata.Symbol{Ticker: ticker} }
 
+func watchlistSource(sym marketdata.Symbol, company string) Source {
+	return watchedSource(Watched{Ticker: sym.Ticker, Venue: sym.Exchange, Company: company})
+}
+
 // TestWatchlistSourceQuery covers the query a watched instrument gets.
 //
 // A bare ticker is a poor search — "ALL" reaches a great deal that is not
 // Allstate — so the registered name leads where one is known.
 func TestWatchlistSourceQuery(t *testing.T) {
-	withName := WatchlistSource(us("NVDA"), "NVIDIA Corporation")
+	withName := watchlistSource(us("NVDA"), "NVIDIA Corporation")
 	if !strings.Contains(withName.URL, "NVIDIA") {
 		t.Errorf("query should lead with the company name: %s", withName.URL)
 	}
@@ -29,7 +33,7 @@ func TestWatchlistSourceQuery(t *testing.T) {
 		t.Errorf("query should not offer the bare ticker as an alternative: %s", withName.URL)
 	}
 
-	bare := WatchlistSource(us("XYZ"), "")
+	bare := watchlistSource(us("XYZ"), "")
 	if !strings.Contains(bare.URL, "XYZ") {
 		t.Errorf("a nameless instrument must still search its ticker: %s", bare.URL)
 	}
@@ -39,7 +43,7 @@ func TestWatchlistSourceQuery(t *testing.T) {
 // the scheduler can only poll a source harder for an eventful company if the
 // source says which company it follows.
 func TestWatchlistSourceCarriesItsSymbol(t *testing.T) {
-	s := WatchlistSource(us("CAT"), "Caterpillar Inc.")
+	s := watchlistSource(us("CAT"), "Caterpillar Inc.")
 	if len(s.Symbols) != 1 || s.Symbols[0] != "CAT" {
 		t.Errorf("Symbols = %v, want [CAT]", s.Symbols)
 	}
@@ -123,7 +127,7 @@ func TestRegistryReplaceSwapsOnlyItsCategory(t *testing.T) {
 // sources that would then be invisible to the next rebuild.
 func TestRegistryReplaceRejectsWrongCategory(t *testing.T) {
 	reg, _ := DefaultRegistry()
-	bad := WatchlistSource(us("NVDA"), "NVIDIA")
+	bad := watchlistSource(us("NVDA"), "NVIDIA")
 	bad.Category = "markets"
 	if _, _, err := reg.Replace("watchlist", []Source{bad}); err == nil {
 		t.Error("expected a category mismatch to be rejected")
@@ -142,8 +146,8 @@ func TestWatchlistQueriesAreWindowed(t *testing.T) {
 		want    string
 		notWant string
 	}{
-		{"followed", WatchlistSource(us("NVDA"), "NVIDIA Corporation"), "when%3A3d", "when%3A1d"},
-		{"no company name", WatchlistSource(us("XYZ"), ""), "when%3A3d", ""},
+		{"followed", watchlistSource(us("NVDA"), "NVIDIA Corporation"), "when%3A3d", "when%3A1d"},
+		{"no company name", watchlistSource(us("XYZ"), ""), "when%3A3d", ""},
 		{
 			"flagged by the scanner",
 			WatchlistSources([]Watched{{Ticker: "CAT", Company: "Caterpillar Inc.", Attention: true}})[0],

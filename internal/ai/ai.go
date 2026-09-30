@@ -112,24 +112,12 @@ type BudgetState struct {
 	ByFeature map[string]int `json:"by_feature,omitempty"`
 }
 
-// Remaining is how many tokens are left in the period.
-func (b BudgetState) Remaining() int {
-	if b.Limit <= 0 {
-		return 0
-	}
-	if b.Used >= b.Limit {
-		return 0
-	}
-	return b.Limit - b.Used
-}
-
 // Feature names, used for usage attribution and for the settings breakdown.
 const (
 	FeatureMorningBrief    = "morning_brief"
 	FeatureNewsDigest      = "news_digest"
 	FeatureExplainMove     = "explain_move"
 	FeatureOutlook         = "outlook"
-	FeatureCalcHelper      = "calc_helper"
 	FeatureAlertContext    = "alert_context"
 	FeatureEventBrief      = "event_brief"
 	FeatureEventClassify   = "event_classify"

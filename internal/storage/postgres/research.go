@@ -271,20 +271,6 @@ WHERE status = 'running' AND started_at < now() - $1::interval`,
 	return int(n), nil
 }
 
-// ArchiveConversation hides or restores a thread.
-func (d *DB) ArchiveConversation(ctx context.Context, id int64, archived bool) error {
-	res, err := d.db.ExecContext(ctx,
-		`UPDATE research_conversations SET archived = $2, updated_at = now() WHERE id = $1`,
-		id, archived)
-	if err != nil {
-		return fmt.Errorf("postgres: archive conversation: %w", err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 // DeleteConversation removes a thread and its turns.
 func (d *DB) DeleteConversation(ctx context.Context, id int64) error {
 	res, err := d.db.ExecContext(ctx, `DELETE FROM research_conversations WHERE id = $1`, id)

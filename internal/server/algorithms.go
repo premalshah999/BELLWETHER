@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -46,24 +45,6 @@ func (s *Server) handleListAlgorithms(w http.ResponseWriter, r *http.Request) {
 		out = append(out, view(a))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"algorithms": out})
-}
-
-func (s *Server) handleGetAlgorithm(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.algorithmID(w, r)
-	if !ok {
-		return
-	}
-	a, err := s.deps.Store.GetAlgorithm(r.Context(), id)
-	if errors.Is(err, storage.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "not_found", "No such algorithm.")
-		return
-	}
-	if err != nil {
-		s.deps.Log.Error("could not read algorithm", "id", id, "err", err)
-		writeError(w, http.StatusInternalServerError, "algorithms_unavailable", "Could not read that algorithm.")
-		return
-	}
-	writeJSON(w, http.StatusOK, view(a))
 }
 
 // readAlgorithmBody decodes and validates a submitted definition, writing the
@@ -189,20 +170,6 @@ func (s *Server) handleDeleteAlgorithm(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleValidateAlgorithm checks a definition without storing it, powering the
-// builder's live feedback as the operator types.
-func (s *Server) handleValidateAlgorithm(w http.ResponseWriter, r *http.Request) {
-	a, ok := s.readAlgorithmBody(w, r)
-	if !ok {
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"valid":         true,
-		"required_bars": a.RequiredBars(),
-		"algorithm":     a,
-	})
-}
-
 // handlePreviewAlgorithm evaluates a draft against live data without saving it
 // or sending anything.
 //
@@ -266,62 +233,6 @@ func (s *Server) handlePreviewAlgorithm(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// handleRunAlgorithm evaluates a stored algorithm immediately, delivering any
-// alerts it produces. Unlike preview, this is the real pipeline.
-func (s *Server) handleRunAlgorithm(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.algorithmID(w, r)
-	if !ok {
-		return
-	}
-	if s.deps.Engine == nil {
-		writeError(w, http.StatusServiceUnavailable, "engine_unavailable", "The alert engine is not running.")
-		return
-	}
-
-	a, err := s.deps.Store.GetAlgorithm(r.Context(), id)
-	if errors.Is(err, storage.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "not_found", "No such algorithm.")
-		return
-	}
-	if err != nil {
-		s.deps.Log.Error("could not read algorithm", "id", id, "err", err)
-		writeError(w, http.StatusInternalServerError, "algorithms_unavailable", "Could not read that algorithm.")
-		return
-	}
-
-	summary := s.deps.Engine.RunAlgorithm(r.Context(), a)
-	writeJSON(w, http.StatusOK, summary)
-}
-
-func (s *Server) handleAlgorithmEvaluations(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.algorithmID(w, r)
-	if !ok {
-		return
-	}
-	records, err := s.deps.Store.LastEvaluations(r.Context(), id)
-	if err != nil {
-		s.deps.Log.Error("could not read evaluations", "id", id, "err", err)
-		writeError(w, http.StatusInternalServerError, "evaluations_unavailable", "Could not read evaluation history.")
-		return
-	}
-
-	type evalView struct {
-		Symbol  string    `json:"symbol"`
-		At      time.Time `json:"at"`
-		Status  string    `json:"status"`
-		Reason  string    `json:"reason,omitempty"`
-		Summary string    `json:"summary,omitempty"`
-	}
-	out := make([]evalView, 0, len(records))
-	for _, rec := range records {
-		out = append(out, evalView{
-			Symbol: rec.Symbol, At: rec.At, Status: string(rec.Status),
-			Reason: rec.Reason, Summary: rec.Summary,
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"evaluations": out})
-}
-
 // handleAlgorithmVocabulary tells the builder what the backend can actually
 // evaluate, so the dropdowns cannot drift out of sync with the engine.
 func (s *Server) handleAlgorithmVocabulary(w http.ResponseWriter, r *http.Request) {
@@ -383,23 +294,6 @@ func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"alerts": list, "unread": unread})
 }
 
-func (s *Server) handleMarkAlertRead(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "alert")
-	if !ok {
-		return
-	}
-	if err := s.deps.Store.MarkAlertRead(r.Context(), id); err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "No such alert.")
-			return
-		}
-		s.deps.Log.Error("could not mark alert read", "id", id, "err", err)
-		writeError(w, http.StatusInternalServerError, "alert_write_failed", "Could not update that alert.")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func (s *Server) handleMarkAllAlertsRead(w http.ResponseWriter, r *http.Request) {
 	if err := s.deps.Store.MarkAllAlertsRead(r.Context()); err != nil {
 		s.deps.Log.Error("could not mark all alerts read", "err", err)
@@ -407,11 +301,6 @@ func (s *Server) handleMarkAllAlertsRead(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// decodeJSON is a small helper for endpoints with simple bodies.
-func decodeJSON(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
-	return json.NewDecoder(http.MaxBytesReader(w, r.Body, limit)).Decode(v)
 }
 
 // algorithmTargets is the set of instruments an algorithm evaluates.

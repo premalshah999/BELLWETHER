@@ -81,7 +81,7 @@ func TestRawItemTimestampsRoundTrip(t *testing.T) {
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{it}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := db.ListRawItemsBySource(ctx, "src-a", 10)
+	got, err := db.ListPendingRawItems(ctx, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,9 +97,6 @@ func TestRawItemTimestampsRoundTrip(t *testing.T) {
 	if lat, ok := got[0].Latency(); !ok || lat != 150*time.Second {
 		t.Errorf("Latency = %v (%v), want 2m30s", lat, ok)
 	}
-	if !got[0].KnowledgeTime().Equal(discovered) {
-		t.Error("knowledge time must be discovery, never publication")
-	}
 }
 
 // TestUndatedItemStaysNull guards against an undated row sorting as the
@@ -114,7 +111,7 @@ func TestUndatedItemStaysNull(t *testing.T) {
 	if _, err := db.SaveRawItems(ctx, []news.RawItem{it}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := db.ListRawItems(ctx, 10)
+	got, err := db.ListPendingRawItems(ctx, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

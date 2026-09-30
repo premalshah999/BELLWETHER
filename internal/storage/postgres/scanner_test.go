@@ -122,23 +122,6 @@ func TestScanRoundTrip(t *testing.T) {
 	if second.ExplainedAt == nil || second.ExplainedAt.IsZero() {
 		t.Error("explained_at was not stamped alongside a written verdict")
 	}
-	if err := db.MarkExplained(ctx, first.ID, false); err != nil {
-		t.Fatalf("mark explained: %v", err)
-	}
-	got, err = db.LatestScan(ctx, 10)
-	if err != nil {
-		t.Fatalf("latest scan after mark: %v", err)
-	}
-	if got[0].Explained == nil {
-		t.Fatal("explained is still nil after being marked")
-	}
-	if *got[0].Explained {
-		t.Error("explained = true, want false: we looked and found nothing")
-	}
-	if got[0].ExplainedAt == nil || got[0].ExplainedAt.IsZero() {
-		t.Error("explained_at was not set")
-	}
-
 	hist, err := db.SymbolScanHistory(ctx, "ZZTESTA", 10)
 	if err != nil {
 		t.Fatalf("symbol history: %v", err)

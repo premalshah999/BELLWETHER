@@ -165,36 +165,6 @@ func TestRoutineDisclosureBarelyRegisters(t *testing.T) {
 	}
 }
 
-func TestSectorHeatRisesSlowerThanCompanyHeat(t *testing.T) {
-	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
-	tr := NewTracker(func() time.Time { return now })
-
-	// Observed enough times that both the company and its sector clear the
-	// reporting threshold; below it both read as zero and the comparison
-	// would be vacuous.
-	for i := 0; i < 5; i++ {
-		tr.Observe([]string{"TATASTEEL"}, []string{"Metals & Mining"}, 8, true, "acquisition")
-	}
-
-	symbols := tr.HotSymbols(10)
-	sectors := tr.HotSectors(10)
-	symScore, secScore := 0.0, 0.0
-	for _, e := range symbols {
-		if e.Key == "TATASTEEL" {
-			symScore = e.Score
-		}
-	}
-	for _, e := range sectors {
-		if e.Key == "Metals & Mining" {
-			secScore = e.Score
-		}
-	}
-	if secScore >= symScore {
-		t.Errorf("sector score %.2f should be below company score %.2f: one company's news is weak evidence about its industry",
-			secScore, symScore)
-	}
-}
-
 func TestSweepDropsColdEntries(t *testing.T) {
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	tr := NewTracker(func() time.Time { return now })

@@ -108,9 +108,6 @@ type Turn struct {
 	Error      string    `json:"error,omitempty"`
 }
 
-// Running reports whether this turn is still being worked on.
-func (t Turn) Running() bool { return t.Status == StatusRunning }
-
 // Store persists conversations. Declared at the point of use.
 type Store interface {
 	CreateConversation(ctx context.Context, title string) (int64, error)
@@ -128,7 +125,6 @@ type Store interface {
 	FailTurn(ctx context.Context, turnID int64, reason string) error
 	// ReapAbandonedTurns fails turns left running by a process that died.
 	ReapAbandonedTurns(ctx context.Context, olderThan time.Duration) (int, error)
-	ArchiveConversation(ctx context.Context, id int64, archived bool) error
 	DeleteConversation(ctx context.Context, id int64) error
 }
 

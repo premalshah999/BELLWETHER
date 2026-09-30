@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"sort"
 	"sync"
@@ -11,7 +10,6 @@ import (
 	"github.com/tradesys/dashboard/internal/algo"
 	"github.com/tradesys/dashboard/internal/backtest"
 	"github.com/tradesys/dashboard/internal/marketdata"
-	"github.com/tradesys/dashboard/internal/storage"
 )
 
 // maxBacktestBars caps how much history one run may pull per symbol.
@@ -87,34 +85,6 @@ func (s *Server) handleBacktest(w http.ResponseWriter, r *http.Request) {
 	a := body.Algorithm
 	if a == nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "A rule is required.")
-		return
-	}
-	s.runBacktest(w, r, a, body)
-}
-
-// handleBacktestSaved tests a stored rule.
-func (s *Server) handleBacktestSaved(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.algorithmID(w, r)
-	if !ok {
-		return
-	}
-	var body backtestRequest
-	// An empty body is a valid request: test this rule, as saved, on its own
-	// targets with the defaults.
-	if r.ContentLength > 0 {
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", "That backtest request could not be read.")
-			return
-		}
-	}
-	a, err := s.deps.Store.GetAlgorithm(r.Context(), id)
-	if errors.Is(err, storage.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "not_found", "No such algorithm.")
-		return
-	}
-	if err != nil {
-		s.deps.Log.Error("could not read algorithm for backtest", "id", id, "err", err)
-		writeError(w, http.StatusInternalServerError, "storage", "Could not read that algorithm.")
 		return
 	}
 	s.runBacktest(w, r, a, body)

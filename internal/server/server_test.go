@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
+	"github.com/tradesys/dashboard/internal/auth"
 	"github.com/tradesys/dashboard/internal/config"
 	"github.com/tradesys/dashboard/internal/health"
 	"github.com/tradesys/dashboard/internal/marketdata"
@@ -76,6 +79,7 @@ func testStore(t *testing.T) *postgres.DB {
 type harness struct {
 	srv      *server.Server
 	upstream *sidecar
+	store    *postgres.DB
 }
 
 // newHarness serves the API over a fresh database with no keys issued and
@@ -109,6 +113,7 @@ func newHarness(t *testing.T) *harness {
 			Log: quiet, Version: "test",
 		}),
 		upstream: up,
+		store:    store,
 	}
 }
 
@@ -283,19 +288,19 @@ func TestWatchlistLifecycle(t *testing.T) {
 	}
 
 	// Empty to begin with.
-	if got := decode[listResp](t, h.do(t, http.MethodGet, "/api/watchlist", nil)); len(got.Items) != 0 {
+	if got := decode[listResp](t, h.do(t, http.MethodGet, "/api/watchlists/1/symbols", nil)); len(got.Items) != 0 {
 		t.Fatalf("fresh watchlist has %d items, want 0", len(got.Items))
 	}
 
 	// Add two.
 	for _, s := range []string{"AAPL", "MSFT"} {
-		rec := h.do(t, http.MethodPost, "/api/watchlist", strings.NewReader(`{"symbol":"`+s+`"}`))
-		if rec.Code != http.StatusCreated {
+		rec := h.do(t, http.MethodPost, "/api/watchlists/1/symbols", strings.NewReader(`{"symbol":"`+s+`"}`))
+		if rec.Code != http.StatusOK {
 			t.Fatalf("add %s: status %d: %s", s, rec.Code, rec.Body)
 		}
 	}
 
-	got := decode[listResp](t, h.do(t, http.MethodGet, "/api/watchlist", nil))
+	got := decode[listResp](t, h.do(t, http.MethodGet, "/api/watchlists/1/symbols", nil))
 	if len(got.Items) != 2 {
 		t.Fatalf("got %d items, want 2", len(got.Items))
 	}
@@ -321,10 +326,10 @@ func TestWatchlistLifecycle(t *testing.T) {
 	}
 
 	// Remove one.
-	if rec := h.do(t, http.MethodDelete, "/api/watchlist/AAPL", nil); rec.Code != http.StatusNoContent {
+	if rec := h.do(t, http.MethodDelete, "/api/watchlists/1/symbols/AAPL", nil); rec.Code != http.StatusNoContent {
 		t.Fatalf("delete: status %d: %s", rec.Code, rec.Body)
 	}
-	if got := decode[listResp](t, h.do(t, http.MethodGet, "/api/watchlist", nil)); len(got.Items) != 1 {
+	if got := decode[listResp](t, h.do(t, http.MethodGet, "/api/watchlists/1/symbols", nil)); len(got.Items) != 1 {
 		t.Errorf("after delete, %d items, want 1", len(got.Items))
 	}
 }
@@ -334,11 +339,11 @@ func TestWatchlistRowFailsSoft(t *testing.T) {
 	// not a failed request that blanks the entire rail.
 	h := newHarness(t)
 	for _, s := range []string{"AAPL", "ZZZZ"} {
-		if rec := h.do(t, http.MethodPost, "/api/watchlist", strings.NewReader(`{"symbol":"`+s+`"}`)); rec.Code != http.StatusCreated {
+		if rec := h.do(t, http.MethodPost, "/api/watchlists/1/symbols", strings.NewReader(`{"symbol":"`+s+`"}`)); rec.Code != http.StatusOK {
 			t.Fatalf("add %s: %d", s, rec.Code)
 		}
 	}
-	rec := h.do(t, http.MethodGet, "/api/watchlist", nil)
+	rec := h.do(t, http.MethodGet, "/api/watchlists/1/symbols", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
@@ -366,11 +371,18 @@ func TestWatchlistRowFailsSoft(t *testing.T) {
 
 func TestWatchlistRejectsBadSymbol(t *testing.T) {
 	h := newHarness(t)
-	for _, body := range []string{`{"symbol":""}`, `{"symbol":"FOO.LSE"}`, `not json`} {
-		rec := h.do(t, http.MethodPost, "/api/watchlist", strings.NewReader(body))
-		if rec.Code != http.StatusBadRequest {
+	for _, body := range []string{`{"symbol":""}`, `not json`} {
+		if rec := h.do(t, http.MethodPost, "/api/watchlists/1/symbols", strings.NewReader(body)); rec.Code != http.StatusBadRequest {
 			t.Errorf("body %q: status %d, want 400", body, rec.Code)
 		}
+	}
+	// A symbol that is not a ticker is reported back, not added.
+	got := decode[struct {
+		Added    []string `json:"added"`
+		Rejected []string `json:"rejected"`
+	}](t, h.do(t, http.MethodPost, "/api/watchlists/1/symbols", strings.NewReader(`{"symbols":["AAPL","FOO.LSE"]}`)))
+	if len(got.Added) != 1 || len(got.Rejected) != 1 || got.Rejected[0] != "FOO.LSE" {
+		t.Errorf("added %v rejected %v, want AAPL added and FOO.LSE rejected", got.Added, got.Rejected)
 	}
 }
 
@@ -447,5 +459,56 @@ func TestStaticDoesNotShadowAPI(t *testing.T) {
 	rec := h.do(t, http.MethodGet, "/api/nope", nil)
 	if ct := rec.Header().Get("Content-Type"); strings.Contains(ct, "text/html") {
 		t.Errorf("unknown API route served HTML (%q); it must stay JSON", ct)
+	}
+}
+
+// Once a key exists, every route but sign-in, its status and the health check
+// refuses a caller without one, and a viewer key cannot write. Walks the real
+// routing table, so a route added tomorrow is covered today.
+func TestEveryRouteRequiresAKey(t *testing.T) {
+	h := newHarness(t)
+	issue := func(role auth.Role) string {
+		key, err := auth.Generate()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.store.IssueKey(context.Background(), key, string(role), role, ""); err != nil {
+			t.Fatal(err)
+		}
+		return key.Secret
+	}
+	viewer := issue(auth.RoleViewer)
+
+	open := map[string]bool{"/api/auth/login": true, "/api/auth/status": true, "/api/health": true}
+	readOnlyPosts := map[string]bool{"/api/screens/run": true, "/api/algorithms/preview": true, "/api/algorithms/backtest": true}
+	fill := strings.NewReplacer("{symbol}", "AAPL", "{id}", "1", "{cik}", "0001067983", "{mode}", "signals", "{tab}", "overview", "/*", "/")
+
+	routes := 0
+	err := chi.Walk(h.srv.Routes(), func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		path := strings.TrimSuffix(fill.Replace(route), "/")
+		if !strings.HasPrefix(path, "/api/") || open[path] || path == "/api/stream" {
+			return nil
+		}
+		routes++
+		if rec := h.do(t, method, path, strings.NewReader("{}")); rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s without a key: status %d, want 401", method, route, rec.Code)
+		}
+		if method == http.MethodGet || readOnlyPosts[path] || path == "/api/auth/logout" {
+			return nil
+		}
+		req := httptest.NewRequest(method, path, strings.NewReader("{}"))
+		req.Header.Set("Authorization", "Bearer "+viewer)
+		rec := httptest.NewRecorder()
+		h.srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s %s with a read-only key: status %d, want 403", method, route, rec.Code)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if routes < 50 {
+		t.Fatalf("walked %d protected routes; the routing table was not reached", routes)
 	}
 }

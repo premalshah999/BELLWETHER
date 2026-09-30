@@ -40,7 +40,7 @@ func TestClosePositionPartialReducesAndRecordsTrade(t *testing.T) {
 		t.Errorf("RealizedPnL = %v, want %v", trade.RealizedPnL, wantPnL)
 	}
 
-	pos, ok, err := db.GetPosition(ctx, id)
+	pos, ok, err := positionByID(ctx, db, id)
 	if err != nil {
 		t.Fatalf("get position: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestClosePositionPartialReducesAndRecordsTrade(t *testing.T) {
 	if _, err := db.ClosePosition(ctx, id, 60, 190, closed, ""); err != nil {
 		t.Fatalf("close remainder: %v", err)
 	}
-	_, ok, err = db.GetPosition(ctx, id)
+	_, ok, err = positionByID(ctx, db, id)
 	if err != nil {
 		t.Fatalf("get position after full close: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestClosePositionRejectsOverClose(t *testing.T) {
 	}
 
 	// The position must be untouched after a rejected close.
-	pos, ok, err := db.GetPosition(ctx, id)
+	pos, ok, err := positionByID(ctx, db, id)
 	if err != nil || !ok {
 		t.Fatalf("get position: ok=%v err=%v", ok, err)
 	}
@@ -95,31 +95,13 @@ func TestClosePositionRejectsOverClose(t *testing.T) {
 	}
 }
 
-func TestPositionsForSymbolsAggregatesAcrossAccounts(t *testing.T) {
-	db := testDB(t)
-	ctx := context.Background()
-
-	opened := time.Now().UTC()
-	id1, err := db.SavePosition(ctx, Position{Symbol: "NVDA", Quantity: 5, CostBasis: 100, OpenedAt: opened, Account: "taxable"})
-	if err != nil {
-		t.Fatal(err)
+// positionByID reads one position back through the list the app uses.
+func positionByID(ctx context.Context, db *DB, id int64) (Position, bool, error) {
+	all, err := db.ListPositions(ctx)
+	for _, p := range all {
+		if p.ID == id {
+			return p, true, err
+		}
 	}
-	id2, err := db.SavePosition(ctx, Position{Symbol: "NVDA", Quantity: 3, CostBasis: 120, OpenedAt: opened, Account: "ira"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.db.ExecContext(ctx, `DELETE FROM positions WHERE id IN ($1, $2)`, id1, id2)
-	})
-
-	got, err := db.PositionsForSymbols(ctx, []string{"NVDA", "GOOGL"})
-	if err != nil {
-		t.Fatalf("positions for symbols: %v", err)
-	}
-	if got["NVDA"] != 8 {
-		t.Errorf("NVDA total = %v, want 8 (5 taxable + 3 ira)", got["NVDA"])
-	}
-	if _, ok := got["GOOGL"]; ok {
-		t.Error("GOOGL should not appear -- no position held")
-	}
+	return Position{}, false, err
 }

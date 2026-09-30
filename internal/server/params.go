@@ -81,11 +81,6 @@ type watchlistItem struct {
 	Error         string    `json:"error,omitempty"`
 }
 
-type addWatchlistRequest struct {
-	Symbol string `json:"symbol"`
-	Note   string `json:"note"`
-}
-
 type candlesResponse struct {
 	Symbol    string              `json:"symbol"`
 	Interval  string              `json:"interval"`

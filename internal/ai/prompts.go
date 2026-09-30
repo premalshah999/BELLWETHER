@@ -26,7 +26,6 @@ const (
 	PromptNewsDigest       = "news_digest"
 	PromptExplainMove      = "explain_move"
 	PromptOutlook          = "outlook"
-	PromptCalcHelper       = "calc_helper"
 	PromptEventClassify    = "event_classify"
 	PromptDeepResearch     = "deep_research"
 	PromptResearchFollowup = "research_followup"
@@ -67,15 +66,6 @@ func RenderPrompt(name string, data any) (string, error) {
 		return "", fmt.Errorf("ai: render prompt %s: %w", name, err)
 	}
 	return strings.TrimSpace(b.String()), nil
-}
-
-// PromptNames lists the available templates, for tests and diagnostics.
-func PromptNames() []string {
-	out := make([]string, 0, len(templates))
-	for name := range templates {
-		out = append(out, name)
-	}
-	return out
 }
 
 // SystemMessage is the shared system prompt every feature sends.

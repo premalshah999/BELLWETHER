@@ -9,7 +9,6 @@ import (
 
 	"github.com/tradesys/dashboard/internal/ai"
 	"github.com/tradesys/dashboard/internal/marketdata"
-	"github.com/tradesys/dashboard/internal/news"
 )
 
 // briefMaxAge is how long a stored morning brief is served before the UI
@@ -124,36 +123,6 @@ func (s *Server) handleGenerateBrief(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"brief": brief, "stale": false})
 }
 
-func (s *Server) handleBriefArchive(w http.ResponseWriter, r *http.Request) {
-	outputs, err := s.deps.Store.ListOutputs(r.Context(), "morning_brief", clampInt(intParam(r, "limit", 30), 1, 100))
-	if err != nil {
-		s.deps.Log.Error("could not list briefs", "err", err)
-		writeError(w, http.StatusInternalServerError, "ai_archive_unavailable", "Could not read the brief archive.")
-		return
-	}
-
-	type archived struct {
-		ID        int64           `json:"id"`
-		CreatedAt time.Time       `json:"created_at"`
-		Model     string          `json:"model"`
-		Tokens    int             `json:"tokens"`
-		Brief     ai.MorningBrief `json:"brief"`
-	}
-	out := make([]archived, 0, len(outputs))
-	for _, o := range outputs {
-		var brief ai.MorningBrief
-		if err := json.Unmarshal(o.Content, &brief); err != nil {
-			// A stored payload that no longer decodes is skipped rather than
-			// sinking the archive.
-			continue
-		}
-		out = append(out, archived{
-			ID: o.ID, CreatedAt: o.CreatedAt, Model: o.Model, Tokens: o.Tokens, Brief: brief,
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"briefs": out})
-}
-
 func (s *Server) handleExplainMove(w http.ResponseWriter, r *http.Request) {
 	sym, ok := s.symbolParam(w, r)
 	if !ok {
@@ -239,111 +208,6 @@ func (s *Server) handleCalibration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cal)
-}
-
-// handleResolveOutlooks scores due outlooks immediately.
-//
-// It needs no LLM call, so it is deliberately not gated on AI availability:
-// the calibration record must stay current even when the token budget is
-// spent, which is exactly when an operator wants to know how far to trust the
-// model.
-func (s *Server) handleResolveOutlooks(w http.ResponseWriter, r *http.Request) {
-	if s.deps.AI == nil {
-		writeError(w, http.StatusServiceUnavailable, "ai_unconfigured", "The AI layer is not configured.")
-		return
-	}
-	resolved, err := s.deps.AI.ResolveDueOutlooks(r.Context())
-	if err != nil {
-		s.deps.Log.Warn("outlook scoring failed", "err", err)
-		writeError(w, http.StatusBadGateway, "calibration_unavailable", "Outlook scoring failed: "+err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"resolved": resolved})
-}
-
-func (s *Server) handleCalcHelper(w http.ResponseWriter, r *http.Request) {
-	var req ai.PositionRequest
-	if err := decodeJSON(w, r, &req, 8<<10); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "Could not read the request body.")
-		return
-	}
-
-	// The arithmetic runs regardless of whether the AI layer is available:
-	// the numbers are the answer, and the model only narrates them.
-	if s.deps.AI == nil {
-		result, err := ai.ComputePosition(req)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "bad_input", err.Error())
-			return
-		}
-		result.Status = ai.StatusUnconfigured
-		result.GeneratedAt = s.deps.Now()
-		writeJSON(w, http.StatusOK, result)
-		return
-	}
-
-	result, err := s.deps.AI.CalcHelper(r.Context(), req)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_input", err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (s *Server) handleListNews(w http.ResponseWriter, r *http.Request) {
-	symbol := r.URL.Query().Get("symbol")
-	if symbol == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "A symbol is required.")
-		return
-	}
-	sym, err := marketdata.ParseSymbol(symbol)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_symbol", err.Error())
-		return
-	}
-
-	articles, err := s.deps.Store.ListArticles(r.Context(), sym.String(), clampInt(intParam(r, "limit", 20), 1, 100))
-	if err != nil {
-		s.deps.Log.Error("could not list articles", "symbol", sym, "err", err)
-		writeError(w, http.StatusInternalServerError, "news_unavailable", "Could not read stored news.")
-		return
-	}
-	if articles == nil {
-		articles = []news.Article{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"articles": articles})
-}
-
-// handleRunNewsPoll collects news immediately, for the settings page.
-func (s *Server) handleRunNewsPoll(w http.ResponseWriter, r *http.Request) {
-	if s.deps.NewsPoller == nil {
-		writeError(w, http.StatusServiceUnavailable, "news_unavailable", "The news poller is not running.")
-		return
-	}
-	summary, err := s.deps.NewsPoller.PollAll(r.Context())
-	if err != nil {
-		s.deps.Log.Warn("manual news poll failed", "err", err)
-		writeError(w, http.StatusBadGateway, "news_unavailable", "The news poll failed: "+err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, summary)
-}
-
-// handleRunDigest scores collected articles immediately.
-func (s *Server) handleRunDigest(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAI(w, r) {
-		return
-	}
-	summary, err := s.deps.AI.RunNewsDigest(r.Context(), clampInt(intParam(r, "limit", 40), 1, 200))
-	if err != nil {
-		if s.aiUnavailable(w, summary.Status) {
-			return
-		}
-		s.deps.Log.Warn("news digest failed", "err", err)
-		writeError(w, http.StatusBadGateway, "ai_unavailable", "The digest failed: "+err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, summary)
 }
 
 func (s *Server) symbolParam(w http.ResponseWriter, r *http.Request) (marketdata.Symbol, bool) {

@@ -136,18 +136,6 @@ func (e *Engine) RunInterval(ctx context.Context, interval marketdata.Interval) 
 	return summary, nil
 }
 
-// RunAlgorithm evaluates one algorithm now, regardless of its interval or
-// enabled flag. This is what the "run now" button in the builder calls.
-func (e *Engine) RunAlgorithm(ctx context.Context, a *algo.Algorithm) RunSummary {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	start := e.now()
-	summary := e.runAlgorithm(ctx, a)
-	summary.Duration = e.now().Sub(start)
-	return summary
-}
-
 func (e *Engine) runAlgorithm(ctx context.Context, a *algo.Algorithm) RunSummary {
 	summary := RunSummary{Interval: a.Interval, Algorithms: 1}
 

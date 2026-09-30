@@ -87,12 +87,6 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 			"TrendNote": "sideways", "RSI": "48.8", "FromHigh": "-8.2%", "FromLow": "+31.0%",
 			"News": []map[string]string{{"Title": "T", "Source": "S", "Age": "1h ago"}},
 		},
-		PromptCalcHelper: map[string]any{
-			"Question": "How many shares for 1% risk?",
-			"Inputs":   []map[string]string{{"Label": "Account", "Value": "1,000,000"}},
-			"Results":  []map[string]string{{"Label": "Shares", "Value": "134"}},
-			"Warnings": []string{"Position exceeds 20% of the account."},
-		},
 	}
 
 	for name, data := range cases {
@@ -122,17 +116,17 @@ func TestAllPromptFilesAreCovered(t *testing.T) {
 	covered := map[string]bool{
 		PromptSystem: true, PromptAlertContext: true, PromptMorningBrief: true,
 		PromptNewsDigest: true, PromptExplainMove: true, PromptOutlook: true,
-		PromptCalcHelper: true, PromptEventClassify: true, PromptDeepResearch: true,
+		PromptEventClassify: true, PromptDeepResearch: true,
 		PromptResearchFollowup: true, PromptSymbolDebrief: true,
 		PromptEventBrief: true,
 	}
-	for _, name := range PromptNames() {
+	for name := range templates {
 		if !covered[name] {
 			t.Errorf("prompt %q has no coverage in TestEveryPromptParsesAndRenders", name)
 		}
 	}
-	if len(PromptNames()) != len(covered) {
-		t.Errorf("found %d prompts, expected %d", len(PromptNames()), len(covered))
+	if len(templates) != len(covered) {
+		t.Errorf("found %d prompts, expected %d", len(templates), len(covered))
 	}
 }
 

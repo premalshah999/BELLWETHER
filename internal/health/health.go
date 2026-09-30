@@ -186,33 +186,6 @@ func (t *Tracker) LLMSink() ai.OutcomeSink {
 	}
 }
 
-// SetConfigured updates whether a dependency has credentials, which happens
-// when the operator saves settings without restarting.
-func (t *Tracker) SetConfigured(provider string, configured bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	d, ok := t.deps[provider]
-	if !ok {
-		return
-	}
-	if d.Configured == configured {
-		return
-	}
-	d.Configured = configured
-	t.deps[provider] = d
-
-	cur := t.state[provider]
-	if configured {
-		cur.Status = storage.HealthOK
-		cur.Message = "not yet contacted"
-	} else {
-		cur.Status = storage.HealthUnconfigured
-		cur.Message = "no credentials configured"
-	}
-	cur.UpdatedAt = t.now()
-	t.state[provider] = cur
-}
-
 // Snapshot returns current health for every dependency, ordered by kind then
 // provider so the UI's dot order is stable across polls.
 func (t *Tracker) Snapshot() []storage.ProviderHealth {

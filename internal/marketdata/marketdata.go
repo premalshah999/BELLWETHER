@@ -53,12 +53,6 @@ func (i Interval) Duration() time.Duration {
 	return 24 * time.Hour
 }
 
-// Intraday reports whether this interval subdivides a trading day. Intraday
-// data has a much shorter useful cache life than daily data.
-func (i Interval) Intraday() bool {
-	return i != Interval1d && i != Interval1wk
-}
-
 // Candle is one OHLCV bar. Time is always the UTC open of the bar.
 type Candle struct {
 	Time   time.Time `json:"t"`

@@ -82,5 +82,4 @@ type ProviderHealth struct {
 // HealthStore persists dependency health across restarts.
 type HealthStore interface {
 	RecordHealth(ctx context.Context, h ProviderHealth) error
-	ListHealth(ctx context.Context) ([]ProviderHealth, error)
 }

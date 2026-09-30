@@ -744,20 +744,6 @@ func TestRenderMessageWithoutAI(t *testing.T) {
 // Robustness
 // ---------------------------------------------------------------------------
 
-func TestRunAlgorithmIgnoresEnabledAndInterval(t *testing.T) {
-	// "Run now" in the builder must work on a draft that is neither enabled
-	// nor due.
-	a := alwaysFires(1)
-	a.Enabled = false
-	a.Interval = "1wk"
-	h := newHarness(t, a)
-
-	summary := h.engine.RunAlgorithm(context.Background(), a)
-	if summary.Triggered != 1 {
-		t.Errorf("triggered = %d, want 1", summary.Triggered)
-	}
-}
-
 func TestConcurrentRunsDoNotDoubleFire(t *testing.T) {
 	// Two overlapping schedules must not both slip past the cooldown check.
 	h := newHarness(t, alwaysFires(1))

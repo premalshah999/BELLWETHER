@@ -324,9 +324,6 @@ func TestUsageIsRecorded(t *testing.T) {
 	if state.Used != 750 || state.Limit != 100000 || state.Exhausted {
 		t.Errorf("budget state = %+v", state)
 	}
-	if state.Remaining() != 99250 {
-		t.Errorf("remaining = %d, want 99250", state.Remaining())
-	}
 	if state.ByFeature[FeatureExplainMove] != 750 {
 		t.Errorf("by-feature = %v", state.ByFeature)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -119,74 +118,4 @@ func (s *Scheduler) Stop() {
 		return
 	}
 	<-s.cron.Stop().Done()
-}
-
-// Schedules reports the configured cron expression per interval.
-func (s *Scheduler) Schedules() map[string][]string {
-	out := make(map[string][]string, len(s.schedules))
-	for iv, specs := range s.schedules {
-		out[string(iv)] = append([]string(nil), specs...)
-	}
-	return out
-}
-
-// LastRuns reports the most recent pass per interval.
-func (s *Scheduler) LastRuns() map[string]RunSummary {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make(map[string]RunSummary, len(s.lastRun))
-	for iv, summary := range s.lastRun {
-		out[string(iv)] = summary
-	}
-	return out
-}
-
-// NextRuns reports when each interval's earliest check next fires, for the
-// settings page.
-func (s *Scheduler) NextRuns() map[string]time.Time {
-	out := map[string]time.Time{}
-	for iv, specs := range s.schedules {
-		var earliest time.Time
-		for _, spec := range specs {
-			next, err := nextRunFor(spec, s.loc)
-			if err != nil {
-				s.log.Warn("could not compute next run", "interval", iv, "cron", spec, "err", err)
-				continue
-			}
-			if earliest.IsZero() || next.Before(earliest) {
-				earliest = next
-			}
-		}
-		if !earliest.IsZero() {
-			out[string(iv)] = earliest.UTC()
-		}
-	}
-	return out
-}
-
-// nextRunFor computes when a single cron spec next fires. A spec carrying
-// its own CRON_TZ=<zone> prefix is evaluated in that zone instead of
-// defaultLoc, matching how robfig/cron itself resolves a per-job override --
-// this is what keeps a US-anchored check landing at a fixed point in that
-// market's session (see defaultSchedules) rather than drifting against
-// defaultLoc's own untouched offset.
-func nextRunFor(spec string, defaultLoc *time.Location) (time.Time, error) {
-	loc := defaultLoc
-	if rest, ok := strings.CutPrefix(spec, "CRON_TZ="); ok {
-		zone, fields, ok := strings.Cut(rest, " ")
-		if !ok {
-			return time.Time{}, fmt.Errorf("malformed CRON_TZ spec %q", spec)
-		}
-		z, err := time.LoadLocation(zone)
-		if err != nil {
-			return time.Time{}, fmt.Errorf("load zone %q: %w", zone, err)
-		}
-		loc, spec = z, fields
-	}
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	sched, err := parser.Parse(spec)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return sched.Next(time.Now().In(loc)), nil
 }

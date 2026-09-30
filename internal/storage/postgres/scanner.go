@@ -177,20 +177,6 @@ func (d *DB) SymbolScanHistory(ctx context.Context, symbol string, limit int) ([
 	return scanFindingRows(rows)
 }
 
-// MarkExplained records whether anything in the archive accounted for a move.
-//
-// A false here is a real result, not an absence of one: it says we looked and
-// found nothing, which is the signal worth searching the open web for.
-func (d *DB) MarkExplained(ctx context.Context, findingID int64, explained bool) error {
-	_, err := d.db.ExecContext(ctx, `
-		UPDATE scan_findings SET explained = $2, explained_at = now() WHERE id = $1`,
-		findingID, explained)
-	if err != nil {
-		return fmt.Errorf("mark explained: %w", err)
-	}
-	return nil
-}
-
 func scanFindingRows(rows *sql.Rows) ([]StoredFinding, error) {
 	var out []StoredFinding
 	for rows.Next() {

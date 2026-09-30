@@ -188,6 +188,10 @@ func New(d Deps) *Server {
 }
 
 // ServeHTTP makes Server an http.Handler.
+// Routes exposes the routing table, so a test can assert a property of every
+// route rather than of the ones somebody remembered to list.
+func (s *Server) Routes() chi.Routes { return s.mux }
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
 
 func (s *Server) routes() {
@@ -227,8 +231,6 @@ func (s *Server) routes() {
 			r.Get("/meta", s.handleMeta)
 			r.Get("/health", s.handleHealth)
 			r.Get("/ingest/sources", s.handleIngestSources)
-			r.Get("/ingest/stats", s.handleStorageStats)
-			r.Get("/ingest/pipeline", s.handlePipeline)
 			r.Get("/ingest/latency", s.handleSourceLatency)
 
 			// The news and filings feed.
@@ -236,26 +238,13 @@ func (s *Server) routes() {
 			r.Get("/events/types", s.handleEventTypes)
 			r.Post("/events/{id}/brief", s.handleEventBrief)
 			r.Get("/events/{id}", s.handleEvent)
-			r.Get("/symbols/{symbol}/events", s.handleSymbolEvents)
-			// A manual refresh reaches an upstream publisher, so it is
-			// limited too — not to protect the token budget, but to keep a
-			// stuck client from hammering a source on our behalf.
-			r.With(s.aiLimiter.middleware).
-				Post("/symbols/{symbol}/news/refresh", s.handleRefreshSymbolNews)
 
-			r.Delete("/ai/outputs/{id}", s.handleDeleteOutput)
-			r.Delete("/ai/outputs", s.handleClearOutputs)
-			r.Delete("/ai/outlooks/{id}", s.handleDeleteOutlook)
 			r.Get("/research/scrapers", s.handleResearchScrapers)
 			r.Get("/research/conversations", s.handleConversations)
 			r.Get("/research/conversations/{id}", s.handleConversation)
 			r.Delete("/research/conversations/{id}", s.handleDeleteConversation)
 
-			// Named lists. The older singular routes stay where they are so
-			// nothing that used them breaks; they now operate on the first
-			// list.
 			r.Post("/algorithms/backtest", s.handleBacktest)
-			r.Post("/algorithms/{id}/backtest", s.handleBacktestSaved)
 
 			r.Route("/screens", func(r chi.Router) {
 				// Fields before the id routes: chi would otherwise match
@@ -267,7 +256,6 @@ func (s *Server) routes() {
 				r.Post("/run", s.handleRunScreen)
 				r.Put("/{id}", s.handleUpdateScreen)
 				r.Delete("/{id}", s.handleDeleteScreen)
-				r.Post("/{id}/run", s.handleRunSavedScreen)
 			})
 
 			r.Route("/watchlists", func(r chi.Router) {
@@ -281,20 +269,15 @@ func (s *Server) routes() {
 				r.Post("/{id}/copy", s.handleCopyWatchlist)
 			})
 
-			r.Route("/watchlist", func(r chi.Router) {
-				r.Get("/", s.handleWatchlist)
-				r.Post("/", s.handleWatchlistAdd)
-				r.Delete("/{symbol}", s.handleWatchlistRemove)
-			})
+			// The first list, priced from stored bars: the dashboard's summary.
+			r.Get("/watchlist", s.handleWatchlist)
 
 			r.Route("/positions", func(r chi.Router) {
 				r.Get("/", s.handleListPositions)
 				r.Post("/", s.handleCreatePosition)
-				r.Put("/{id}", s.handleUpdatePosition)
 				r.Delete("/{id}", s.handleDeletePosition)
 				r.Post("/{id}/close", s.handleClosePosition)
 			})
-			r.Get("/trades", s.handleListTrades)
 			r.Get("/journal", s.handleJournal)
 
 			// Declared before the {symbol} routes so "search" and "sectors"
@@ -324,39 +307,29 @@ func (s *Server) routes() {
 				// "templates" is never parsed as an identifier.
 				r.Get("/templates", s.handleAlgorithmTemplates)
 				r.Get("/vocabulary", s.handleAlgorithmVocabulary)
-				r.Post("/validate", s.handleValidateAlgorithm)
 				r.Post("/preview", s.handlePreviewAlgorithm)
 
 				r.Get("/", s.handleListAlgorithms)
 				r.Post("/", s.handleCreateAlgorithm)
-				r.Get("/{id}", s.handleGetAlgorithm)
 				r.Put("/{id}", s.handleUpdateAlgorithm)
 				r.Delete("/{id}", s.handleDeleteAlgorithm)
-				r.Post("/{id}/run", s.handleRunAlgorithm)
-				r.Get("/{id}/evaluations", s.handleAlgorithmEvaluations)
 			})
 
 			r.Route("/alerts", func(r chi.Router) {
 				r.Get("/", s.handleListAlerts)
 				r.Post("/read-all", s.handleMarkAllAlertsRead)
-				r.Post("/{id}/read", s.handleMarkAlertRead)
 			})
 
 			r.Route("/ai", func(r chi.Router) {
 				r.Get("/status", s.handleAIStatus)
 				r.Get("/brief", s.handleMorningBrief)
-				r.Get("/briefs", s.handleBriefArchive)
 				r.Get("/calibration", s.handleCalibration)
 				r.Get("/outlooks", s.handleListOutlooks)
-				r.Post("/outlooks/resolve", s.handleResolveOutlooks)
 			})
 
-			r.Get("/news", s.handleListNews)
 			r.With(s.webLimiter.middleware).Get("/web/search", s.handleWebSearch)
 
 			r.Get("/symbols/{symbol}/fundamentals", s.handleFundamentals)
-			r.Get("/stream/health", s.handleStreamHealth)
-			r.Post("/stream/test", s.handleStreamTest)
 
 			r.Get("/scan/latest", s.handleLatestScan)
 			r.Get("/scan/symbols/{symbol}", s.handleSymbolScanHistory)
@@ -378,11 +351,6 @@ func (s *Server) routes() {
 			r.Post("/symbols/{symbol}/debrief", s.handleSymbolDebrief)
 			r.Post("/symbols/{symbol}/outlook", s.handleGenerateOutlook)
 			r.Post("/ai/brief/generate", s.handleGenerateBrief)
-			r.Post("/ai/calc", s.handleCalcHelper)
-			r.Post("/ai/digest/run", s.handleRunDigest)
-			r.Post("/ai/classify-events", s.handleClassifyEvents)
-			r.Post("/ai/briefs/run", s.handleRunBriefs)
-			r.Post("/news/poll", s.handleRunNewsPoll)
 
 			// Ask returns as soon as the turn row exists, so it needs none of
 			// this group's timeout — but it belongs here for the limiter.

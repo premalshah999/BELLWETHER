@@ -79,31 +79,6 @@ func (d *DB) WatchlistSymbols(ctx context.Context, id int64) ([]marketdata.Symbo
 	return out, rows.Err()
 }
 
-// AllWatchedSymbols is the union across every list, deduplicated.
-//
-// What the price stream and the ingestion engine want: an instrument on three
-// lists is still one instrument to poll.
-func (d *DB) AllWatchedSymbols(ctx context.Context) ([]marketdata.Symbol, error) {
-	rows, err := d.db.QueryContext(ctx,
-		`SELECT DISTINCT symbol FROM watchlist_items ORDER BY symbol`)
-	if err != nil {
-		return nil, fmt.Errorf("all watched symbols: %w", err)
-	}
-	defer rows.Close()
-
-	var out []marketdata.Symbol
-	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
-			return nil, err
-		}
-		if sym, err := marketdata.ParseSymbol(raw); err == nil {
-			out = append(out, sym)
-		}
-	}
-	return out, rows.Err()
-}
-
 // CreateWatchlist adds a list, refusing to exceed the cap.
 func (d *DB) CreateWatchlist(ctx context.Context, name string) (Watchlist, error) {
 	name = strings.TrimSpace(name)

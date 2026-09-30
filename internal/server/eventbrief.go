@@ -56,28 +56,6 @@ func (s *Server) handleEventBrief(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"brief": brief, "cached": false})
 }
 
-// handleRunBriefs writes briefs for the important items that have none.
-//
-// The same work the hourly job does, on demand. It sits alongside the other
-// model-backed triggers for the same reason they do: after changing a prompt
-// or a threshold, waiting up to an hour to see the effect is how a change
-// ships unverified.
-func (s *Server) handleRunBriefs(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAI(w, r) {
-		return
-	}
-	// Smaller than the hourly job's cap: this one runs inside a request
-	// timeout, and the scheduled pass is where a backlog is actually cleared.
-	limit := clampInt(intParam(r, "limit", 20), 1, 60)
-	n, err := s.deps.AI.BriefEvents(r.Context(), s.deps.Store, limit)
-	if err != nil {
-		s.deps.Log.Warn("briefing run failed", "err", err)
-		writeError(w, http.StatusBadGateway, "ai_unavailable", "Briefing failed: "+err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"written": n, "requested": limit})
-}
-
 // briefInput reduces an event to what the prompt is written from.
 func briefInput(ev *news.Event) ai.EventInput {
 	in := ai.EventInput{

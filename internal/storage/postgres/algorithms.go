@@ -66,23 +66,6 @@ func scanAlgorithm(r rowScanner) (*algo.Algorithm, error) {
 	return &a, nil
 }
 
-// GetAlgorithm returns one algorithm by id.
-func (d *DB) GetAlgorithm(ctx context.Context, id int64) (*algo.Algorithm, error) {
-	row := d.db.QueryRowContext(ctx, `
-SELECT id, definition, enabled, created_at, updated_at FROM algorithms WHERE id = $1`, id)
-	a, err := scanAlgorithm(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	if a == nil {
-		return nil, fmt.Errorf("postgres: algorithm %d has an unreadable definition", id)
-	}
-	return a, nil
-}
-
 // CreateAlgorithm stores a new algorithm and returns its id.
 //
 // The rule tree is stored as JSONB rather than text, so the definition is

@@ -226,21 +226,6 @@ func TestMarketDataDegraded(t *testing.T) {
 	}
 }
 
-func TestSetConfigured(t *testing.T) {
-	tr := newTracker(Dep{Provider: "alphavantage", Kind: KindMarketData, Configured: false})
-	if got := statusOf(t, tr, "alphavantage").Status; got != storage.HealthUnconfigured {
-		t.Fatalf("status = %q, want unconfigured", got)
-	}
-	tr.SetConfigured("alphavantage", true)
-	if got := statusOf(t, tr, "alphavantage").Status; got != storage.HealthOK {
-		t.Errorf("after configuring, status = %q, want ok", got)
-	}
-	tr.Observe(context.Background(), "alphavantage", false, false, errors.New("bad key"))
-	if got := statusOf(t, tr, "alphavantage").Status; got != storage.HealthDegraded {
-		t.Errorf("a configured provider must now register faults, got %q", got)
-	}
-}
-
 func TestSnapshotOrderIsStable(t *testing.T) {
 	tr := newTracker(
 		Dep{Provider: "yahoo", Kind: KindMarketData, Configured: true},
