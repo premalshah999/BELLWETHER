@@ -310,6 +310,10 @@ func (s *Server) routes() {
 			r.Get("/symbols/search", s.handleSearchSymbols)
 			r.Get("/symbols/sectors", s.handleSymbolSectors)
 			r.Get("/congress/filings", s.handleCongressFilings)
+			r.Get("/smartmoney/overview", s.handleSmartMoneyOverview)
+			r.Get("/smartmoney/insiders", s.handleInsiderTrades)
+			r.Get("/smartmoney/funds/{cik}", s.handleFund)
+			r.Get("/smartmoney/symbol/{symbol}", s.handleSymbolSmartMoney)
 			r.Get("/calendar", s.handleCalendar)
 
 			r.Route("/eventstudy", func(r chi.Router) {

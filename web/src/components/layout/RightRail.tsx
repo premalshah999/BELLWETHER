@@ -1,4 +1,5 @@
 import { Fundamentals } from "../Fundamentals";
+import { SymbolSmartMoney } from "../SymbolSmartMoney";
 import { Watchlist } from "../Watchlist";
 import { Tabs, usePersistedTab } from "../ui/Tabs";
 import { MarketStatus } from "./MarketStatus";
@@ -44,6 +45,7 @@ export function RightRail({
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <Fundamentals symbol={symbol} />
+          <SymbolSmartMoney symbol={symbol} />
         </div>
       )}
     </div>

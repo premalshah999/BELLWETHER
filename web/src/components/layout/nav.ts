@@ -57,7 +57,7 @@ export const NAV: NavSection[] = [
     items: [
       { to: "/calendar", label: "Catalysts", icon: CalendarClock },
       { to: "/geopolitics", label: "Policy & macro", icon: ScrollText },
-      { to: "/congress", label: "Congress trades", icon: Landmark },
+      { to: "/smartmoney/overview", label: "Who's buying", icon: Landmark, match: ["/smartmoney", "/congress"] },
       { to: "/scanner/screens", label: "Screens", icon: Filter },
     ],
   },
