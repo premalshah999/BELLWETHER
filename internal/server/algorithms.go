@@ -384,9 +384,8 @@ func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMarkAlertRead(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "bad_id", "That is not a valid alert id.")
+	id, ok := pathID(w, r, "alert")
+	if !ok {
 		return
 	}
 	if err := s.deps.Store.MarkAlertRead(r.Context(), id); err != nil {
@@ -433,12 +432,8 @@ func (s *Server) algorithmTargets(ctx context.Context, a *algo.Algorithm) []stri
 		add(v)
 	}
 
-	store, ok := s.watchlistStore()
-	if !ok {
-		return out
-	}
 	for _, id := range a.WatchlistIDs {
-		syms, err := store.WatchlistSymbols(ctx, id)
+		syms, err := s.deps.Store.WatchlistSymbols(ctx, id)
 		if err != nil {
 			s.deps.Log.Warn("could not read a watchlist for an algorithm",
 				"algorithm", a.Name, "watchlist", id, "err", err)

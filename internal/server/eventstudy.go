@@ -11,7 +11,6 @@ import (
 
 	"github.com/tradesys/dashboard/internal/eventstudy"
 	"github.com/tradesys/dashboard/internal/marketdata"
-	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
 // Benchmark indices for the event study's abnormal-return calculation:
@@ -27,18 +26,6 @@ const (
 	eventStudyCandleLen = 400
 )
 
-// EventStudyReader is the part of storage an event study reads.
-type EventStudyReader interface {
-	EventTypeSymbolPairs(ctx context.Context, eventType string) ([]postgres.EventSymbolPair, error)
-	EventTypeCounts(ctx context.Context) ([]postgres.EventTypeCount, error)
-	LoadCandles(ctx context.Context, sym marketdata.Symbol, interval marketdata.Interval, limit int) (marketdata.CachedSeries, error)
-}
-
-func (s *Server) eventStudyReader() (EventStudyReader, bool) {
-	r, ok := s.deps.Store.(EventStudyReader)
-	return r, ok
-}
-
 // handleEventStudyTypes lists every event type the archive holds at least
 // one event under, most populous first. /api/events/types (handleEventTypes
 // in events.go) already lists the full ~54-type taxonomy for the News
@@ -47,12 +34,7 @@ func (s *Server) eventStudyReader() (EventStudyReader, bool) {
 // study page's picker should not offer choices that can only ever answer
 // "zero samples".
 func (s *Server) handleEventStudyTypes(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.eventStudyReader()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Event types are not available.")
-		return
-	}
-	counts, err := reader.EventTypeCounts(r.Context())
+	counts, err := s.deps.Store.EventTypeCounts(r.Context())
 	if err != nil {
 		s.deps.Log.Error("event type counts failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read event types.")
@@ -65,11 +47,6 @@ func (s *Server) handleEventStudyTypes(w http.ResponseWriter, r *http.Request) {
 // it names, historically" -- see internal/eventstudy's package doc for the
 // method and why discovered_at is the anchor.
 func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.eventStudyReader()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "The event study engine is not available.")
-		return
-	}
 	if s.deps.Router == nil {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "No market data router is configured.")
 		return
@@ -98,7 +75,7 @@ func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	pairs, err := reader.EventTypeSymbolPairs(ctx, eventType)
+	pairs, err := s.deps.Store.EventTypeSymbolPairs(ctx, eventType)
 	if err != nil {
 		s.deps.Log.Error("event study pairs failed", "err", err, "type", eventType)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read events of this type.")
@@ -173,7 +150,7 @@ func (s *Server) handleEventStudy(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			series, err := reader.LoadCandles(ctx, sym, marketdata.Interval1d, eventStudyCandleLen)
+			series, err := s.deps.Store.LoadCandles(ctx, sym, marketdata.Interval1d, eventStudyCandleLen)
 			if err != nil || len(series.Candles) == 0 {
 				return
 			}

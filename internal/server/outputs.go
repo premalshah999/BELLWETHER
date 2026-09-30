@@ -1,22 +1,12 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/tradesys/dashboard/internal/storage"
 )
-
-// OutputStore is the deletion surface for generated artefacts.
-type OutputStore interface {
-	DeleteOutput(ctx context.Context, id int64) error
-	DeleteOutputsOfKind(ctx context.Context, kind string) (int, error)
-	DeleteOutlook(ctx context.Context, id int64) error
-}
 
 // handleDeleteOutput removes one generated artefact.
 //
@@ -24,17 +14,11 @@ type OutputStore interface {
 // stale or wrong one is clutter. What it was drawn from — events, prices — is
 // untouched, so anything deleted here can be regenerated.
 func (s *Server) handleDeleteOutput(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.deps.Store.(OutputStore)
+	id, ok := pathID(w, r, "output")
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Output storage is unavailable.")
 		return
 	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "Output id must be a number.")
-		return
-	}
-	if err := store.DeleteOutput(r.Context(), id); err != nil {
+	if err := s.deps.Store.DeleteOutput(r.Context(), id); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "No such output.")
 			return
@@ -48,11 +32,6 @@ func (s *Server) handleDeleteOutput(w http.ResponseWriter, r *http.Request) {
 
 // handleClearOutputs removes every artefact of one kind.
 func (s *Server) handleClearOutputs(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.deps.Store.(OutputStore)
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Output storage is unavailable.")
-		return
-	}
 	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
 	if kind == "" {
 		// Refusing a kindless bulk delete is deliberate. "Delete everything
@@ -62,7 +41,7 @@ func (s *Server) handleClearOutputs(w http.ResponseWriter, r *http.Request) {
 			"Specify which kind to clear, for example ?kind=morning_brief.")
 		return
 	}
-	n, err := store.DeleteOutputsOfKind(r.Context(), kind)
+	n, err := s.deps.Store.DeleteOutputsOfKind(r.Context(), kind)
 	if err != nil {
 		s.deps.Log.Error("clear outputs failed", "kind", kind, "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not clear them.")
@@ -78,17 +57,11 @@ func (s *Server) handleClearOutputs(w http.ResponseWriter, r *http.Request) {
 // forecast after seeing how it turned out would make every number on that page
 // meaningless.
 func (s *Server) handleDeleteOutlook(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.deps.Store.(OutputStore)
+	id, ok := pathID(w, r, "outlook")
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Output storage is unavailable.")
 		return
 	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "Outlook id must be a number.")
-		return
-	}
-	if err := store.DeleteOutlook(r.Context(), id); err != nil {
+	if err := s.deps.Store.DeleteOutlook(r.Context(), id); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "No such outlook.")
 			return

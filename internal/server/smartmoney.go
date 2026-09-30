@@ -1,31 +1,16 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
+
 	"github.com/tradesys/dashboard/internal/smartmoney"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
-
-// SmartMoneyReader serves the "who's buying" pages.
-type SmartMoneyReader interface {
-	ListInsiderTrades(ctx context.Context, f postgres.InsiderFilter) ([]smartmoney.Trade, error)
-	InsiderLeaders(ctx context.Context, since time.Time, limit int) ([]smartmoney.Leader, error)
-	FundSummaries(ctx context.Context) ([]smartmoney.FundSummary, error)
-	FundMoves(ctx context.Context, cik string) ([]smartmoney.Move, *smartmoney.FundFiling, error)
-	SymbolFundMoves(ctx context.Context, symbol string) ([]smartmoney.Move, error)
-}
-
-func (s *Server) smartMoney() (SmartMoneyReader, bool) {
-	r, ok := s.deps.Store.(SmartMoneyReader)
-	return r, ok
-}
 
 type tradeEnvelope struct {
 	smartmoney.Trade
@@ -53,16 +38,11 @@ func daysParam(r *http.Request, def, max int) int {
 // handleSmartMoneyOverview answers "who with inside knowledge or a famous
 // track record is buying what", in one response.
 func (s *Server) handleSmartMoneyOverview(w http.ResponseWriter, r *http.Request) {
-	sm, ok := s.smartMoney()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Insider and fund data is not available.")
-		return
-	}
 	ctx := r.Context()
 	days := daysParam(r, 90, 365)
 	since := s.deps.Now().AddDate(0, 0, -days)
 
-	leaders, err := sm.InsiderLeaders(ctx, since, 400)
+	leaders, err := s.deps.Store.InsiderLeaders(ctx, since, 400)
 	if err != nil {
 		s.deps.Log.Error("insider leaders failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read insider trades.")
@@ -87,12 +67,12 @@ func (s *Server) handleSmartMoneyOverview(w http.ResponseWriter, r *http.Request
 	sort.Slice(sells, func(i, j int) bool { return sells[i].SellValue > sells[j].SellValue })
 	sort.Slice(clusters, func(i, j int) bool { return clusters[i].Buyers > clusters[j].Buyers })
 
-	big, err := sm.ListInsiderTrades(ctx, postgres.InsiderFilter{Since: since, Market: true, Side: "buy", Limit: 60})
+	big, err := s.deps.Store.ListInsiderTrades(ctx, postgres.InsiderFilter{Since: since, Market: true, Side: "buy", Limit: 60})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read insider trades.")
 		return
 	}
-	funds, err := sm.FundSummaries(ctx)
+	funds, err := s.deps.Store.FundSummaries(ctx)
 	if err != nil {
 		s.deps.Log.Error("fund summaries failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read fund holdings.")
@@ -102,7 +82,7 @@ func (s *Server) handleSmartMoneyOverview(w http.ResponseWriter, r *http.Request
 	// Across every followed fund, the positions opened or grown last quarter.
 	var fundBuys []smartmoney.Move
 	for _, f := range funds {
-		moves, _, err := sm.FundMoves(ctx, f.CIK)
+		moves, _, err := s.deps.Store.FundMoves(ctx, f.CIK)
 		if err != nil {
 			continue
 		}
@@ -139,11 +119,6 @@ func head[T any](s []T, n int) []T {
 }
 
 func (s *Server) handleInsiderTrades(w http.ResponseWriter, r *http.Request) {
-	sm, ok := s.smartMoney()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Insider data is not available.")
-		return
-	}
 	q := r.URL.Query()
 	f := postgres.InsiderFilter{
 		Symbol: strings.ToUpper(strings.TrimSpace(q.Get("symbol"))),
@@ -152,7 +127,7 @@ func (s *Server) handleInsiderTrades(w http.ResponseWriter, r *http.Request) {
 		Side:   q.Get("side"),
 		Limit:  500,
 	}
-	trades, err := sm.ListInsiderTrades(r.Context(), f)
+	trades, err := s.deps.Store.ListInsiderTrades(r.Context(), f)
 	if err != nil {
 		s.deps.Log.Error("insider trades failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read insider trades.")
@@ -162,13 +137,8 @@ func (s *Server) handleInsiderTrades(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFund(w http.ResponseWriter, r *http.Request) {
-	sm, ok := s.smartMoney()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Fund data is not available.")
-		return
-	}
 	cik := chi.URLParam(r, "cik")
-	moves, filing, err := sm.FundMoves(r.Context(), cik)
+	moves, filing, err := s.deps.Store.FundMoves(r.Context(), cik)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read this fund's holdings.")
 		return
@@ -183,30 +153,23 @@ func (s *Server) handleFund(w http.ResponseWriter, r *http.Request) {
 
 // handleSymbolSmartMoney is everything known about who trades one stock.
 func (s *Server) handleSymbolSmartMoney(w http.ResponseWriter, r *http.Request) {
-	sm, ok := s.smartMoney()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Insider data is not available.")
-		return
-	}
 	symbol := strings.ToUpper(chi.URLParam(r, "symbol"))
 	ctx := r.Context()
-	trades, err := sm.ListInsiderTrades(ctx, postgres.InsiderFilter{
+	trades, err := s.deps.Store.ListInsiderTrades(ctx, postgres.InsiderFilter{
 		Symbol: symbol, Since: s.deps.Now().AddDate(-1, 0, 0), Market: true, Limit: 300,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read insider trades.")
 		return
 	}
-	moves, err := sm.SymbolFundMoves(ctx, symbol)
+	moves, err := s.deps.Store.SymbolFundMoves(ctx, symbol)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read fund holdings.")
 		return
 	}
 	var congressFilings any = []any{}
-	if cr, ok := s.congressReader(); ok {
-		if list, err := cr.ListCongressFilings(ctx, postgres.CongressFilingFilter{Symbol: symbol, Limit: 50}); err == nil {
-			congressFilings = list
-		}
+	if list, err := s.deps.Store.ListCongressFilings(ctx, postgres.CongressFilingFilter{Symbol: symbol, Limit: 50}); err == nil {
+		congressFilings = list
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"symbol":   symbol,

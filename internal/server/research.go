@@ -5,25 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/tradesys/dashboard/internal/ai"
 	"github.com/tradesys/dashboard/internal/research"
 	"github.com/tradesys/dashboard/internal/storage"
 )
-
-// ResearchStore is the persistence the conversation endpoints need.
-type ResearchStore interface {
-	research.Store
-}
-
-func (s *Server) researchStore() (research.Store, bool) {
-	st, ok := s.deps.Store.(research.Store)
-	return st, ok
-}
 
 // askRequest is the body of a research call.
 type askRequest struct {
@@ -40,11 +28,6 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	if s.deps.Research == nil {
 		writeError(w, http.StatusServiceUnavailable, "unavailable",
 			"Research is not configured on this deployment.")
-		return
-	}
-	store, ok := s.researchStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Conversation storage is unavailable.")
 		return
 	}
 	if s.deps.AI == nil {
@@ -77,7 +60,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	turn, conversationID, err := s.deps.AI.AskWithMode(
-		r.Context(), s.deps.Research, store, req.ConversationID, question, req.PerProvider, req.Mode == "evidence")
+		r.Context(), s.deps.Research, s.deps.Store, req.ConversationID, question, req.PerProvider, req.Mode == "evidence")
 	if errors.Is(err, ai.ErrResearchBusy) {
 		w.Header().Set("Retry-After", "15")
 		writeError(w, http.StatusTooManyRequests, "research_busy", err.Error())
@@ -99,13 +82,8 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 
 // handleConversations lists research threads.
 func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.researchStore()
-	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{"conversations": []any{}})
-		return
-	}
 	includeArchived := r.URL.Query().Get("archived") == "1"
-	list, err := store.ListConversations(r.Context(), atoiDefault(r.URL.Query().Get("limit"), 50), includeArchived)
+	list, err := s.deps.Store.ListConversations(r.Context(), atoiDefault(r.URL.Query().Get("limit"), 50), includeArchived)
 	if err != nil {
 		s.deps.Log.Error("list conversations failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read conversations.")
@@ -119,17 +97,11 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
 
 // handleConversation returns one thread with every turn.
 func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.researchStore()
+	id, ok := pathID(w, r, "conversation")
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Conversation storage is unavailable.")
 		return
 	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "Conversation id must be a number.")
-		return
-	}
-	conv, err := store.GetConversation(r.Context(), id)
+	conv, err := s.deps.Store.GetConversation(r.Context(), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "No such conversation.")
 		return
@@ -144,17 +116,11 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteConversation removes a thread.
 func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.researchStore()
+	id, ok := pathID(w, r, "conversation")
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Conversation storage is unavailable.")
 		return
 	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "Conversation id must be a number.")
-		return
-	}
-	if err := store.DeleteConversation(r.Context(), id); err != nil {
+	if err := s.deps.Store.DeleteConversation(r.Context(), id); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "No such conversation.")
 			return

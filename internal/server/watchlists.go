@@ -1,45 +1,17 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/tradesys/dashboard/internal/marketdata"
-	"github.com/tradesys/dashboard/internal/storage"
+
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
-// WatchlistStore is the slice of storage these routes need.
-type WatchlistStore interface {
-	Watchlists(ctx context.Context) ([]postgres.Watchlist, error)
-	WatchlistSymbols(ctx context.Context, id int64) ([]marketdata.Symbol, error)
-	WatchlistEntries(ctx context.Context, id int64) ([]storage.WatchlistEntry, error)
-	CreateWatchlist(ctx context.Context, name string) (postgres.Watchlist, error)
-	RenameWatchlist(ctx context.Context, id int64, name string) error
-	DeleteWatchlist(ctx context.Context, id int64) error
-	// Returns what was added, what was already present, and what was not a
-	// valid ticker.
-	AddToWatchlist(ctx context.Context, id int64, symbols []string) (added, skipped, rejected []string, err error)
-	RemoveFromWatchlist(ctx context.Context, id int64, symbol string) error
-	CopyWatchlist(ctx context.Context, from, to int64) (int, error)
-}
-
-func (s *Server) watchlistStore() (WatchlistStore, bool) {
-	st, ok := s.deps.Store.(WatchlistStore)
-	return st, ok
-}
-
 func (s *Server) handleListWatchlists(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.watchlistStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Watchlists are not available.")
-		return
-	}
-	lists, err := store.Watchlists(r.Context())
+	lists, err := s.deps.Store.Watchlists(r.Context())
 	if err != nil {
 		s.deps.Log.Error("could not list watchlists", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read the watchlists.")
@@ -52,11 +24,6 @@ func (s *Server) handleListWatchlists(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateWatchlist(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.watchlistStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Watchlists are not available.")
-		return
-	}
 	var body struct {
 		Name string `json:"name"`
 	}
@@ -64,7 +31,7 @@ func (s *Server) handleCreateWatchlist(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "Send a JSON body with a name.")
 		return
 	}
-	list, err := store.CreateWatchlist(r.Context(), body.Name)
+	list, err := s.deps.Store.CreateWatchlist(r.Context(), body.Name)
 	if err != nil {
 		// The cap and the empty name are both things a person can fix, so the
 		// message says what to do rather than reporting a failure.
@@ -75,7 +42,7 @@ func (s *Server) handleCreateWatchlist(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRenameWatchlist(w http.ResponseWriter, r *http.Request) {
-	store, id, ok := s.watchlistTarget(w, r)
+	id, ok := pathID(w, r, "watchlist")
 	if !ok {
 		return
 	}
@@ -86,7 +53,7 @@ func (s *Server) handleRenameWatchlist(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "Send a JSON body with a name.")
 		return
 	}
-	if err := store.RenameWatchlist(r.Context(), id, body.Name); err != nil {
+	if err := s.deps.Store.RenameWatchlist(r.Context(), id, body.Name); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
@@ -94,11 +61,11 @@ func (s *Server) handleRenameWatchlist(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteWatchlist(w http.ResponseWriter, r *http.Request) {
-	store, id, ok := s.watchlistTarget(w, r)
+	id, ok := pathID(w, r, "watchlist")
 	if !ok {
 		return
 	}
-	if err := store.DeleteWatchlist(r.Context(), id); err != nil {
+	if err := s.deps.Store.DeleteWatchlist(r.Context(), id); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
@@ -111,7 +78,7 @@ func (s *Server) handleDeleteWatchlist(w http.ResponseWriter, r *http.Request) {
 // system arrives with a list of forty tickers in a spreadsheet, and adding
 // them one at a time is the sort of friction that keeps the list empty.
 func (s *Server) handleAddToWatchlist(w http.ResponseWriter, r *http.Request) {
-	store, id, ok := s.watchlistTarget(w, r)
+	id, ok := pathID(w, r, "watchlist")
 	if !ok {
 		return
 	}
@@ -148,7 +115,7 @@ func (s *Server) handleAddToWatchlist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	added, skipped, rejected, err := store.AddToWatchlist(r.Context(), id, symbols)
+	added, skipped, rejected, err := s.deps.Store.AddToWatchlist(r.Context(), id, symbols)
 	if err != nil {
 		s.deps.Log.Error("could not add to watchlist", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not update the watchlist.")
@@ -165,12 +132,12 @@ func (s *Server) handleAddToWatchlist(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRemoveFromWatchlist(w http.ResponseWriter, r *http.Request) {
-	store, id, ok := s.watchlistTarget(w, r)
+	id, ok := pathID(w, r, "watchlist")
 	if !ok {
 		return
 	}
 	symbol := strings.ToUpper(strings.TrimSpace(chi.URLParam(r, "symbol")))
-	if err := store.RemoveFromWatchlist(r.Context(), id, symbol); err != nil {
+	if err := s.deps.Store.RemoveFromWatchlist(r.Context(), id, symbol); err != nil {
 		s.deps.Log.Error("could not remove from watchlist", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not update the watchlist.")
 		return
@@ -180,7 +147,7 @@ func (s *Server) handleRemoveFromWatchlist(w http.ResponseWriter, r *http.Reques
 
 // handleCopyWatchlist copies one list's instruments onto another.
 func (s *Server) handleCopyWatchlist(w http.ResponseWriter, r *http.Request) {
-	store, from, ok := s.watchlistTarget(w, r)
+	from, ok := pathID(w, r, "watchlist")
 	if !ok {
 		return
 	}
@@ -191,7 +158,7 @@ func (s *Server) handleCopyWatchlist(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "Send a JSON body naming the destination.")
 		return
 	}
-	n, err := store.CopyWatchlist(r.Context(), from, body.To)
+	n, err := s.deps.Store.CopyWatchlist(r.Context(), from, body.To)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -199,32 +166,16 @@ func (s *Server) handleCopyWatchlist(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"copied": n})
 }
 
-// watchlistTarget resolves the store and the list id, answering the request
-// itself when either is unusable.
-func (s *Server) watchlistTarget(w http.ResponseWriter, r *http.Request) (WatchlistStore, int64, bool) {
-	store, ok := s.watchlistStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Watchlists are not available.")
-		return nil, 0, false
-	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "The watchlist id must be a number.")
-		return nil, 0, false
-	}
-	return store, id, true
-}
-
 // handleWatchlistItems is one list, priced.
 //
 // The rail switches between lists without a page change, so this has to be as
 // cheap as the legacy single-list call: same enrichment, same concurrency cap.
 func (s *Server) handleWatchlistItems(w http.ResponseWriter, r *http.Request) {
-	store, id, ok := s.watchlistTarget(w, r)
+	id, ok := pathID(w, r, "watchlist")
 	if !ok {
 		return
 	}
-	entries, err := store.WatchlistEntries(r.Context(), id)
+	entries, err := s.deps.Store.WatchlistEntries(r.Context(), id)
 	if err != nil {
 		s.deps.Log.Error("could not read watchlist items", "id", id, "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read that watchlist.")

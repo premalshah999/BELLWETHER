@@ -14,14 +14,14 @@ import (
 	"github.com/tradesys/dashboard/internal/search/brave"
 	"github.com/tradesys/dashboard/internal/search/tavily"
 	"github.com/tradesys/dashboard/internal/server"
-	"github.com/tradesys/dashboard/internal/storage"
+	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
 
 // Market-data and search provider assembly, from configuration.
 
 // buildProviders assembles the provider chain in the configured order. This is
 // the only place in the program that names a concrete adapter.
-func buildProviders(cfg *config.Config, store storage.Store, log *slog.Logger) (
+func buildProviders(cfg *config.Config, store *postgres.DB, log *slog.Logger) (
 	[]marketdata.Provider, []health.Dep, map[string]server.BudgetReporter, marketdata.SymbolSearcher,
 ) {
 	var (

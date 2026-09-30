@@ -1,29 +1,12 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/tradesys/dashboard/internal/congress"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
-
-// CongressReader is the part of storage the congressional-filings tracker
-// needs. A narrow interface rather than a method on storage.Store, matching
-// EventReader and SectorsReader above: this feature exists only against
-// Postgres (postgres.CongressFilingFilter is its own argument type), so
-// asking whether the configured store happens to implement it is the
-// correct question, not adding it to every store this app can run against.
-type CongressReader interface {
-	ListCongressFilings(ctx context.Context, f postgres.CongressFilingFilter) ([]congress.StoredFiling, error)
-}
-
-func (s *Server) congressReader() (CongressReader, bool) {
-	r, ok := s.deps.Store.(CongressReader)
-	return r, ok
-}
 
 // congressFilingEnvelope is one filing as the UI receives it -- the stored
 // record plus the two fields that are computed rather than stored (the
@@ -48,11 +31,6 @@ type congressFilingEnvelope struct {
 // view runs directly, and the same endpoint a symbol's own working-set
 // panel can call to show its own congressional activity.
 func (s *Server) handleCongressFilings(w http.ResponseWriter, r *http.Request) {
-	reader, ok := s.congressReader()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Congressional filings are not available.")
-		return
-	}
 
 	f := postgres.CongressFilingFilter{
 		Symbol: strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("symbol"))),
@@ -63,7 +41,7 @@ func (s *Server) handleCongressFilings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	filings, err := reader.ListCongressFilings(r.Context(), f)
+	filings, err := s.deps.Store.ListCongressFilings(r.Context(), f)
 	if err != nil {
 		s.deps.Log.Error("congress filings lookup failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read congressional filings.")

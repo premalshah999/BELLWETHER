@@ -1,26 +1,11 @@
 package server
 
 import (
-	"context"
 	"net/http"
-	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/tradesys/dashboard/internal/ai"
 	"github.com/tradesys/dashboard/internal/news"
 )
-
-// BriefStore is the slice of storage the brief route needs.
-type BriefStore interface {
-	EventBrief(ctx context.Context, eventID int64) (string, error)
-	EventBriefs(ctx context.Context, ids []int64) (map[int64]string, error)
-	SaveEventBrief(ctx context.Context, eventID int64, brief, model string) error
-}
-
-func (s *Server) briefStore() (BriefStore, bool) {
-	st, ok := s.deps.Store.(BriefStore)
-	return st, ok
-}
 
 // handleEventBrief writes, or returns, one item's brief.
 //
@@ -30,19 +15,13 @@ func (s *Server) briefStore() (BriefStore, bool) {
 // is written when someone asks for one, and kept so the second person to look
 // does not pay for it again.
 func (s *Server) handleEventBrief(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.briefStore()
+	id, ok := pathID(w, r, "event")
 	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Brief storage is not available.")
-		return
-	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "That is not an event id.")
 		return
 	}
 
 	// Already written: hand it back rather than paying for it twice.
-	if existing, err := store.EventBrief(r.Context(), id); err == nil && existing != "" {
+	if existing, err := s.deps.Store.EventBrief(r.Context(), id); err == nil && existing != "" {
 		writeJSON(w, http.StatusOK, map[string]any{"brief": existing, "cached": true})
 		return
 	}
@@ -51,13 +30,8 @@ func (s *Server) handleEventBrief(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "The AI service is not available.")
 		return
 	}
-	reader, ok := s.eventReader()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Event storage is not available.")
-		return
-	}
 
-	ev, err := reader.GetEvent(r.Context(), id)
+	ev, err := s.deps.Store.GetEvent(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "No such event.")
 		return
@@ -74,10 +48,10 @@ func (s *Server) handleEventBrief(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "ai_unavailable", "The model returned nothing.")
 		return
 	}
-	if err := store.SaveEventBrief(r.Context(), id, brief, model); err != nil {
+	if err := s.deps.Store.SaveEventBrief(r.Context(), id, brief, model); err != nil {
 		// The brief is worth returning even if it could not be kept; the only
-		// cost is that the next reader pays for it again.
-		s.deps.Log.Warn("could not store an event brief", "event", id, "err", err)
+		// cost is that the next s.deps.Store pays for it again.
+		s.deps.Log.Warn("could not s.deps.Store an event brief", "event", id, "err", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"brief": brief, "cached": false})
 }
@@ -92,15 +66,10 @@ func (s *Server) handleRunBriefs(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAI(w, r) {
 		return
 	}
-	store, ok := s.deps.Store.(ai.BriefStore)
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Brief storage is not available.")
-		return
-	}
 	// Smaller than the hourly job's cap: this one runs inside a request
 	// timeout, and the scheduled pass is where a backlog is actually cleared.
 	limit := clampInt(intParam(r, "limit", 20), 1, 60)
-	n, err := s.deps.AI.BriefEvents(r.Context(), store, limit)
+	n, err := s.deps.AI.BriefEvents(r.Context(), s.deps.Store, limit)
 	if err != nil {
 		s.deps.Log.Warn("briefing run failed", "err", err)
 		writeError(w, http.StatusBadGateway, "ai_unavailable", "Briefing failed: "+err.Error())

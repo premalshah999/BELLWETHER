@@ -181,18 +181,14 @@ func (s *Server) runBacktest(w http.ResponseWriter, r *http.Request, a *algo.Alg
 
 	// Targets: what the request named, else what the rule watches.
 	targets := body.Symbols
-	if len(body.WatchlistIDs) > 0 {
-		if store, ok := s.watchlistStore(); ok {
-			for _, id := range body.WatchlistIDs {
-				syms, err := store.WatchlistSymbols(r.Context(), id)
-				if err != nil {
-					s.deps.Log.Warn("could not read a watchlist for a backtest", "watchlist", id, "err", err)
-					continue
-				}
-				for _, sym := range syms {
-					targets = append(targets, sym.String())
-				}
-			}
+	for _, id := range body.WatchlistIDs {
+		syms, err := s.deps.Store.WatchlistSymbols(r.Context(), id)
+		if err != nil {
+			s.deps.Log.Warn("could not read a watchlist for a backtest", "watchlist", id, "err", err)
+			continue
+		}
+		for _, sym := range syms {
+			targets = append(targets, sym.String())
 		}
 	}
 	if len(targets) == 0 {

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,16 +9,6 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
-
-// CalendarStore is the slice of storage the calendar route needs.
-type CalendarStore interface {
-	UpcomingCatalysts(ctx context.Context, within time.Duration, symbols []string, limit int) ([]postgres.UpcomingCatalyst, error)
-}
-
-func (s *Server) calendarStore() (CalendarStore, bool) {
-	st, ok := s.deps.Store.(CalendarStore)
-	return st, ok
-}
 
 const (
 	defaultCalendarDays = 30
@@ -45,11 +34,6 @@ type calendarResponse struct {
 // to an event *type*, not to a symbol, so the page asks /api/eventstudy once
 // for it rather than having this endpoint run the same study for every row.
 func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.calendarStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "The calendar is not available.")
-		return
-	}
 	q := r.URL.Query()
 
 	days := defaultCalendarDays
@@ -85,7 +69,7 @@ func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
 
 	limit := atoiDefault(q.Get("limit"), 200)
 
-	rows, err := store.UpcomingCatalysts(r.Context(), time.Duration(days)*24*time.Hour, symbols, limit)
+	rows, err := s.deps.Store.UpcomingCatalysts(r.Context(), time.Duration(days)*24*time.Hour, symbols, limit)
 	if err != nil {
 		s.deps.Log.Error("upcoming catalysts failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read the calendar.")

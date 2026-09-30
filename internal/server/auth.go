@@ -102,17 +102,6 @@ func newSessionSecret() []byte {
 	return b
 }
 
-// KeyStore resolves a presented key to its profile.
-type KeyStore interface {
-	// ProfileForKey takes a whole key and verifies its digest.
-	ProfileForKey(ctx context.Context, presented string) (auth.Profile, bool, error)
-	// ProfileByPrefix takes only the public prefix and verifies nothing; the
-	// caller must already have proved possession, as a signed cookie does.
-	ProfileByPrefix(ctx context.Context, prefix string) (auth.Profile, bool, error)
-	TouchKey(ctx context.Context, id int64, at time.Time) error
-	CountActiveKeys(ctx context.Context) (int, error)
-}
-
 type profileKey struct{}
 
 // ProfileFrom returns the profile behind a request, if any.
@@ -129,13 +118,9 @@ func ProfileFrom(ctx context.Context) (auth.Profile, bool) {
 // have nowhere to keep a cookie jar, and browsers should not hold a
 // long-lived key in storage a script on the page could read.
 func (s *Server) authenticate(r *http.Request) (auth.Profile, bool) {
-	store, ok := s.keyStore()
-	if !ok {
-		return auth.Profile{}, false
-	}
 
 	if raw := bearerToken(r); raw != "" {
-		profile, found, err := store.ProfileForKey(r.Context(), raw)
+		profile, found, err := s.deps.Store.ProfileForKey(r.Context(), raw)
 		if err != nil {
 			s.deps.Log.Error("could not check an API key", "err", err)
 			return auth.Profile{}, false
@@ -143,7 +128,7 @@ func (s *Server) authenticate(r *http.Request) (auth.Profile, bool) {
 		if found {
 			// Best effort, and never on the request path's critical route:
 			// a failure to record usage must not fail the request.
-			if err := store.TouchKey(r.Context(), profile.ID, s.now()); err != nil {
+			if err := s.deps.Store.TouchKey(r.Context(), profile.ID, s.now()); err != nil {
 				// Warn, not debug. This write is best-effort and must never
 				// fail a request, but a version of it that failed every time
 				// went unnoticed precisely because the failure was logged
@@ -169,7 +154,7 @@ func (s *Server) authenticate(r *http.Request) (auth.Profile, bool) {
 	//
 	// Looked up by prefix, not by key: the cookie carries only the public
 	// half, and the HMAC above is what proved the bearer had the secret.
-	profile, found, err := store.ProfileByPrefix(r.Context(), prefix)
+	profile, found, err := s.deps.Store.ProfileByPrefix(r.Context(), prefix)
 	if err != nil || !found {
 		return auth.Profile{}, false
 	}
@@ -259,18 +244,11 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 // openAccess is the development opt-in: ALLOW_UNAUTHENTICATED is set and no
 // key has been issued yet. A deployment with keys always requires one.
 func (s *Server) openAccess(ctx context.Context) bool {
-	store, ok := s.keyStore()
-	if !ok || s.deps.Config == nil || !s.deps.Config.AllowUnauthenticated {
+	if s.deps.Config == nil || !s.deps.Config.AllowUnauthenticated {
 		return false
 	}
-	n, err := store.CountActiveKeys(ctx)
+	n, err := s.deps.Store.CountActiveKeys(ctx)
 	return err == nil && n == 0
-}
-
-// keyStore returns the credential store, when one is wired.
-func (s *Server) keyStore() (KeyStore, bool) {
-	st, ok := s.deps.Store.(KeyStore)
-	return st, ok
 }
 
 // handleLogin exchanges an API key for a browser session.
@@ -279,11 +257,6 @@ func (s *Server) keyStore() (KeyStore, bool) {
 // HttpOnly, so a script on the page cannot read it, where a key kept in local
 // storage is readable by anything running on the origin.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.keyStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Sign-in is not available.")
-		return
-	}
 	var body struct {
 		Key string `json:"key"`
 	}
@@ -292,7 +265,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, found, err := store.ProfileForKey(r.Context(), body.Key)
+	profile, found, err := s.deps.Store.ProfileForKey(r.Context(), body.Key)
 	if err != nil {
 		s.deps.Log.Error("could not check a key at sign-in", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not verify that key.")
@@ -354,12 +327,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"required": true, "authenticated": false}
 
-	store, ok := s.keyStore()
-	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{"required": false, "authenticated": true})
-		return
-	}
-	if n, err := store.CountActiveKeys(r.Context()); err == nil && n == 0 {
+	if n, err := s.deps.Store.CountActiveKeys(r.Context()); err == nil && n == 0 {
 		if s.deps.Config == nil || !s.deps.Config.AllowUnauthenticated {
 			writeJSON(w, http.StatusOK, map[string]any{"required": true, "authenticated": false, "setup_required": true})
 			return

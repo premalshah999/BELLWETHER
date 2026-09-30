@@ -9,26 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
 )
-
-// PositionStore is the slice of storage the positions routes need.
-type PositionStore interface {
-	SavePosition(ctx context.Context, p postgres.Position) (int64, error)
-	ListPositions(ctx context.Context) ([]postgres.Position, error)
-	GetPosition(ctx context.Context, id int64) (postgres.Position, bool, error)
-	UpdatePosition(ctx context.Context, id int64, quantity, costBasis float64, openedAt time.Time, account, notes string) error
-	DeletePosition(ctx context.Context, id int64) error
-	ClosePosition(ctx context.Context, id int64, quantity, exitPrice float64, closedAt time.Time, notes string) (postgres.Trade, error)
-	ListTrades(ctx context.Context, symbol string, limit int) ([]postgres.Trade, error)
-}
-
-func (s *Server) positionStore() (PositionStore, bool) {
-	st, ok := s.deps.Store.(PositionStore)
-	return st, ok
-}
 
 // positionView is one position with the market data that turns "100 shares
 // at $150" into "worth this, up or down that much" -- the whole reason to
@@ -51,12 +34,7 @@ type positionView struct {
 
 // handleListPositions returns every open position, priced live.
 func (s *Server) handleListPositions(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.positionStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Positions are not available.")
-		return
-	}
-	positions, err := store.ListPositions(r.Context())
+	positions, err := s.deps.Store.ListPositions(r.Context())
 	if err != nil {
 		s.deps.Log.Error("could not list positions", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read positions.")
@@ -117,11 +95,6 @@ func (s *Server) fillPositionPrice(ctx context.Context, item *positionView, sym 
 
 // handleCreatePosition adds a new open position.
 func (s *Server) handleCreatePosition(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.positionStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Positions are not available.")
-		return
-	}
 	var body struct {
 		Symbol    string  `json:"symbol"`
 		Quantity  float64 `json:"quantity"`
@@ -152,7 +125,7 @@ func (s *Server) handleCreatePosition(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "opened_at must be a date like 2026-03-15.")
 		return
 	}
-	id, err := store.SavePosition(r.Context(), postgres.Position{
+	id, err := s.deps.Store.SavePosition(r.Context(), postgres.Position{
 		Symbol: sym.String(), Quantity: body.Quantity, CostBasis: body.CostBasis,
 		OpenedAt: opened, Account: strings.TrimSpace(body.Account), Notes: body.Notes,
 	})
@@ -169,7 +142,7 @@ func (s *Server) handleCreatePosition(w http.ResponseWriter, r *http.Request) {
 // already worked out. It is not how a position is reduced; see
 // handleClosePosition for that.
 func (s *Server) handleUpdatePosition(w http.ResponseWriter, r *http.Request) {
-	store, id, ok := s.positionTarget(w, r)
+	id, ok := pathID(w, r, "position")
 	if !ok {
 		return
 	}
@@ -197,7 +170,7 @@ func (s *Server) handleUpdatePosition(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "opened_at must be a date like 2026-03-15.")
 		return
 	}
-	if err := store.UpdatePosition(r.Context(), id, body.Quantity, body.CostBasis, opened, strings.TrimSpace(body.Account), body.Notes); err != nil {
+	if err := s.deps.Store.UpdatePosition(r.Context(), id, body.Quantity, body.CostBasis, opened, strings.TrimSpace(body.Account), body.Notes); err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "That position does not exist.")
 		return
 	}
@@ -207,11 +180,11 @@ func (s *Server) handleUpdatePosition(w http.ResponseWriter, r *http.Request) {
 // handleDeletePosition removes a position with no trade recorded -- for
 // fixing a mis-entered position, not for exiting a real one.
 func (s *Server) handleDeletePosition(w http.ResponseWriter, r *http.Request) {
-	store, id, ok := s.positionTarget(w, r)
+	id, ok := pathID(w, r, "position")
 	if !ok {
 		return
 	}
-	if err := store.DeletePosition(r.Context(), id); err != nil {
+	if err := s.deps.Store.DeletePosition(r.Context(), id); err != nil {
 		s.deps.Log.Error("could not delete position", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not delete the position.")
 		return
@@ -222,7 +195,7 @@ func (s *Server) handleDeletePosition(w http.ResponseWriter, r *http.Request) {
 // handleClosePosition reduces or fully closes a position and records the
 // closed portion as a trade.
 func (s *Server) handleClosePosition(w http.ResponseWriter, r *http.Request) {
-	store, id, ok := s.positionTarget(w, r)
+	id, ok := pathID(w, r, "position")
 	if !ok {
 		return
 	}
@@ -245,7 +218,7 @@ func (s *Server) handleClosePosition(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "closed_at must be a date like 2026-03-15.")
 		return
 	}
-	trade, err := store.ClosePosition(r.Context(), id, body.Quantity, body.ExitPrice, closed, body.Notes)
+	trade, err := s.deps.Store.ClosePosition(r.Context(), id, body.Quantity, body.ExitPrice, closed, body.Notes)
 	if err != nil {
 		// Every failure here (not found, over-close, bad quantity) is
 		// something the operator typed wrong, not a system fault.
@@ -257,11 +230,6 @@ func (s *Server) handleClosePosition(w http.ResponseWriter, r *http.Request) {
 
 // handleListTrades returns closed trades, optionally filtered to one symbol.
 func (s *Server) handleListTrades(w http.ResponseWriter, r *http.Request) {
-	store, ok := s.positionStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Trades are not available.")
-		return
-	}
 	symbol := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("symbol")))
 	limit := 0
 	if raw := r.URL.Query().Get("limit"); raw != "" {
@@ -269,7 +237,7 @@ func (s *Server) handleListTrades(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
-	trades, err := store.ListTrades(r.Context(), symbol, limit)
+	trades, err := s.deps.Store.ListTrades(r.Context(), symbol, limit)
 	if err != nil {
 		s.deps.Log.Error("could not list trades", "err", err)
 		writeError(w, http.StatusInternalServerError, "storage", "Could not read trades.")
@@ -308,20 +276,6 @@ func tradeViewOf(t postgres.Trade) tradeView {
 		RealizedPnL: t.RealizedPnL, Account: t.Account, Notes: t.Notes,
 		CreatedAt: t.CreatedAt.Format(time.RFC3339),
 	}
-}
-
-func (s *Server) positionTarget(w http.ResponseWriter, r *http.Request) (PositionStore, int64, bool) {
-	store, ok := s.positionStore()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "Positions are not available.")
-		return nil, 0, false
-	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "That is not a position id.")
-		return nil, 0, false
-	}
-	return store, id, true
 }
 
 func parseDateOrToday(s string) (time.Time, error) {

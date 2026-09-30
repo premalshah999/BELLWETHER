@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
