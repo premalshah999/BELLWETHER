@@ -10,10 +10,22 @@ import { useTheme, type ThemeChoice } from "../../lib/theme";
 /** The bell of the bellwether: the one drawn mark in the interface. */
 export function BrandMark({ size = 22 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" className="shrink-0">
-      <rect width="32" height="32" rx="8" className="fill-brand" />
-      <path d="M16 7.5c-3.8 0-6.2 2.9-6.2 6.7v4.6l-2 3.2h16.4l-2-3.2v-4.6c0-3.8-2.4-6.7-6.2-6.7z" className="fill-brand-ink" />
-      <circle cx="16" cy="24.8" r="1.9" className="fill-brand-ink" />
+    <svg width={size} height={size} viewBox="0 0 512 512" aria-hidden="true" className="shrink-0">
+      <rect x="32" y="32" width="448" height="448" rx="124" className="fill-brand" />
+      <path
+        className="fill-brand-ink"
+        d="M256 108C189 108 144 161 144 231V291L113 338C104 352 114 370 131 370H381C398 370 408 352 399 338L368 291V231C368 161 323 108 256 108Z"
+      />
+      <circle cx="256" cy="399" r="27" className="fill-brand-ink" />
+      <path
+        d="M178 272L218 232L256 258L314 194L342 219"
+        fill="none"
+        strokeWidth="29"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="stroke-brand"
+      />
+      <circle cx="342" cy="219" r="15" className="fill-brand" />
     </svg>
   );
 }
