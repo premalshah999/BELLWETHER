@@ -1,6 +1,10 @@
 package indicators
 
-import "github.com/tradesys/dashboard/internal/marketdata"
+import (
+	"math"
+
+	"github.com/tradesys/dashboard/internal/marketdata"
+)
 
 // TrueRange is the greatest of: the current bar's range, the distance from the
 // previous close up to this high, and the distance from the previous close
@@ -13,8 +17,8 @@ func TrueRange(candles []marketdata.Candle) Series {
 			continue
 		}
 		hl := c.High - c.Low
-		hc := abs(c.High - prev.Close)
-		lc := abs(c.Low - prev.Close)
+		hc := math.Abs(c.High - prev.Close)
+		lc := math.Abs(c.Low - prev.Close)
 		out[i] = max3(hl, hc, lc)
 	}
 	return out
@@ -38,13 +42,6 @@ func ATR(candles []marketdata.Candle, period int) Series {
 		}
 	}
 	return out
-}
-
-func abs(f float64) float64 {
-	if f < 0 {
-		return -f
-	}
-	return f
 }
 
 func max3(a, b, c float64) float64 {

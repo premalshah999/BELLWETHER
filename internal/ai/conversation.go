@@ -231,13 +231,6 @@ func (s *Service) runTurn(
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // rewriteFollowup turns a context-dependent question into a standalone query.
 //
 // Failure here is not fatal: the original question is used instead. A slightly

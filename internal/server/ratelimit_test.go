@@ -67,17 +67,15 @@ func TestCallerKeyPrefersTheForwardedAddress(t *testing.T) {
 		t.Errorf("without a forwarded header, key = %q, want the remote address", got)
 	}
 
-	r.Header.Set("X-Forwarded-For", "203.0.113.9, 10.0.0.1")
+	// The proxy wrote the last entry. Anything before it came from the
+	// caller, who could otherwise take a fresh bucket with every request.
+	r.Header.Set("X-Forwarded-For", "1.2.3.4 ,  203.0.113.9  ")
 	if got := callerKey(r); got != "203.0.113.9" {
-		t.Errorf("key = %q, want the first forwarded entry", got)
+		t.Errorf("key = %q, want the trimmed last forwarded entry", got)
 	}
-
-	// Only the first entry is used: the rest of the chain is caller-supplied
-	// and trivially spoofed, so trusting it would let anyone reset their own
-	// bucket by appending an address.
-	r.Header.Set("X-Forwarded-For", "  198.51.100.4  ,   1.2.3.4")
+	r.Header.Set("X-Forwarded-For", "198.51.100.4")
 	if got := callerKey(r); got != "198.51.100.4" {
-		t.Errorf("key = %q, want the trimmed first entry", got)
+		t.Errorf("key = %q, want the only forwarded entry", got)
 	}
 }
 

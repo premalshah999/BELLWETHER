@@ -1,6 +1,7 @@
 package algo
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"strconv"
@@ -362,7 +363,7 @@ func (e *Evaluator) evalCondition(ctx *evalContext, n Node) (ConditionResult, Tr
 
 	if !lOK || !rOK {
 		cr.Result = TriUnknown.String()
-		cr.Detail = firstNonEmpty(lWhy, rWhy)
+		cr.Detail = cmp.Or(lWhy, rWhy)
 		cr.Text = fmt.Sprintf("%s %s %s (no data)", cr.Label, n.Op, rightLabel)
 		return cr, TriUnknown
 	}
@@ -379,7 +380,7 @@ func (e *Evaluator) evalCondition(ctx *evalContext, n Node) (ConditionResult, Tr
 		prv, prWhy, prOK := rightAt(prev)
 		if !plOK || !prOK {
 			cr.Result = TriUnknown.String()
-			cr.Detail = firstNonEmpty(plWhy, prWhy)
+			cr.Detail = cmp.Or(plWhy, prWhy)
 			cr.Text = fmt.Sprintf("%s %s %s (previous bar has no data)", cr.Label, n.Op, rightLabel)
 			return cr, TriUnknown
 		}
@@ -571,13 +572,4 @@ func firstUnknownDetail(conditions []ConditionResult) string {
 		}
 	}
 	return "not enough data to decide"
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

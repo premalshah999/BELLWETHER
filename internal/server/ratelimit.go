@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -115,24 +117,19 @@ func (r *rateLimiter) middleware(next http.Handler) http.Handler {
 		}
 		r.log.Warn("rate limited", "caller", key, "path", req.URL.Path,
 			"retry_after", wait.Round(time.Second))
-		w.Header().Set("Retry-After", formatSeconds(wait))
+		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(wait.Seconds()))))
 		writeError(w, http.StatusTooManyRequests, "rate_limited",
 			"Too many requests. Try again in "+wait.Round(time.Second).String()+".")
 	})
 }
 
-// callerKey identifies a caller.
-//
-// The proxy's forwarded address is preferred where present, because every
-// request otherwise arrives from Caddy and the whole internet would share one
-// bucket. Only the first entry is used: the rest of an X-Forwarded-For chain
-// is caller-supplied and trivially spoofed.
+// callerKey identifies a caller by address. Behind the proxy that is the last
+// entry of X-Forwarded-For, the one our own proxy wrote: earlier entries are
+// supplied by the caller and trivially spoofed, which would let one client
+// take a fresh bucket per request.
 func callerKey(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		if i := indexByte(fwd, ','); i > 0 {
-			fwd = fwd[:i]
-		}
-		if host := trimSpace(fwd); host != "" {
+		if host := strings.TrimSpace(fwd[strings.LastIndexByte(fwd, ',')+1:]); host != "" {
 			return host
 		}
 	}
@@ -141,45 +138,4 @@ func callerKey(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
-}
-
-func indexByte(s string, b byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == b {
-			return i
-		}
-	}
-	return -1
-}
-
-func trimSpace(s string) string {
-	start := 0
-	for start < len(s) && (s[start] == ' ' || s[start] == '\t') {
-		start++
-	}
-	end := len(s)
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
-		end--
-	}
-	return s[start:end]
-}
-
-func formatSeconds(d time.Duration) string {
-	secs := int(d.Seconds())
-	if secs < 1 {
-		secs = 1
-	}
-	return itoa(secs)
-}
-
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	var b []byte
-	for i > 0 {
-		b = append([]byte{byte('0' + i%10)}, b...)
-		i /= 10
-	}
-	return string(b)
 }

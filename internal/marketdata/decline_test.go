@@ -18,10 +18,13 @@ func TestRoutineDeclinesDoNotCountAsFaults(t *testing.T) {
 	}{
 		{name: "unsupported symbol or interval", err: ErrNotSupported, wantSkipped: true},
 		{name: "budget spent", err: ErrBudgetExhausted, wantSkipped: true},
+		{name: "provider does not carry this symbol", err: ErrNoData, wantSkipped: true},
 		{
-			// Twelve Data's free tier returns this for every Indian listing.
-			name: "provider does not carry this symbol", err: ErrNoData, wantSkipped: true,
+			name:        "the caller hung up mid-request",
+			err:         fmt.Errorf("twelvedata: budget check: %w", context.Canceled),
+			wantSkipped: true,
 		},
+		{name: "a provider timing out is a fault", err: context.DeadlineExceeded, wantSkipped: false},
 		{
 			name:        "wrapped no-data is still a decline",
 			err:         fmt.Errorf("twelvedata: %w: available on the Grow plan", ErrNoData),

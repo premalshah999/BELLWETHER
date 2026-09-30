@@ -241,13 +241,6 @@ func (c *Client) Quote(ctx context.Context, sym marketdata.Symbol) (marketdata.Q
 	return q, nil
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func redact(err error, key string) error {
 	if key == "" {
 		return err

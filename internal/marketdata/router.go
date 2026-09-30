@@ -188,7 +188,9 @@ func (r *Router) report(ctx context.Context, o Outcome) {
 func isRoutineDecline(err error) bool {
 	return errors.Is(err, ErrNotSupported) ||
 		errors.Is(err, ErrBudgetExhausted) ||
-		errors.Is(err, ErrNoData)
+		errors.Is(err, ErrNoData) ||
+		// The caller hung up (a closed tab): nothing about the provider.
+		errors.Is(err, context.Canceled)
 }
 
 // Candles returns a series for a symbol, preferring fresh cache, then live
