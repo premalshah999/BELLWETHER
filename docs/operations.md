@@ -29,15 +29,22 @@ maps any IP-shaped name to that IP: `203-0-113-10.sslip.io`.
 | `backup` | `pg_dump` every 6 hours | none |
 | `caddy` | HTTPS reverse proxy (`public` profile) | 80, 443 |
 
-### On a rented server
-
-Yahoo's unauthenticated endpoint returns `429` to every request from
-datacenter ranges (Hetzner, DigitalOcean, AWS…). The yfinance sidecar is
-unaffected, so keep it first:
+### Prices
 
 ```
 MARKETDATA_ORDER=yfinance,twelvedata,alphavantage
 ```
+
+Keep the bundled yfinance sidecar first: it has no request budget and the
+deepest history. Twelve Data and Alpha Vantage are optional, keyed fallbacks
+whose daily caps are enforced before any network call.
+
+### Web search
+
+Research, the news search and the chart's headlines reach the open web
+through the bundled SearXNG node, Bing News and Google News. None needs a key.
+SearXNG is reachable only inside the compose network and signs its own
+requests with `SEARXNG_SECRET`; leave it empty and one is generated at start.
 
 ### A model on the same host
 
@@ -75,7 +82,9 @@ All reuse the exact code path their scheduled job runs.
 | Flag | Does |
 | --- | --- |
 | `-sync-congress` | fetch House STOCK Act disclosures now (backfill or resync) |
+| `-sync-smartmoney N` | fetch insider trades for the last N days and the followed funds' 13Fs |
 | `-refresh-calendar` | rebuild the forward earnings/dividend calendar (~3 min for the universe) |
+| `-merge-duplicates N` | clean headlines and merge duplicate events from the last N days |
 | `-reprocess` | discard derived events and rebuild them from stored raw items, after a classification rule changes |
 | `-rollover-news` | move aged news to the archive database now rather than at 02:30 ET |
 | `-reclaim-space` | with `-rollover-news`: return freed space to the OS. Takes an exclusive lock per table; ingestion stalls while it runs |
@@ -134,6 +143,23 @@ narrows the feed, the screens and every peer group.
 
 ## Scheduling and time
 
-All times are stored in UTC and shown in `DISPLAY_TZ`. Market jobs carry
-their own `CRON_TZ`, so a US-hours scan runs on New York time whatever the
-display zone is.
+Times are stored in UTC. Every scheduled job runs on New York time, so the
+scans, the morning brief and the alert checks track the session through
+daylight-saving changes wherever the server sits. Weekday schedules do not
+model market holidays.
+
+| When (ET) | Job |
+| --- | --- |
+| every 2 / 10 min | event processing / news poll |
+| 09:45, :15 and :45 from 10:15 to 15:45, 16:15 weekdays | market scan |
+| 07:20 weekdays | forward calendar |
+| 08:30, 08:45 weekdays | morning brief, outlooks for the watchlist |
+| every 30 min, 06:00–23:30 weekdays | insider trades |
+| 06:30, 07:20 daily | Congress filings, fund holdings |
+| 05:45 daily | scoring of AI outlooks whose horizon has passed |
+| 02:30 daily | news rollover to the archive |
+| 02:00 Saturday | fundamentals refresh for the universe |
+| hourly | event briefs, news digest, event classification |
+
+In the browser each viewer picks New York, their own zone or UTC from the
+status menu; every clock time names the zone it is shown in.

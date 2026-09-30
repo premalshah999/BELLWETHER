@@ -47,15 +47,18 @@ a real, silent bug.
 3. **Missing is not zero.** An indicator with no value is *unknown*, and
    unknown never fires an alert or a trade.
 4. **Symbols are canonical.** Store and pass `marketdata.Symbol.String()`.
-   Never append a venue suffix by hand, and never let a vendor suffix
-   (`.NS`) reach storage.
-5. **Every adapter behind an interface.** Only `cmd/tradesys` imports a
-   concrete provider.
-6. **Never edit a shipped migration.** Add a new one in
+   A vendor's spelling (`^GSPC`) lives inside that vendor's adapter and
+   never reaches storage.
+5. **Every network adapter behind an interface.** Only `cmd/tradesys`
+   imports a concrete provider.
+6. **One clock for the market.** Server-side schedules and session logic use
+   `marketdata.Market`; the browser shows a clock time in the viewer's
+   chosen zone and always names it.
+7. **Never edit a shipped migration.** Add a new one in
    `internal/storage/postgres/migrations/`.
-7. **Prompts are files.** Model prompts live in `internal/ai/prompts/*.md`,
+8. **Prompts are files.** Model prompts live in `internal/ai/prompts/*.md`,
    not in Go strings.
-8. **Degrade, don't fail.** A missing key or an unreachable dependency turns
+9. **Degrade, don't fail.** A missing key or an unreachable dependency turns
    one feature off and says so; it never stops the app booting.
 
 ## Good first contributions
