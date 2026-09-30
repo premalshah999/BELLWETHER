@@ -1,20 +1,23 @@
 <div align="center">
 
-# Bellwether
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/bellwether-logo-dark.svg">
+  <img src="docs/brand/bellwether-logo-light.svg" alt="Bellwether" width="460">
+</picture>
 
 **Self-hosted market intelligence for US equities — every claim with a receipt.**
 
-Bellwether watches SEC filings, federal policy, Congressional trades and the
-news; ties each event to the companies and sectors it touches; and tells you,
-with measured history rather than a hunch, whether events like it have
-actually moved prices before.
+Bellwether watches SEC filings, federal policy, insider and Congressional trades
+and the news; ties each event to the companies and sectors it touches; and
+tells you, with measured history rather than a hunch, whether events like it
+have actually moved prices before.
 
 [![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
 [![React](https://img.shields.io/badge/React-TypeScript-3178C6?logo=typescript&logoColor=white)](web/)
 [![Postgres](https://img.shields.io/badge/Postgres-17-4169E1?logo=postgresql&logoColor=white)](docker-compose.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-![The news feed with the evidence drawer open: when the story was published, when Bellwether found it, and every source behind it](docs/images/news-drawer.png)
+![Today: the moves that need a look, what reports this week, and a cited morning brief](docs/images/dashboard.png)
 
 </div>
 
@@ -26,12 +29,11 @@ actually moved prices before.
 
 ## Why
 
-A Bloomberg Terminal costs $24,000 a year, and a large part of what it sells
-is the link between a world event and your positions. Retail tools show you
-*what* moved, rarely *why*, and never which of *your* holdings a rule change,
-a filing or a Congressional trade actually reaches. AI finance chatbots answer
-confidently and cite nothing — you cannot audit them, so you cannot trust
-them.
+A Bloomberg Terminal costs $24,000 a year, and much of what it sells is the
+link between a world event and your positions. Retail tools show you *what*
+moved, rarely *why*, and never which of *your* holdings a rule change, a filing
+or a Congressional trade actually reaches. AI finance chatbots answer
+confidently and cite nothing — you cannot audit them, so you cannot trust them.
 
 Bellwether fills that gap on a small VPS (4 GB of RAM is plenty):
 
@@ -50,53 +52,186 @@ only the last is ever used to reason about what was knowable when. Look-ahead
 bias isn't avoided by convention; it's structurally impossible. Every event
 links to every source that reported it, ranked by trust.
 
-**Statistics decide what to look at; models only explain it.** A scanner
-reads price and volume across the S&P 1500 every session and flags what is
-abnormal *before any article exists about it*. Models are the last stage of
-the pipeline, never the first.
+**Statistics decide what to look at; models only explain it.** A scanner reads
+price and volume across the S&P 1500 every session and flags what is abnormal
+*before any article exists about it*. Models are the last stage of the
+pipeline, never the first.
 
-**The right model for each job.** Thousands of small classification
-decisions a day go to [Jev](https://typesafe.ai), a typed decision model
-whose answers come with a calibrated confidence — and are thrown out when that
-confidence is too low. Prose goes to any OpenAI-compatible model, behind a
-hard daily dollar cap that concurrent calls cannot overshoot.
+**The right model for each job.** Thousands of small classification decisions a
+day go to [Jev](https://typesafe.ai), a typed decision model whose answers come
+with a calibrated confidence — and are thrown out when that confidence is too
+low. Prose goes to any OpenAI-compatible model, behind a hard daily dollar cap
+that concurrent calls cannot overshoot.
 
-**Citations or it didn't happen.** Research cites its sources, flags where
-they disagree and names what they fail to establish. A citation to a source
-that was never supplied is stripped; a finding with no valid citation is
-dropped, not softened. Every AI forecast is scored against what actually
-happened, and the track record is on its own page.
+**Citations or it didn't happen.** Research cites its sources, flags where they
+disagree and names what they fail to establish. A citation to a source that was
+never supplied is stripped; a finding with no valid citation is dropped, not
+softened. Every AI forecast is scored against what actually happened, and the
+track record has its own page.
 
-## What's inside
+## A tour of the app
 
-| | |
-| --- | --- |
-| **News** | SEC EDGAR (8-K, Form 4, 13F), the Federal Register, the Fed, the White House, BLS, the FTC, the wires and financial press, GDELT, targeted discovery queries and one source per watched stock — deduplicated, entity-resolved, and classified into ~50 event types. A search also shows what the open web has. |
-| **Today** | What changed overnight: unexplained moves, alerts, upcoming catalysts and a cited morning brief. |
-| **Charts** | Candles with studies and drawing tools, and beside them what is known about the stock: valuation against its sector, recent news and signals, insider and fund activity, web headlines, and the AI's explanation, debrief and scored outlook. |
-| **Signals** | The statistical scanner: abnormal price and volume across the universe, every half hour of the session. A move nothing in the archive explains is one click from a web search. |
-| **Policy & macro** | Macro, regulatory and trade events fanned out to the sectors they touch, and to *your* holdings. |
-| **Who's buying** | Insider trades from SEC Form 4, the quarterly moves of 14 well-known funds from their 13Fs, and House STOCK Act disclosures with how late each was filed. |
-| **Event study** | For any event type: mean and median abnormal return vs. the S&P 500, hit rate, sample size, and honest small-sample warnings. |
-| **Catalysts** | Upcoming earnings and dividends across the universe, each with the event study's base rate attached. |
-| **Research** | Ask a question; get a cited answer from filings, official releases, measured price history and the open web (a private SearXNG node, Bing News and Google News) — or evidence only, with no model at all. |
-| **Positions & journal** | What you hold and what you closed, each trade set against the event that preceded it. |
-| **Algorithms & backtests** | A JSON rule language over indicators with unknown-aware logic, run on a schedule, with a leakage-free backtester. |
-| **Alerts** | Rule triggers to Telegram and the in-app feed, with the full evaluation snapshot kept for audit. |
-| **AI track record** | Every AI outlook scored against what happened: calibration, skill against a baseline, and the forecasts themselves. |
+Every screen below is a real page of a running instance. Times always show
+their zone — New York by default, your own or UTC from the status menu.
 
-Every clock time names its zone — New York by default, your own or UTC by choice.
+### Today — what needs a look right now
 
-<table>
-<tr>
-<td width="50%"><img src="docs/images/dashboard.png" alt="Today: unexplained moves, catalysts and the morning brief"></td>
-<td width="50%"><img src="docs/images/congress.png" alt="Congressional trades with disclosure delays against the STOCK Act deadline"></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/images/calendar.png" alt="Catalyst calendar with the historical earnings base rate"></td>
-<td width="50%"><img src="docs/images/eventstudy.png" alt="Event study: abnormal returns after an event type, with sample size"></td>
-</tr>
-</table>
+The landing page answers one question: *what changed since I last looked?* It
+lists moves the scanner flagged that no news explains yet, ex-dividend and
+earnings dates arriving this week, and a **morning brief** written before the
+open from the stocks you watch — every bullet traceable to a source. *Ask a
+question* jumps to Research; *Read the news* to the feed.
+
+### News — every story, with its receipts
+
+![The news feed with the evidence drawer open: when the story was published, when Bellwether found it, and every source behind it](docs/images/news-drawer.png)
+
+Around 80 sources feed one stream: SEC EDGAR (8-Ks, insider Form 4s, 13Fs),
+the Federal Register, the Fed, the White House, BLS, the FTC, the wires and the
+financial press, GDELT, targeted discovery queries and one query per stock you
+watch. Stories are de-duplicated, matched to companies, and classified into
+roughly 50 event types with an importance and a direction.
+
+Click any row to open its **evidence drawer**: the publication time, the time
+Bellwether found it (the one every backtest uses), the companies involved and
+every source that reported it. *Write a brief* turns the event into a cited
+summary on demand.
+
+![Searching the news also shows what the open web has that the archive does not](docs/images/news-web.png)
+
+Search is not limited to the archive. A query also asks the open web — a
+private SearXNG node, Bing News and Google News, all keyless — and shows those
+headlines beside your results, clearly marked as discovery.
+
+### Charts — one stock, everything known about it
+
+![Candles with studies and a context panel: valuation against peers, latest news, web headlines and the AI's explanation](docs/images/charts.png)
+
+Candles from 1 minute to weekly with indicators, candlestick-pattern detection,
+drawing tools and multi-chart layouts. The **Context** tab sits beside it:
+
+- **Valuation** against the stock's sector peers, with the peer median.
+- **Latest news and signals** for the symbol.
+- **Explain today's move** — a sourced AI explanation.
+- **Debrief the last month** — what happened, against the news.
+- **Outlook** — a probabilistic forecast that is logged and later scored.
+- **On the web** — fresh headlines from outside the archive.
+
+### Signals — the scanner
+
+![The scanner's flagged moves, each with its z-scores and whether any news explains it](docs/images/signals.png)
+
+Every half hour of the session the scanner compares each of ~1,500 stocks with
+its own history: return and volume z-scores, gaps, distance from highs and
+lows. It flags the abnormal ones and checks whether the archive already
+explains them. A move nothing explains is one click from a web search for
+*why*, and Bellwether starts watching that stock's news harder.
+
+### Screens — filter the universe
+
+![Saved multi-factor screens over the whole universe](docs/images/screens.png)
+
+Build and save multi-factor screens (valuation, growth, momentum, scanner
+metrics) and run them over the S&P 1500.
+
+### Policy & macro — which of my holdings does this touch?
+
+![Policy and macro events fanned out to sectors and to your holdings](docs/images/policy.png)
+
+Rules, tariffs, executive orders and central-bank decisions are mapped to the
+sectors they reach — by the issuing agency where the source states one (USTR →
+trade-exposed sectors, FDA → healthcare), by keywords otherwise — and then to
+*your* watchlist and positions.
+
+### Who's buying — insiders, funds and Congress
+
+![Insider buying and selling and the quarterly moves of well-known funds](docs/images/smartmoney.png)
+
+Three official, free sources of "who is putting money where":
+
+![Insider transactions from SEC Form 4](docs/images/insiders.png)
+
+- **Insiders** — officers' and directors' trades from SEC Form 4, within
+  minutes of filing.
+- **Funds** — the quarterly moves of 14 well-known funds from their 13F filings.
+
+![House STOCK Act disclosures, with how late each was filed against the 45-day deadline](docs/images/congress.png)
+
+- **Congress** — House STOCK Act disclosures, including how late each was filed
+  against the 45-day deadline (lateness is itself a signal).
+
+### Catalysts — what is coming, and how it usually goes
+
+![Upcoming earnings and dividends, each with the historical base rate](docs/images/calendar.png)
+
+Upcoming earnings and dividends across the universe, each with the **base
+rate** from the event study attached: how stocks have typically moved after the
+same kind of report. A base rate, not a forecast.
+
+### Event study — does this kind of news move prices?
+
+![Abnormal returns after an event type, with sample size and small-sample warnings](docs/images/eventstudy.png)
+
+Pick an event type and see the mean and median **abnormal return** against the
+S&P 500 over the following days, the hit rate, the sample size and honest
+warnings when the sample is too small to mean anything. Each case is timed from
+the moment Bellwether discovered the event, so the study cannot leak the future.
+
+### Research — a cited answer, or just the evidence
+
+![Research: ask a question and get an answer built only from sources that were read and cited](docs/images/research.png)
+
+Ask a question in plain English. Bellwether searches SEC filings, official
+releases, its own archive, measured price history and the open web, reads what
+it can, and either shows you the **evidence only** (the default, no AI call) or
+writes a cited **AI brief**. Claims without a valid citation are dropped, and
+sources that failed or could not be read are listed as gaps.
+
+### Positions & journal — your money, in context
+
+![What you hold, and the news that reached it](docs/images/positions.png)
+
+**Positions** records what you hold so Bellwether can tell you when news
+reaches real money.
+
+![Closed trades, each set against the events that surrounded it](docs/images/journal.png)
+
+The **journal** sets each closed trade against the events that came before it,
+using only what was already known — never a later one — so you can see what
+you acted on.
+
+### Algorithms, backtests and alerts
+
+![Building a rule in the JSON rule language](docs/images/algorithms.png)
+
+Write a rule in a small JSON language over indicators (RSI, moving averages,
+MACD, ATR, VWAP and more). Missing data is *unknown*, and unknown never fires.
+Rules run on a schedule and on demand.
+
+![A leakage-free backtest with costs, drawdown and trade list](docs/images/backtest.png)
+
+The **backtester** replays a rule over history with transaction costs, stop
+losses and take-profits, and only ever sees the bars that existed at each step.
+
+![Alerts: every trigger with the snapshot that caused it](docs/images/alerts.png)
+
+**Alerts** deliver rule triggers to Telegram and the in-app feed, keeping the
+full evaluation snapshot for audit, with cooldowns so one condition does not
+repeat.
+
+### Sources and AI track record — can I trust it?
+
+![Every source, its trust tier, freshness and health](docs/images/sources.png)
+
+**Data sources** lists every feed with its trust tier, how often it is polled,
+how fast it breaks stories and whether it is healthy.
+
+![The AI's forecasts scored against what happened](docs/images/ai.png)
+
+**AI track record** scores every logged forecast against the realised move —
+calibration, skill against a naive baseline and the forecasts themselves — so
+you know how far to trust the model. Scoring needs no model call, so it stays
+current even when the budget is spent.
 
 ## Quick start
 
@@ -112,15 +247,14 @@ docker compose exec tradesys tradesys -issue-key -name "alice" -role owner
 Open <http://localhost:8080> and sign in with the key it printed.
 
 Out of the box you get the official sources, prices from the bundled yfinance
-sidecar, the scanner, Congress, the event study, web search through the
-bundled SearXNG node, and evidence-only research.
-Each key you add switches on more:
+sidecar, the scanner, Congress, the event study, web search through the bundled
+SearXNG node, and evidence-only research. Each key you add switches on more:
 
 | Add | To get |
 | --- | --- |
 | `SEC_USER_AGENT` — a contact string, no signup | SEC filings: 8-Ks, insider trades, 13Fs |
 | `TYPESAFE_API_KEY` | Jev classification: event type, importance, direction |
-| `LLM_BASE_URL` + `LLM_API_KEY` (DeepSeek, OpenAI, Ollama…) | briefs, explanations, AI research answers |
+| `LLM_BASE_URL` + `LLM_API_KEY` (DeepSeek, OpenAI, Ollama…) | briefs, explanations, outlooks, AI research answers |
 | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` | alerts on your phone |
 | `PUBLIC_HOSTNAME` + `COMPOSE_PROFILES=public` | HTTPS on your own domain via Caddy |
 
@@ -155,16 +289,16 @@ flowchart LR
 
 One Go binary with the React frontend embedded, one Postgres, and a small
 Python sidecar. Every external dependency sits behind an interface, and every
-feature degrades on its own when its dependency is missing — no keys, no
-model, no archive database, and the app still boots.
+feature degrades on its own when its dependency is missing — no keys, no model,
+no archive database, and the app still boots.
 
 ## Documentation
 
 | | |
 | --- | --- |
-| [Architecture](docs/architecture.md) | layout, seams, provenance, symbols, split news storage |
+| [Architecture](docs/architecture.md) | layout, seams, provenance, symbols, time, split news storage |
 | [The AI layer](docs/ai.md) | Jev vs. the text model, confidence gates, spend guards, calibration |
-| [Operations](docs/operations.md) | deploying, access keys, one-off commands, backups, the universe |
+| [Operations](docs/operations.md) | deploying, access keys, one-off commands, backups, the schedule |
 | [Algorithms](docs/algorithms.md) | the rule language and the backtester |
 | [API](docs/api.md) | REST endpoints and the error envelope |
 | [Research workflow](docs/research-workflow.md) | retrieval, ranking, citation rules and limits |
@@ -202,7 +336,7 @@ issues privately, as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE). Data from third-party sources remains subject to each
-source's own terms — notably SEC's
-[fair-access policy](https://www.sec.gov/os/accessing-edgar-data), which is
-why `SEC_USER_AGENT` must name a real contact.
+[MIT](LICENSE). Data from third-party sources remains subject to each source's
+own terms — notably SEC's
+[fair-access policy](https://www.sec.gov/os/accessing-edgar-data), which is why
+`SEC_USER_AGENT` must name a real contact.
