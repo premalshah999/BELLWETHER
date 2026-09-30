@@ -20,6 +20,7 @@ export const loaders = {
   "/research": () => import("../components/pages/ResearchPage"),
   "/scanner": () => import("../components/pages/ScannerPage"),
   "/sources": () => import("../components/pages/SourcesPage"),
+  "/smartmoney": () => import("../components/pages/SmartMoneyPage"),
 } as const;
 
 const started = new Set<string>();

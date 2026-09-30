@@ -405,7 +405,7 @@ export function PageHeader({
     <header className="shrink-0">
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 px-5 pb-4 pt-6 md:px-8 md:pt-7">
         <div className="min-w-0 flex-1">
-          <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.02em] text-text-primary max-md:hidden">{title}</h1>
+          {title && <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.02em] text-text-primary max-md:hidden">{title}</h1>}
           {subtitle && <p className="mt-1 text-ui text-text-secondary">{subtitle}</p>}
         </div>
         {actions && <div className="flex shrink-0 flex-wrap items-center gap-2 max-sm:w-full">{actions}</div>}

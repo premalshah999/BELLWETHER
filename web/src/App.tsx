@@ -32,6 +32,7 @@ const NewsPage = page("/news", "NewsPage");
 const ResearchPage = page("/research", "ResearchPage");
 const ScannerPage = page("/scanner", "ScannerPage");
 const SourcesPage = page("/sources", "SourcesPage");
+const SmartMoneyPage = page("/smartmoney", "SmartMoneyPage");
 
 /**
  * The shell.
@@ -202,6 +203,8 @@ export function App() {
                 path="/geopolitics"
                 element={<GeopoliticsPage onSelect={setSelected} />}
               />
+              <Route path="/smartmoney" element={<Navigate to="/smartmoney/overview" replace />} />
+              <Route path="/smartmoney/:tab" element={<SmartMoneyPage onSelect={setSelected} />} />
               <Route
                 path="/congress"
                 element={<CongressPage onSelect={setSelected} />}

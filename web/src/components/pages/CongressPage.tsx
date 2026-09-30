@@ -37,7 +37,7 @@ function formatDateOnly(iso: string | undefined): string {
   });
 }
 
-export function CongressPage({ onSelect }: { onSelect: (symbol: string) => void }) {
+export function CongressPage({ onSelect, embedded }: { onSelect: (symbol: string) => void; embedded?: boolean }) {
   const navigate = useNavigate();
   const [symbol, setSymbol] = useUrlState("symbol", "");
   const [draft, setDraft] = useState(symbol);
@@ -60,7 +60,7 @@ export function CongressPage({ onSelect }: { onSelect: (symbol: string) => void 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
-        title="Congress trades"
+        title={embedded ? "" : "Congress trades"}
         subtitle={
           isLoading
             ? "Loading House disclosures…"

@@ -239,6 +239,30 @@ func startAISchedules(
 		}
 	})
 
+	// Who's buying. Form 4s are due two business days after a trade and SEC
+	// publishes the daily index through the evening, so insider trades are
+	// read every half hour on weekdays (today and the previous three days,
+	// which also retries anything a transient error missed). 13Fs change
+	// quarterly, so the fund pass runs once a day.
+	if sm, err := newSmartMoneySyncer(cfg, store, log); err != nil {
+		log.Warn("smart money sync disabled", "err", err)
+	} else if sm != nil {
+		addWithin("insider trades sync", "CRON_TZ=America/New_York */30 6-23 * * 1-5", 25*time.Minute, func(runCtx context.Context) {
+			if n, err := sm.SyncInsiders(runCtx, 4); err != nil {
+				log.Warn("insider trades sync failed", "err", err)
+			} else if n > 0 {
+				log.Info("insider trades synced", "trades", n)
+			}
+		})
+		addWithin("fund holdings sync", "CRON_TZ=America/New_York 20 7 * * *", time.Hour, func(runCtx context.Context) {
+			if n, err := sm.SyncFunds(runCtx); err != nil {
+				log.Warn("fund holdings sync failed", "err", err)
+			} else if n > 0 {
+				log.Info("fund holdings synced", "filings", n)
+			}
+		})
+	}
+
 	// Outlook scoring: no LLM call, so it keeps the calibration record
 	// current even when the token budget is spent.
 	add("outlook scoring", "45 5 * * *", func(runCtx context.Context) {
