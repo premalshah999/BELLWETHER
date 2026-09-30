@@ -94,6 +94,14 @@ func startAISchedules(
 					log.Warn("calendar refresh failed", "err", err)
 				}
 			})
+
+		// Earnings history weekly: the last two quarters are enough to pick
+		// up new results, since the full history was backfilled once.
+		addWithin("earnings history", "0 5 * * 0", 3*time.Hour, func(runCtx context.Context) {
+			if _, err := refreshEarnings(runCtx, marketScanner.Client, store, marketScanner.Universe(), 4, log); err != nil {
+				log.Warn("earnings refresh failed", "err", err)
+			}
+		})
 	}
 
 	// Fundamentals overnight, when nothing else is competing for the sidecar

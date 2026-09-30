@@ -61,6 +61,8 @@ func main() {
 	// route for what is otherwise an unauthenticated write path.
 	syncCongress := flag.Bool("sync-congress", false,
 		"fetch new House Clerk PTR filings for the current year, then exit")
+	backfillEarnings := flag.Bool("backfill-earnings", false,
+		"store past earnings announcements for the whole universe, then exit")
 	refreshCal := flag.Bool("refresh-calendar", false,
 		"refresh the forward corporate calendar for the whole universe, then exit")
 	syncSmartMoney := flag.Int("sync-smartmoney", 0,
@@ -118,6 +120,13 @@ func main() {
 	if *syncCongress {
 		if err := runSyncCongress(); err != nil {
 			slog.Error("congress sync failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *backfillEarnings {
+		if err := runBackfillEarnings(); err != nil {
+			slog.Error("earnings backfill failed", "err", err)
 			os.Exit(1)
 		}
 		return

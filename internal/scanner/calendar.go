@@ -80,39 +80,9 @@ func (c *Client) Calendar(ctx context.Context, symbols []marketdata.Symbol) (Cal
 		return CalendarResult{}, fmt.Errorf("scanner: no symbols this provider can quote")
 	}
 
-	body, err := json.Marshal(map[string]any{"symbols": vendors})
-	if err != nil {
-		return CalendarResult{}, fmt.Errorf("scanner: encode calendar request: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		strings.TrimRight(c.BaseURL, "/")+"/calendar", bytes.NewReader(body))
-	if err != nil {
-		return CalendarResult{}, fmt.Errorf("scanner: build calendar request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := c.HTTP
-	if client == nil {
-		client = http.DefaultClient
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return CalendarResult{}, fmt.Errorf("scanner: %w", err)
-	}
-	defer func() {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
-		_ = resp.Body.Close()
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return CalendarResult{}, fmt.Errorf("scanner: calendar http %d: %s",
-			resp.StatusCode, strings.TrimSpace(string(snippet)))
-	}
-
 	var parsed calendarResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, calendarDecodeLimit)).Decode(&parsed); err != nil {
-		return CalendarResult{}, fmt.Errorf("scanner: decode calendar: %w", err)
+	if err := c.post(ctx, "/calendar", map[string]any{"symbols": vendors}, calendarDecodeLimit, &parsed); err != nil {
+		return CalendarResult{}, err
 	}
 
 	out := CalendarResult{Elapsed: time.Duration(parsed.Elapsed * float64(time.Second))}
@@ -154,4 +124,38 @@ func parseCalendarDate(s string) *time.Time {
 		return nil
 	}
 	return &t
+}
+
+// post sends one JSON request to the price sidecar and decodes the answer,
+// reading at most limit bytes of it.
+func (c *Client) post(ctx context.Context, path string, payload any, limit int64, out any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("scanner: encode %s request: %w", path, err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+path, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("scanner: build %s request: %w", path, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := c.HTTP
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("scanner: %w", err)
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusOK {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("scanner: %s http %d: %s", path, resp.StatusCode, strings.TrimSpace(string(snippet)))
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, limit)).Decode(out); err != nil {
+		return fmt.Errorf("scanner: decode %s: %w", path, err)
+	}
+	return nil
 }

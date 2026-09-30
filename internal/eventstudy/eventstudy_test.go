@@ -7,142 +7,112 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 )
 
-func day(y int, m time.Month, d int) time.Time {
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+// session is midnight New York on a January weekday, the way daily bars are
+// stamped; its close is 16:00 ET that day.
+func session(d int) time.Time {
+	return time.Date(2026, 1, d, 0, 0, 0, 0, marketdata.Market)
 }
 
 func bars(closes ...float64) []marketdata.Candle {
 	out := make([]marketdata.Candle, len(closes))
 	for i, c := range closes {
-		out[i] = marketdata.Candle{Time: day(2026, 1, i+1), Close: c}
+		out[i] = marketdata.Candle{Time: session(i + 1), Close: c}
 	}
 	return out
 }
 
-// TestBuildSampleMeasuresAbnormalReturn is the whole point of the package:
-// a symbol that outran its benchmark over the window has a positive
-// abnormal return even when the market as a whole was also up that week.
-func TestBuildSampleMeasuresAbnormalReturn(t *testing.T) {
-	// Symbol up 10% over 2 days (100 -> 110), benchmark up 2% (100 -> 102)
-	// over the same window -- an 8pp abnormal return.
-	candles := bars(100, 105, 110)
-	benchmark := bars(100, 101, 102)
-
-	s, ok := BuildSample("AAPL", day(2026, 1, 1), 2, candles, benchmark)
-	if !ok {
-		t.Fatal("BuildSample: want ok")
-	}
-	got := s.AbnormalReturnPct()
-	if got < 7.9 || got > 8.1 {
-		t.Errorf("AbnormalReturnPct = %.2f, want ~8.0", got)
+func near(t *testing.T, name string, got, want float64) {
+	t.Helper()
+	if got < want-0.01 || got > want+0.01 {
+		t.Errorf("%s = %.3f, want %.3f", name, got, want)
 	}
 }
 
-// TestBuildSampleUsesFirstBarOnOrAfter covers the anchor rule: an event
-// discovered mid-window (a weekend, a holiday, any gap in the trading
-// calendar) enters on the next bar that actually exists, not a bar that
-// predates the knowledge the study is supposed to be conditioned on.
-func TestBuildSampleUsesFirstBarOnOrAfter(t *testing.T) {
-	candles := bars(100, 100, 110, 120) // days 1..4
-	benchmark := bars(100, 100, 105, 110)
+// News at 10:00 ET on day 2 is known before day 2's close, so the reaction
+// runs from day 1's close to day 2's and the drift starts at day 2's close.
+func TestBuildSampleAnchorsOnTheSessionClose(t *testing.T) {
+	stock := bars(100, 110, 121, 121)
+	bench := bars(100, 101, 101, 101)
+	at := session(2).Add(10 * time.Hour)
 
-	// "at" falls between day 1 and day 2 -- no bar at that instant.
-	at := day(2026, 1, 1).Add(12 * time.Hour)
-	s, ok := BuildSample("AAPL", at, 1, candles, benchmark)
+	s, ok := BuildSample("AAPL", at, 1, stock, bench)
 	if !ok {
 		t.Fatal("BuildSample: want ok")
 	}
-	// Entry should be day 2's close (100), exit 1 day later is day 3 (110).
-	if s.EntryClose != 100 || s.ExitClose != 110 {
-		t.Errorf("Entry/Exit = %v/%v, want 100/110", s.EntryClose, s.ExitClose)
+	near(t, "reaction", s.ReactionPct(), 10-1)
+	near(t, "drift", s.AbnormalReturnPct(), 10)
+}
+
+// After the close the news is priced the next session, never the one that
+// had already ended.
+func TestNewsAfterTheCloseReactsTheNextSession(t *testing.T) {
+	stock := bars(100, 100, 90, 90)
+	bench := bars(100, 100, 100, 100)
+	at := session(2).Add(16*time.Hour + 5*time.Minute)
+
+	s, ok := BuildSample("AAPL", at, 1, stock, bench)
+	if !ok {
+		t.Fatal("BuildSample: want ok")
+	}
+	near(t, "reaction", s.ReactionPct(), -10)
+	if s.EntryClose != 90 || s.PreClose != 100 {
+		t.Errorf("pre/entry = %v/%v, want 100/90", s.PreClose, s.EntryClose)
 	}
 }
 
-// TestBuildSampleRejectsInsufficientHistory is the honest-gap case: most
-// events in the archive predate this app persisting daily bars for the
-// wider universe (see the package doc), and a study must exclude those
-// rather than pretend to measure a window it cannot see.
+// A window the series cannot see is excluded, never guessed.
 func TestBuildSampleRejectsInsufficientHistory(t *testing.T) {
-	candles := bars(100, 105) // only 2 bars
-	benchmark := bars(100, 101, 102, 103)
-
-	if _, ok := BuildSample("AAPL", day(2026, 1, 1), 5, candles, benchmark); ok {
-		t.Error("BuildSample: want !ok when the symbol's own series does not reach the exit bar")
+	at := session(1).Add(10 * time.Hour)
+	if _, ok := BuildSample("AAPL", at, 1, bars(100, 105, 110), bars(100, 101, 102)); ok {
+		t.Error("an event on the first bar has no close before it")
 	}
-
-	shortBench := bars(100, 101) // benchmark too short instead
-	if _, ok := BuildSample("AAPL", day(2026, 1, 1), 5, bars(100, 105, 110, 115, 120, 125, 130), shortBench); ok {
-		t.Error("BuildSample: want !ok when the benchmark series does not reach the exit bar")
+	at = session(2).Add(10 * time.Hour)
+	if _, ok := BuildSample("AAPL", at, 5, bars(100, 105, 110), bars(100, 101, 102, 103, 104, 105, 106, 107)); ok {
+		t.Error("want !ok when the stock's series does not reach the exit bar")
 	}
-}
-
-func TestBuildSampleRejectsNonPositiveHoldingDays(t *testing.T) {
-	if _, ok := BuildSample("AAPL", day(2026, 1, 1), 0, bars(100, 105), bars(100, 105)); ok {
-		t.Error("BuildSample: want !ok for a zero holding period")
+	if _, ok := BuildSample("AAPL", at, 5, bars(100, 105, 110, 115, 120, 125, 130, 135), bars(100, 101, 102)); ok {
+		t.Error("want !ok when the benchmark does not reach the exit bar")
+	}
+	if _, ok := BuildSample("AAPL", at, 0, bars(100, 105, 110), bars(100, 101, 102)); ok {
+		t.Error("want !ok for a zero-day window")
 	}
 }
 
-// TestRunAggregatesAcrossSamples exercises mean, median and hit rate
-// together against a hand-computed set of abnormal returns, so a
-// regression in any one statistic shows up even if the others still pass.
-func TestRunAggregatesAcrossSamples(t *testing.T) {
-	// Abnormal returns: +10, +10, -2, -2 -> mean 4, median 4, hit rate 50%.
-	samples := []Sample{
-		{Symbol: "A", EntryClose: 100, ExitClose: 110, BenchEntryClose: 100, BenchExitClose: 100},
-		{Symbol: "B", EntryClose: 100, ExitClose: 110, BenchEntryClose: 100, BenchExitClose: 100},
-		{Symbol: "C", EntryClose: 100, ExitClose: 98, BenchEntryClose: 100, BenchExitClose: 100},
-		{Symbol: "D", EntryClose: 100, ExitClose: 98, BenchEntryClose: 100, BenchExitClose: 100},
+func TestRunSplitsGroupsInTheOrderAsked(t *testing.T) {
+	mk := func(group string, entry, exit float64) Sample {
+		return Sample{Group: group, At: session(2), PreClose: 100, EntryClose: entry, ExitClose: exit,
+			BenchPreClose: 100, BenchEntryClose: 100, BenchExitClose: 100}
 	}
-	res := Run("EARNINGS", "GSPC.INDEX", 5, 4, samples)
+	res := Run("EARNINGS_SURPRISE", "S&P 500", 5, 4, []Sample{
+		mk("miss", 90, 88), mk("beat", 110, 111), mk("beat", 106, 107), mk("in line", 100, 100),
+	}, "beat", "in line", "miss")
 
-	if res.Samples != 4 {
-		t.Errorf("Samples = %d, want 4", res.Samples)
+	if len(res.Groups) != 3 || res.Groups[0].Label != "beat" || res.Groups[2].Label != "miss" {
+		t.Fatalf("groups = %+v", res.Groups)
 	}
-	if res.MeanAbnormalReturnPct != 4 {
-		t.Errorf("MeanAbnormalReturnPct = %.2f, want 4.00", res.MeanAbnormalReturnPct)
-	}
-	if res.MedianAbnormalReturnPct != 4 {
-		t.Errorf("MedianAbnormalReturnPct = %.2f, want 4.00", res.MedianAbnormalReturnPct)
-	}
-	if res.HitRate != 50 {
-		t.Errorf("HitRate = %.2f, want 50.00", res.HitRate)
+	near(t, "beat reaction", res.Groups[0].Reaction.Mean, 8)
+	near(t, "miss reaction", res.Groups[2].Reaction.Mean, -10)
+	near(t, "abs reaction", res.AbsReaction, (10+10+6+0)/4.0)
+	if res.Samples != 4 || res.Since == nil {
+		t.Errorf("samples=%d since=%v", res.Samples, res.Since)
 	}
 }
 
-// TestRunWarnsOnSmallSample and TestRunWarnsOnCoverageGap guard the two
-// honesty checks a result must carry rather than presenting a number with
-// no context: too few events to mean anything, and events silently dropped
-// for lacking price coverage.
-func TestRunWarnsOnSmallSample(t *testing.T) {
-	res := Run("RARE_EVENT", "GSPC.INDEX", 5, 3, []Sample{
-		{EntryClose: 100, ExitClose: 101, BenchEntryClose: 100, BenchExitClose: 100},
-		{EntryClose: 100, ExitClose: 101, BenchEntryClose: 100, BenchExitClose: 100},
-		{EntryClose: 100, ExitClose: 101, BenchEntryClose: 100, BenchExitClose: 100},
-	})
-	if len(res.Warnings) == 0 {
-		t.Error("want a small-sample warning for 3 events")
+func TestRunWarnsOnSmallSamplesAndCoverage(t *testing.T) {
+	s := Sample{At: session(2), PreClose: 100, EntryClose: 101, ExitClose: 102,
+		BenchPreClose: 100, BenchEntryClose: 100, BenchExitClose: 100}
+	res := Run("X", "S&P 500", 5, 10, []Sample{s})
+	if len(res.Warnings) != 2 {
+		t.Errorf("warnings = %v, want small-sample and coverage", res.Warnings)
+	}
+	if empty := Run("X", "S&P 500", 5, 3, nil); empty.Samples != 0 || len(empty.Warnings) != 1 {
+		t.Errorf("empty = %+v", empty)
 	}
 }
 
-func TestRunWarnsOnCoverageGap(t *testing.T) {
-	res := Run("EARNINGS", "GSPC.INDEX", 5, 500, make([]Sample, 25))
-	for i := range res.Samples { // give every sample a neutral, valid price
-		_ = i
-	}
-	found := false
-	for _, w := range res.Warnings {
-		if w != "" {
-			found = true
-		}
-	}
-	if !found || res.TotalEvents != 500 {
-		t.Errorf("want a coverage-gap warning when 500 events produced only 25 samples; got %+v", res.Warnings)
-	}
-}
-
-func TestRunEmptyIsHonest(t *testing.T) {
-	res := Run("NOTHING", "GSPC.INDEX", 5, 0, nil)
-	if res.Samples != 0 || len(res.Warnings) == 0 {
-		t.Errorf("want zero samples and a warning for an empty study, got %+v", res)
-	}
+func TestStatsT(t *testing.T) {
+	st := statsOf([]float64{1, 2, 3, 4, 5})
+	near(t, "mean", st.Mean, 3)
+	near(t, "t", st.T, 3/(1.5811/2.2361))
+	near(t, "hit rate", st.HitRate, 100)
 }

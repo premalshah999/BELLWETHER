@@ -279,6 +279,8 @@ func (s *Server) routes() {
 				r.Post("/{id}/close", s.handleClosePosition)
 			})
 			r.Get("/journal", s.handleJournal)
+			r.Post("/journal", s.handleRecordTrade)
+			r.Delete("/journal/{id}", s.handleDeleteTrade)
 
 			// Declared before the {symbol} routes so "search" and "sectors"
 			// are never parsed as a ticker.

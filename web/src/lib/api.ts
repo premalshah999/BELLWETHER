@@ -563,7 +563,30 @@ export interface EventStudyResult {
   stddev_pct: number;
   /** Percentage, already scaled to 0-100. Do not multiply again. */
   hit_rate: number;
+  reaction: StudyStats;
+  drift: StudyStats;
+  /** The typical size of the first-session move, whichever way it went. */
+  abs_reaction_pct: number;
+  groups?: StudyGroup[];
+  since?: string;
+  until?: string;
   warnings?: string[];
+}
+
+export interface StudyStats {
+  mean_pct: number;
+  median_pct: number;
+  stddev_pct: number;
+  hit_rate: number;
+  t: number;
+}
+
+export interface StudyGroup {
+  label: string;
+  samples: number;
+  reaction: StudyStats;
+  drift: StudyStats;
+  abs_reaction_pct: number;
 }
 
 export interface EventQuery {
@@ -1661,4 +1684,17 @@ export const api = {
   /** Closed trades with catalyst attribution -- see internal/storage/postgres/journal.go. */
   journal: (limit = 200) =>
     request<{ trades: JournalEntry[] }>(`/api/journal?limit=${limit}`),
+
+  recordTrade: (body: {
+    symbol: string;
+    quantity: number;
+    entry_price: number;
+    exit_price: number;
+    opened_at: string;
+    closed_at: string;
+    account?: string;
+    notes?: string;
+  }) => request<JournalEntry>("/api/journal", { method: "POST", body: JSON.stringify(body) }),
+
+  deleteTrade: (id: number) => request<void>(`/api/journal/${id}`, { method: "DELETE" }),
 };

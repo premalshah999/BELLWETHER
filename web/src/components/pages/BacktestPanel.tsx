@@ -1,7 +1,7 @@
 import { Select } from "../ui/controls";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Play } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   type Algorithm,
@@ -23,7 +23,7 @@ const DEFAULT_CONFIG: BacktestConfig = {
   stop_loss_pct: 5,
   take_profit_pct: 10,
   max_hold_bars: 20,
-  cost_bps: 10,
+  cost_bps: 3,
   // Full size by default, because it is the assumption every other
   // backtester makes and changing it silently would make results
   // incomparable with anything the operator has seen elsewhere. The sizing
@@ -43,7 +43,19 @@ const DEFAULT_CONFIG: BacktestConfig = {
  * instruments the rule actually beat holding on — a figure that does not
  * flatter the way an average does.
  */
-export function BacktestPanel({ draft }: { draft: Algorithm }) {
+export function BacktestPanel({
+  draft,
+  saved,
+  templates,
+  onPick,
+  onEdit,
+}: {
+  draft: Algorithm;
+  saved: Algorithm[];
+  templates: Algorithm[];
+  onPick: (a: Algorithm) => void;
+  onEdit: () => void;
+}) {
   const [bars, setBars] = useState<number>(500);
   const [cfg, setCfg] = useState<BacktestConfig>(DEFAULT_CONFIG);
   const [scope, setScope] = useState<number[]>([]);
@@ -52,6 +64,38 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
   const [selected, setSelected] = useState<string | null>(null);
 
   const lists = useQuery({ queryKey: ["watchlists"], queryFn: api.watchlists });
+
+  // A rule with nowhere to look cannot be tested. Arriving without one — a
+  // fresh visit, a reload — starts on the first saved rule, else a template.
+  const testable = (a: Algorithm) => (a.symbols?.length ?? 0) > 0 || (a.watchlist_ids?.length ?? 0) > 0;
+  useEffect(() => {
+    if (testable(draft)) return;
+    const first = saved[0] ?? templates[0];
+    if (first) onPick(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved.length, templates.length]);
+
+  const choices = [
+    ...(draft.id || !testable(draft) ? [] : [{ value: "draft", label: `${draft.name || "Unsaved rule"} (being edited)` }]),
+    ...saved.map((a) => ({ value: `saved:${a.id}`, label: a.name })),
+    ...templates.map((a, i) => ({ value: `template:${i}`, label: `${a.name} (template)` })),
+  ];
+  const chosen = draft.id
+    ? `saved:${draft.id}`
+    : (() => {
+        const i = templates.findIndex((t) => t.name === draft.name);
+        return i >= 0 && JSON.stringify(templates[i]?.all) === JSON.stringify(draft.all) ? `template:${i}` : "draft";
+      })();
+  const pick = (v: string) => {
+    const [kind, key] = v.split(":");
+    if (kind === "saved") {
+      const a = saved.find((x) => String(x.id) === key);
+      if (a) onPick(a);
+    } else if (kind === "template") {
+      const a = templates[Number(key)];
+      if (a) onPick(a);
+    }
+  };
   const vocab = useQuery({ queryKey: ["vocab"], queryFn: api.vocabulary });
 
   const run = useMutation({
@@ -89,6 +133,18 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Controls. */}
       <div className="shrink-0 border-b border-border-subtle px-4 py-3">
+        <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Select label="Rule" value={chosen} onChange={pick} options={choices} />
+          <span className="text-meta text-text-muted">
+            {draft.interval} bars ·{" "}
+            {(draft.symbols ?? []).length > 0
+              ? (draft.symbols ?? []).slice(0, 6).join(", ") + ((draft.symbols ?? []).length > 6 ? "…" : "")
+              : `${(draft.watchlist_ids ?? []).length} watchlist(s)`}
+          </span>
+          <button type="button" onClick={onEdit} className="text-meta text-brand hover:underline">
+            Edit rule
+          </button>
+        </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
           <Field label="window">
             <Segments
@@ -121,7 +177,7 @@ export function BacktestPanel({ draft }: { draft: Algorithm }) {
             unit="bps/side"
             value={cfg.cost_bps}
             onChange={(v) => setCfg({ ...cfg, cost_bps: v })}
-            title="Brokerage, STT, exchange fees and slippage together, charged on entry and again on exit."
+            title="Commission, exchange fees and slippage together, charged on entry and again on exit."
           />
 
           <Field label="side">

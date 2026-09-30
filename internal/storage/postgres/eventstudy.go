@@ -13,13 +13,16 @@ import (
 type EventSymbolPair struct {
 	Symbol       string
 	DiscoveredAt time.Time
+	// Direction is what the classifier judged the event meant for this
+	// company: positive, negative, neutral, or empty when unjudged.
+	Direction string
 }
 
 // EventTypeSymbolPairs returns every (symbol, discovered_at) pair recorded
 // against events of one type.
 func (d *DB) EventTypeSymbolPairs(ctx context.Context, eventType string) ([]EventSymbolPair, error) {
 	rows, err := d.db.QueryContext(ctx, `
-		SELECT ee.symbol, e.discovered_at
+		SELECT ee.symbol, e.discovered_at, COALESCE(ee.direction::text, '')
 		FROM event_entities ee
 		JOIN events e ON e.id = ee.event_id
 		WHERE e.event_type = $1`, eventType)
@@ -31,7 +34,7 @@ func (d *DB) EventTypeSymbolPairs(ctx context.Context, eventType string) ([]Even
 	var out []EventSymbolPair
 	for rows.Next() {
 		var p EventSymbolPair
-		if err := rows.Scan(&p.Symbol, &p.DiscoveredAt); err != nil {
+		if err := rows.Scan(&p.Symbol, &p.DiscoveredAt, &p.Direction); err != nil {
 			return nil, err
 		}
 		out = append(out, p)

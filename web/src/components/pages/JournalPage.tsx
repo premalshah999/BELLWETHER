@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
-import { BookOpen } from "lucide-react";
-import { useMemo } from "react";
-import { api, type JournalEntry } from "../../lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BookOpen, Plus, Trash2, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { api, ApiError, type JournalEntry } from "../../lib/api";
+import { inputClass, labelClass } from "./PositionsPage";
 import { Empty } from "../ui/Empty";
 import { PageHeader } from "../ui/controls";
 import { Panel } from "../ui/Panel";
@@ -37,6 +38,12 @@ export function JournalPage({ onSelect }: { onSelect: (symbol: string) => void }
     staleTime: 60_000,
   });
   const trades = useMemo(() => data?.trades ?? [], [data]);
+  const qc = useQueryClient();
+  const [adding, setAdding] = useState(false);
+  const del = useMutation({
+    mutationFn: (id: number) => api.deleteTrade(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["journal"] }),
+  });
 
   const stats = useMemo(() => {
     const byBucket: Record<Bucket, { n: number; wins: number; pnl: number }> = {
@@ -69,13 +76,27 @@ export function JournalPage({ onSelect }: { onSelect: (symbol: string) => void }
             ? "Closed trades, with whatever the event archive can attribute to each."
             : `${trades.length} closed ${trades.length === 1 ? "trade" : "trades"}, each with the events that surrounded it.`
         }
+        actions={
+          <button type="button" onClick={() => setAdding(!adding)} className="action-primary">
+            {adding ? <X size={15} /> : <Plus size={15} />} {adding ? "Cancel" : "Record a trade"}
+          </button>
+        }
       />
+
+      {adding && (
+        <RecordTradeForm
+          onDone={() => {
+            setAdding(false);
+            qc.invalidateQueries({ queryKey: ["journal"] });
+          }}
+        />
+      )}
 
       {trades.length === 0 && !isLoading ? (
         <Empty
           icon={BookOpen}
           title="No closed trades yet."
-          hint="Close a position on the Positions page and it will appear here, with whatever the event archive can attribute to it."
+          hint="Record a trade you closed, or close a position on the Positions page. Each one is set against the news that came before its entry."
         />
       ) : (
         <>
@@ -143,8 +164,10 @@ export function JournalPage({ onSelect }: { onSelect: (symbol: string) => void }
                         {t.opened_at} → {t.closed_at}
                       </span>
                       <span className="font-mono text-meta text-text-muted">
-                        {t.quantity.toLocaleString()} @ {money(t.entry_price, t.symbol)} → {money(t.exit_price, t.symbol)}
+                        {t.quantity.toLocaleString()} @ ${t.entry_price.toFixed(2)} → ${t.exit_price.toFixed(2)} (
+                        {(((t.exit_price - t.entry_price) / t.entry_price) * 100).toFixed(1)}%)
                       </span>
+                      {t.account && <Pill tone="muted">{t.account}</Pill>}
                       <span
                         className={
                           "ml-auto font-mono text-ui " +
@@ -153,6 +176,15 @@ export function JournalPage({ onSelect }: { onSelect: (symbol: string) => void }
                       >
                         {money(t.realized_pnl, t.symbol)}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => del.mutate(t.id)}
+                        title="Delete this trade"
+                        aria-label={`Delete the ${t.symbol} trade`}
+                        className="text-text-muted hover:text-semantic-down"
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                     {t.notes && (
                       <p className="mt-1 text-meta text-text-muted">{t.notes}</p>
@@ -238,5 +270,62 @@ function BucketMetric({
       </p>
       <p className="mt-1.5 max-w-[36ch] text-meta leading-relaxed text-text-muted">{hint}</p>
     </div>
+  );
+}
+
+function RecordTradeForm({ onDone }: { onDone: () => void }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [f, setF] = useState({ symbol: "", quantity: "", entry: "", exit: "", opened: "", closed: today, account: "", notes: "" });
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const save = useMutation({
+    mutationFn: () =>
+      api.recordTrade({
+        symbol: f.symbol.trim().toUpperCase(),
+        quantity: Number(f.quantity),
+        entry_price: Number(f.entry),
+        exit_price: Number(f.exit),
+        opened_at: f.opened,
+        closed_at: f.closed,
+        account: f.account.trim() || undefined,
+        notes: f.notes.trim() || undefined,
+      }),
+    onSuccess: onDone,
+    onError: (e) => setError(e instanceof ApiError ? e.message : "Could not record the trade."),
+  });
+  const field = (k: keyof typeof f, label: string, width: string, extra: Record<string, string> = {}) => (
+    <div className={width}>
+      <label className={labelClass}>{label}</label>
+      <input value={f[k]} onChange={set(k)} className={inputClass} {...extra} />
+    </div>
+  );
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        setError(null);
+        if (!f.symbol.trim() || !f.quantity || !f.entry || !f.exit || !f.opened || !f.closed) {
+          setError("Symbol, quantity, both prices and both dates are required.");
+          return;
+        }
+        save.mutate();
+      }}
+      className="border-b border-border-subtle bg-bg-base px-4 py-3"
+    >
+      <div className="flex flex-wrap items-end gap-3">
+        {field("symbol", "symbol", "w-28", { placeholder: "AAPL", autoFocus: "true" })}
+        {field("quantity", "quantity", "w-24", { inputMode: "decimal", placeholder: "100" })}
+        {field("entry", "entry price", "w-28", { inputMode: "decimal", placeholder: "182.40" })}
+        {field("exit", "exit price", "w-28", { inputMode: "decimal", placeholder: "195.10" })}
+        {field("opened", "opened", "w-36", { type: "date" })}
+        {field("closed", "closed", "w-36", { type: "date" })}
+        {field("account", "account", "w-32", { placeholder: "optional" })}
+        {field("notes", "why you took it", "min-w-[200px] flex-1", { placeholder: "optional" })}
+        <button type="submit" disabled={save.isPending} className="action-primary">
+          {save.isPending ? "Saving…" : "Record"}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-meta text-semantic-down">{error}</p>}
+    </form>
   );
 }

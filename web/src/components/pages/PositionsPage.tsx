@@ -243,9 +243,9 @@ function Row({
   );
 }
 
-const inputClass =
+export const inputClass =
   "w-full border border-border-subtle bg-bg-panel px-2 py-1 text-meta outline-none focus:border-brand";
-const labelClass = "block font-mono text-micro text-text-muted mb-1";
+export const labelClass = "block font-mono text-micro text-text-muted mb-1";
 
 function AddPositionForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const [symbol, setSymbol] = useState("");

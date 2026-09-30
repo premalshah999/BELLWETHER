@@ -14,12 +14,14 @@ import { Divider } from "../ui/Divider";
 import { Empty } from "../ui/Empty";
 import { Panel } from "../ui/Panel";
 import { PageHeader, Segmented, Select as UiSelect } from "../ui/controls";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { BacktestPanel } from "./BacktestPanel";
 import { Pill } from "../ui/Pill";
 
 const INTERVALS: Interval[] = ["5m", "15m", "1h", "1d", "1wk"];
 const OPERATORS: Operator[] = ["<", "<=", ">", ">=", "crosses_above", "crosses_below"];
+
+const WORKING_DRAFT = "algorithm.working";
 
 const BLANK: Algorithm = {
   name: "",
@@ -33,7 +35,25 @@ const BLANK: Algorithm = {
 
 export function AlgorithmsPage() {
   const qc = useQueryClient();
-  const [draft, setDraft] = useState<Algorithm>(BLANK);
+  // The rule being worked on survives a move between building and testing,
+  // and a reload, for the rest of the browser session.
+  const [draft, setDraftState] = useState<Algorithm>(() => {
+    try {
+      const saved = sessionStorage.getItem(WORKING_DRAFT);
+      return saved ? (JSON.parse(saved) as Algorithm) : BLANK;
+    } catch {
+      return BLANK;
+    }
+  });
+  const setDraft = (a: Algorithm) => {
+    setDraftState(a);
+    try {
+      sessionStorage.setItem(WORKING_DRAFT, JSON.stringify(a));
+    } catch {
+      // Storage can be unavailable; the draft still lives for this view.
+    }
+  };
+  const navigate = useNavigate();
   const [raw, setRaw] = useState(false);
   // The mode is the route, so a backtest can be linked and reloaded. Both
   // modes are rendered by this one component, which is what lets the rule
@@ -94,11 +114,12 @@ export function AlgorithmsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["algorithms"] }),
   });
 
+  // Saving a rule that already exists updates it rather than adding a copy.
   const save = useMutation({
-    mutationFn: (a: Algorithm) => api.createAlgorithm(a),
-    onSuccess: () => {
+    mutationFn: (a: Algorithm) => (a.id ? api.updateAlgorithm(a.id, a) : api.createAlgorithm(a)),
+    onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["algorithms"] });
-      setDraft(BLANK);
+      setDraft(saved);
     },
   });
 
@@ -121,7 +142,13 @@ export function AlgorithmsPage() {
             </>
           }
         />
-        <BacktestPanel draft={draft} />
+        <BacktestPanel
+          draft={draft}
+          saved={existing?.algorithms ?? []}
+          templates={(templates?.templates ?? []).map((t) => ({ ...BLANK, ...t.algorithm, name: t.title }))}
+          onPick={setDraft}
+          onEdit={() => navigate("/algorithms/build")}
+        />
       </div>
     );
   }
@@ -266,8 +293,16 @@ export function AlgorithmsPage() {
 
             <div className="flex flex-wrap items-center gap-2 px-4 py-4">
               <button type="button" onClick={() => save.mutate(draft)} disabled={!draft.name || save.isPending} className="action-primary">
-                {save.isPending ? "Saving…" : "Save algorithm"}
+                {save.isPending ? "Saving…" : draft.id ? "Save changes" : "Save algorithm"}
               </button>
+              <button type="button" onClick={() => navigate("/algorithms/backtest")} className="action-secondary">
+                Backtest this rule
+              </button>
+              {draft.id && (
+                <button type="button" onClick={() => setDraft(BLANK)} className="action-secondary">
+                  New rule
+                </button>
+              )}
               <button type="button" onClick={() => validate.mutate(draft)} disabled={validate.isPending} className="action-secondary">
                 {validate.isPending ? "Checking…" : "Check it against today’s data"}
               </button>

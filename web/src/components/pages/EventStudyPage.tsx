@@ -39,10 +39,10 @@ export function EventStudyPage() {
     [typesData],
   );
 
-  // Earnings first: the type with the clearest, best-sampled answer.
+  // Earnings history first: years of cases, so the clearest answer.
   useEffect(() => {
     if (type || !types.length) return;
-    setType((types.find((t) => t.event_type === "EARNINGS") ?? types[0]!).event_type);
+    setType((types.find((t) => t.event_type === "EARNINGS_SURPRISE") ?? types.find((t) => t.event_type === "EARNINGS") ?? types[0]!).event_type);
   }, [type, types, setType]);
 
   // Every holding period at once: the shape across horizons says more than
@@ -74,7 +74,7 @@ export function EventStudyPage() {
           value={type}
           onChange={setType}
           className="min-w-56"
-          options={types.map((x) => ({ value: x.event_type, label: `${typeLabel(x.event_type)} (${x.count.toLocaleString()})` }))}
+          options={types.map((x) => ({ value: x.event_type, label: `${kindLabel(x.event_type)} (${x.count.toLocaleString()})` }))}
         />
         <Segmented
           label="Holding period"
@@ -101,12 +101,14 @@ export function EventStudyPage() {
           <div className="mx-auto flex max-w-4xl flex-col gap-8 px-5 py-8 md:px-6">
             <section>
               <p className="font-reading text-[24px] font-semibold leading-snug text-text-primary md:text-[27px]">
-                After {phrase}, the stock{" "}
-                {result.mean_abnormal_return_pct >= 0 ? "beat" : "trailed"} the market by{" "}
+                When {phrase} lands, the stock typically moves{" "}
+                <span className="text-brand">{result.abs_reaction_pct.toFixed(1)}%</span> against the market in the first
+                session. Buying once it was known then {result.mean_abnormal_return_pct >= 0 ? "beat" : "trailed"} the
+                market by{" "}
                 <span className={result.mean_abnormal_return_pct >= 0 ? "text-semantic-up" : "text-semantic-down"}>
                   {Math.abs(result.mean_abnormal_return_pct).toFixed(2)}%
                 </span>{" "}
-                on average over the next {result.holding_days} trading {result.holding_days === 1 ? "day" : "days"}.
+                over the next {result.holding_days} trading {result.holding_days === 1 ? "day" : "days"}.
               </p>
               <p
                 className={
@@ -115,22 +117,65 @@ export function EventStudyPage() {
                 }
               >
                 {real
-                  ? "That is larger than chance would plausibly produce."
-                  : "That is within what chance alone would produce, so it is not an edge."}
+                  ? "That drift is larger than chance would plausibly produce."
+                  : "That drift is within what chance alone would produce, so it is not an edge on its own."}
                 <span className="font-normal text-text-muted">t = {t.toFixed(1)}</span>
               </p>
             </section>
 
-            <dl className="grid grid-cols-2 gap-x-8 gap-y-4 border-y border-border-subtle py-5 sm:grid-cols-4">
-              <Stat term="Typical case" value={`${signedPct(result.median_abnormal_return_pct)}`} note="The median, less swayed by outliers" />
-              <Stat term="Beat the market" value={`${result.hit_rate.toFixed(0)}%`} note="Share of cases above zero" />
+            <dl className="grid grid-cols-2 gap-x-8 gap-y-4 border-y border-border-subtle py-5 sm:grid-cols-5">
+              <Stat term="Reaction" value={signedPct(result.reaction?.mean_pct ?? 0)} note="Close before → first close after, vs the market" />
+              <Stat term="Drift, typical" value={signedPct(result.median_abnormal_return_pct)} note={`Median over ${result.holding_days} days after`} />
+              <Stat term="Beat the market" value={`${result.hit_rate.toFixed(0)}%`} note="Share of drifts above zero" />
               <Stat term="Spread" value={`±${result.stddev_pct.toFixed(1)}%`} note="One standard deviation" />
               <Stat
                 term="Cases measured"
                 value={result.samples.toLocaleString()}
-                note={`Of ${result.total_events.toLocaleString()} in the archive`}
+                note={`Of ${result.total_events.toLocaleString()}${result.since ? `, ${result.since.slice(0, 4)}–${result.until?.slice(0, 4)}` : ""}`}
               />
             </dl>
+
+            {result.groups && result.groups.length > 1 && (
+              <section>
+                <h2 className="text-emphasis font-semibold text-text-primary">{groupHeading(type)}</h2>
+                <p className="mt-1 text-meta text-text-muted">
+                  The reaction is what the news did to the price. The drift is what buying after it would have made.
+                  A t above 2 is unlikely to be chance.
+                </p>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-[560px] border-collapse text-ui">
+                    <thead>
+                      <tr className="border-b border-border-subtle text-left text-meta text-text-muted">
+                        <th className="py-2 pr-3 font-medium">Group</th>
+                        <th className="py-2 pr-3 text-right font-medium">Cases</th>
+                        <th className="py-2 pr-3 text-right font-medium">Reaction</th>
+                        <th className="py-2 pr-3 text-right font-medium">Drift ({result.holding_days}d)</th>
+                        <th className="py-2 pr-3 text-right font-medium">Drift beat mkt</th>
+                        <th className="py-2 text-right font-medium">Drift t</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-subtle font-mono tabular-nums">
+                      {result.groups.map((g) => (
+                        <tr key={g.label}>
+                          <td className="py-2 pr-3 font-sans text-text-primary">{g.label}</td>
+                          <td className="py-2 pr-3 text-right text-text-secondary">{g.samples.toLocaleString()}</td>
+                          <td className={"py-2 pr-3 text-right " + tone(g.reaction.mean_pct, Math.abs(g.reaction.t) >= 2)}>
+                            {signedPct(g.reaction.mean_pct)}
+                          </td>
+                          <td className={"py-2 pr-3 text-right " + tone(g.drift.mean_pct, Math.abs(g.drift.t) >= 2)}>
+                            {signedPct(g.drift.mean_pct)}
+                          </td>
+                          <td className="py-2 pr-3 text-right text-text-secondary">{g.drift.hit_rate.toFixed(0)}%</td>
+                          <td className={"py-2 text-right " + (Math.abs(g.drift.t) >= 2 ? "text-text-primary" : "text-text-muted")}>
+                            {g.drift.t.toFixed(1)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
 
             <section>
               <h2 className="text-emphasis font-semibold text-text-primary">Effect by holding period</h2>
@@ -154,8 +199,10 @@ export function EventStudyPage() {
             )}
 
             <p className="max-w-3xl text-meta leading-relaxed text-text-muted">
-              Each case is timed from when Bellwether discovered the event, never from when it happened or was published, because
-              that is the only moment a decision could have acted on it. Returns are measured against {result.benchmark}.
+              {type === "EARNINGS_SURPRISE"
+                ? "Each case is timed from the official announcement, so a report after the close reacts the next session. "
+                : "Each case is timed from when Bellwether discovered the event, never from when it happened or was published, because that is the only moment a decision could have acted on it. "}
+              Returns are measured against {result.benchmark}.
             </p>
           </div>
         )}
@@ -164,10 +211,24 @@ export function EventStudyPage() {
   );
 }
 
+function kindLabel(type: string) {
+  return type === "EARNINGS_SURPRISE" ? "Earnings vs. estimates, 5-year history" : typeLabel(type);
+}
+
+function groupHeading(type: string) {
+  return type === "EARNINGS_SURPRISE" ? "By size of the surprise" : "By how the event was read for the company";
+}
+
+function tone(v: number, significant: boolean) {
+  if (!significant) return "text-text-secondary";
+  return v >= 0 ? "text-semantic-up" : "text-semantic-down";
+}
+
 /** "an earnings report", "a buyback announcement", "a merger". */
 function eventPhrase(type: string): string {
   const known: Record<string, string> = {
     EARNINGS: "an earnings report",
+    EARNINGS_SURPRISE: "an earnings report",
     GUIDANCE: "a guidance change",
     BUYBACK: "a buyback announcement",
     DIVIDEND: "a dividend announcement",

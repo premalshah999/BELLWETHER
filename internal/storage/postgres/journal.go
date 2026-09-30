@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -98,4 +100,63 @@ ORDER BY t.closed_at DESC, t.id DESC`, limit, catalystLookbackDays)
 		out = append(out, tc)
 	}
 	return out, rows.Err()
+}
+
+// RecordTrade stores a closed trade entered by hand: one bought and sold
+// outside this app, or before it existed.
+func (d *DB) RecordTrade(ctx context.Context, t Trade) (Trade, error) {
+	t.RealizedPnL = (t.ExitPrice - t.EntryPrice) * t.Quantity
+	err := d.db.QueryRowContext(ctx, `
+		INSERT INTO trades (symbol, quantity, entry_price, exit_price, opened_at, closed_at, realized_pnl, account, notes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, created_at`,
+		t.Symbol, t.Quantity, t.EntryPrice, t.ExitPrice, t.OpenedAt, t.ClosedAt, t.RealizedPnL, t.Account, t.Notes,
+	).Scan(&t.ID, &t.CreatedAt)
+	if err != nil {
+		return Trade{}, fmt.Errorf("record trade: %w", err)
+	}
+	return t, nil
+}
+
+// DeleteTrade removes one closed trade from the journal.
+func (d *DB) DeleteTrade(ctx context.Context, id int64) error {
+	res, err := d.db.ExecContext(ctx, `DELETE FROM trades WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete trade: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// LatestCatalyst finds the catalyst for one entry, the same way
+// TradesWithCatalysts does, on this database alone. The journal asks the news
+// archive with it for trades whose catalyst has aged off the primary.
+func (d *DB) LatestCatalyst(ctx context.Context, symbol string, openedAt time.Time) (*TradeCatalyst, error) {
+	var (
+		tc   TradeCatalyst
+		id   int64
+		at   time.Time
+		days int
+	)
+	err := d.db.QueryRowContext(ctx, `
+SELECT ev.id, ev.event_type, ev.headline, ev.discovered_at, ev.official, ev.best_trust,
+       ($2::date - ev.discovered_at::date)
+FROM event_entities ee
+JOIN events ev ON ev.id = ee.event_id
+WHERE ee.symbol = $1
+  AND ev.discovered_at < ($2::date + INTERVAL '1 day')
+  AND ev.discovered_at >= ($2::date - ($3 * INTERVAL '1 day'))
+ORDER BY ev.discovered_at DESC
+LIMIT 1`, symbol, openedAt, catalystLookbackDays).Scan(&id, &tc.EventType, &tc.Headline, &at, &tc.Official, &tc.BestTrust, &days)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("latest catalyst: %w", err)
+	}
+	d2 := float64(days)
+	tc.EventID, tc.EventDiscoveredAt, tc.DaysBeforeEntry = &id, &at, &d2
+	return &tc, nil
 }

@@ -675,6 +675,58 @@ def _calendar_one(symbol: str) -> dict | None:
     return out
 
 
+def _earnings_one(symbol: str, limit: int) -> list[dict]:
+    """Past earnings announcements for one symbol, newest first.
+
+    Each carries the announcement timestamp (the moment the result became
+    public, which is what any study of the reaction must anchor on), the
+    consensus estimate, the reported figure and the surprise. Scheduled dates
+    with no reported figure yet are dropped: they have not happened.
+    """
+    import yfinance as yf
+
+    df = yf.Ticker(symbol).get_earnings_dates(limit=limit)
+    if df is None or df.empty:
+        return []
+    out = []
+    for at, row in df.iterrows():
+        def num(key):
+            v = row.get(key)
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                return None
+            return None if math.isnan(f) or math.isinf(f) else f
+        actual = num("Reported EPS")
+        if actual is None:
+            continue
+        out.append({
+            "announced_at": at.isoformat(),
+            "eps_estimate": num("EPS Estimate"),
+            "eps_actual": actual,
+            "surprise_pct": num("Surprise(%)"),
+        })
+    return out
+
+
+def earnings(symbols: list[str], limit: int = 28) -> dict:
+    """Earnings history for a universe. Sequential, like calendar()."""
+    out: dict[str, list] = {}
+    failed: list[str] = []
+    for sym in symbols:
+        try:
+            rows = _earnings_one(sym, limit)
+        except Exception as exc:
+            log.debug("earnings failed for %s: %s", sym, exc)
+            failed.append(sym)
+            continue
+        if rows:
+            out[sym] = rows
+    _release_memory()
+    return {"earnings": out, "failed": failed,
+            "as_of": datetime.now(timezone.utc).isoformat()}
+
+
 def calendar(symbols: list[str]) -> dict:
     """Upcoming scheduled events for a universe.
 
@@ -857,7 +909,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/fundamentals":
             self._do_fundamentals()
             return
-        if parsed.path not in ("/scan", "/calendar"):
+        if parsed.path not in ("/scan", "/calendar", "/earnings"):
             self._send(404, {"error": "no such endpoint"})
             return
 
@@ -884,6 +936,20 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         started = time.time()
+
+        if parsed.path == "/earnings":
+            try:
+                result = earnings(symbols, int(payload.get("limit") or 28))
+            except Exception as exc:
+                log.warning("earnings failed: %s", exc)
+                self._send(502, {"error": f"{type(exc).__name__}: {exc}"[:300]})
+                return
+            result["elapsed_seconds"] = round(time.time() - started, 2)
+            log.info("earnings for %d symbols in %.1fs (%d with history, %d failed)",
+                     len(symbols), result["elapsed_seconds"],
+                     len(result["earnings"]), len(result["failed"]))
+            self._send(200, result)
+            return
 
         if parsed.path == "/calendar":
             try:

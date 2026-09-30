@@ -111,11 +111,7 @@ func (s *Server) runBacktest(w http.ResponseWriter, r *http.Request, a *algo.Alg
 	}
 
 	if err := a.Validate(); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"error":   "invalid_algorithm",
-			"message": "That rule is not valid, so there is nothing to test.",
-			"detail":  err.Error(),
-		})
+		writeError(w, http.StatusBadRequest, "invalid_algorithm", "That rule is not valid, so there is nothing to test: "+err.Error()+".")
 		return
 	}
 
@@ -134,11 +130,7 @@ func (s *Server) runBacktest(w http.ResponseWriter, r *http.Request, a *algo.Alg
 			ex.Name = a.Name + " exit"
 		}
 		if err := ex.Validate(); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error":   "invalid_exit_rule",
-				"message": "That exit rule is not valid.",
-				"detail":  err.Error(),
-			})
+			writeError(w, http.StatusBadRequest, "invalid_exit_rule", "That exit rule is not valid: "+err.Error()+".")
 			return
 		}
 	}
