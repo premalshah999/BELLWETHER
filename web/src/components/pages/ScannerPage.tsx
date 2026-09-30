@@ -204,7 +204,7 @@ function Signals({ onSelect }: { onSelect: (symbol: string) => void }) {
                   className="group cursor-pointer border-t border-border-subtle transition-colors hover:bg-bg-panel-hover"
                 >
                   <td className="px-6 py-3">
-                    <button type="button" onClick={() => open(f.symbol)} className="font-semibold text-text-primary group-hover:text-brand">
+                    <button type="button" onClick={() => open(f.symbol)} className="inline-flex h-6 items-center font-semibold text-text-primary group-hover:text-brand">
                       {f.symbol}
                     </button>
                   </td>

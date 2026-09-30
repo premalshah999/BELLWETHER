@@ -14,7 +14,7 @@ actually moved prices before.
 [![Postgres](https://img.shields.io/badge/Postgres-17-4169E1?logo=postgresql&logoColor=white)](docker-compose.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-![The news feed: SEC filings, White House actions and market news, each labelled with its reporting source](docs/images/news.png)
+![The news feed with the evidence drawer open: when the story was published, when Bellwether found it, and every source behind it](docs/images/news-drawer.png)
 
 </div>
 

@@ -173,7 +173,7 @@ export function OverviewPage({ onSelect }: { onSelect: (symbol: string) => void 
                     .map((f) => (
                       <tr key={f.id} onClick={() => toChart(f.symbol)} className="cursor-pointer transition-colors hover:bg-bg-panel-hover">
                         <td className="px-5 py-2.5">
-                          <button type="button" onClick={() => toChart(f.symbol)} className="font-semibold text-text-primary">
+                          <button type="button" onClick={() => toChart(f.symbol)} className="inline-flex h-6 items-center font-semibold text-text-primary">
                             {f.symbol}
                           </button>
                         </td>
