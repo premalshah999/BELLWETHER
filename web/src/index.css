@@ -38,6 +38,7 @@
   --down-soft: rgba(255, 107, 122, 0.12);
   --info: #6cb4ff;
   --info-soft: rgba(108, 180, 255, 0.12);
+  --bench: #bf8430;
   --glow: rgba(124, 131, 255, 0.09);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 24px 48px -12px rgba(0, 0, 0, 0.7);
   --scrim: rgba(3, 4, 6, 0.6);
@@ -68,6 +69,7 @@
   --down-soft: rgba(229, 53, 75, 0.09);
   --info: #2f6fd6;
   --info-soft: rgba(47, 111, 214, 0.09);
+  --bench: #b7791f;
   --glow: rgba(91, 97, 240, 0.06);
   --shadow: 0 1px 2px rgba(10, 11, 16, 0.06), 0 16px 40px -12px rgba(10, 11, 16, 0.18);
   --scrim: rgba(10, 11, 16, 0.3);
@@ -97,6 +99,7 @@
     --down-soft: rgba(229, 53, 75, 0.09);
     --info: #2f6fd6;
     --info-soft: rgba(47, 111, 214, 0.09);
+  --bench: #b7791f;
     --glow: rgba(91, 97, 240, 0.06);
     --shadow: 0 1px 2px rgba(10, 11, 16, 0.06), 0 16px 40px -12px rgba(10, 11, 16, 0.18);
     --scrim: rgba(10, 11, 16, 0.3);

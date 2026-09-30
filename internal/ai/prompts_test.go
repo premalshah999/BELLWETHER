@@ -57,17 +57,17 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 			}},
 		},
 		PromptResearchFollowup: map[string]any{
-			"Question": "what about their debt?", "Symbols": "SUZLON",
-			"History": []map[string]string{{"Question": "How is Suzlon doing?", "Answer": "It won orders."}},
+			"Question": "what about their debt?", "Symbols": "GEV",
+			"History": []map[string]string{{"Question": "How is GE Vernova doing?", "Answer": "It won orders."}},
 		},
 		PromptSymbolDebrief: map[string]any{
-			"Symbol": "SUZLON", "Company": "Suzlon Energy Limited",
+			"Symbol": "GEV", "Company": "GE Vernova Inc.",
 			"Period": "last 30 days", "Count": 12, "Official": 9,
-			"Industry": "Capital Goods",
+			"Industry": "Industrials",
 			"Events": []map[string]any{{
 				"ID": 4, "When": "25 Aug 14:32", "Type": "ORDER_WIN", "Official": true,
-				"Importance": 7, "Headline": "Suzlon bags 250 MW order",
-				"Summary": "from Torrent Green Energy", "Facts": "PURPOSE=ORDER",
+				"Importance": 7, "Headline": "GE Vernova wins 250 MW turbine order",
+				"Summary": "from NextEra Energy", "Facts": "PURPOSE=ORDER",
 			}},
 		},
 		PromptNewsDigest: map[string]any{
@@ -81,6 +81,16 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 			"Sources": []map[string]any{
 				{"Index": 1, "Title": "T", "URL": "https://example.com", "Snippet": "S"},
 			},
+		},
+		PromptTradeAgent: map[string]any{
+			"At": "Wed 30 Sep 10:15", "SessionOpen": true, "MinutesToClose": 345, "Intraday": false,
+			"Equity": "10000.00", "Cash": "4000.00", "BuyingPower": "4000.00", "DayChangePct": 0.4, "DrawdownPct": 1.2,
+			"MaxPositions": 5, "MaxPositionPct": 25.0, "StopLossPct": 4.0, "TakeProfitPct": 8.0,
+			"Holdings": []map[string]any{{"Symbol": "AAPL", "Qty": 10, "AvgCost": 300.0, "Price": 310.0, "UnrealizedPct": 3.3, "HeldDays": 2}},
+			"Candidates": []map[string]any{{"Symbol": "NVDA", "Name": "NVIDIA", "Sector": "Information Technology", "Price": 180.0,
+				"ChangePct": 1.2, "Change5dPct": 3.4, "RSI14": 58.0, "VolumeRatio": 1.3, "FromSMA20Pct": 2.1, "Signal": "volume spike",
+				"Headlines": []string{"Nvidia unveils a new chip (Reuters, 2h ago)"}}},
+			"Instructions": "Prefer large caps.",
 		},
 		PromptOutlook: map[string]any{
 			"Symbol": "AAPL", "HorizonDays": 10, "Price": "310.34", "Volatility": "1.4% daily",
@@ -118,7 +128,7 @@ func TestAllPromptFilesAreCovered(t *testing.T) {
 		PromptNewsDigest: true, PromptExplainMove: true, PromptOutlook: true,
 		PromptEventClassify: true, PromptDeepResearch: true,
 		PromptResearchFollowup: true, PromptSymbolDebrief: true,
-		PromptEventBrief: true,
+		PromptEventBrief: true, PromptTradeAgent: true,
 	}
 	for name := range templates {
 		if !covered[name] {

@@ -16,6 +16,7 @@ export const loaders = {
   "/geopolitics": () => import("../components/pages/GeopoliticsPage"),
   "/journal": () => import("../components/pages/JournalPage"),
   "/positions": () => import("../components/pages/PositionsPage"),
+  "/paper": () => import("../components/pages/PaperPage"),
   "/news": () => import("../components/pages/NewsPage"),
   "/research": () => import("../components/pages/ResearchPage"),
   "/scanner": () => import("../components/pages/ScannerPage"),

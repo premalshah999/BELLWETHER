@@ -98,6 +98,10 @@ type Config struct {
 	// OpenFIGIKey is optional: it raises the rate at which 13F holdings'
 	// CUSIPs become tickers about fortyfold.
 	OpenFIGIKey string
+	// PaperWebhookAllow lists host:port pairs a webhook trading agent may
+	// reach over plain HTTP or a private address, such as a strategy running
+	// beside the app.
+	PaperWebhookAllow []string
 
 	LogLevel slog.Level
 }
@@ -146,10 +150,11 @@ func Load(envFile string) (*Config, error) {
 		// seconds is a compromise: fast enough that a price feels live,
 		// slow enough to stay courteous to an upstream that is not a paid
 		// market data feed. A licensed tick source makes this irrelevant.
-		StreamInterval: envDuration("STREAM_INTERVAL", 5*time.Second),
-		SessionSecret:  envStr("SESSION_SECRET", ""),
-		SECUserAgent:   envStr("SEC_USER_AGENT", ""),
-		OpenFIGIKey:    envStr("OPENFIGI_API_KEY", ""),
+		StreamInterval:    envDuration("STREAM_INTERVAL", 5*time.Second),
+		SessionSecret:     envStr("SESSION_SECRET", ""),
+		SECUserAgent:      envStr("SEC_USER_AGENT", ""),
+		OpenFIGIKey:       envStr("OPENFIGI_API_KEY", ""),
+		PaperWebhookAllow: splitList(envStr("PAPER_WEBHOOK_ALLOW", "")),
 	}
 
 	// The cheap tier defaults to the main model so a single-model deployment
@@ -287,4 +292,15 @@ func envFloat(key string, def float64) float64 {
 		return def
 	}
 	return f
+}
+
+// splitList reads a comma-separated setting, dropping blanks.
+func splitList(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

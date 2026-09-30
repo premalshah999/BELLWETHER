@@ -16,6 +16,7 @@ import {
   SlidersHorizontal,
   Sunrise,
   TestTubeDiagonal,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -65,6 +66,7 @@ export const NAV: NavSection[] = [
     label: "Portfolio",
     items: [
       { to: "/positions", label: "Positions", icon: Briefcase },
+      { to: "/paper/overview", label: "Paper trading", icon: Wallet, match: ["/paper"] },
       { to: "/journal", label: "Journal", icon: BookOpen },
     ],
   },

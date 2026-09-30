@@ -124,4 +124,5 @@ const (
 	FeatureDeepResearch    = "deep_research"
 	FeatureResearchRewrite = "research_rewrite"
 	FeatureSymbolDebrief   = "symbol_debrief"
+	FeatureTradeAgent      = "trade_agent"
 )

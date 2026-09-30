@@ -334,7 +334,7 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 			// The article's own text where it could be read, falling back to
 			// the search snippet. Forty-five words was the right budget for a
 			// list of headlines and is far too tight for a report: the
-			// difference between "Suzlon wins order" and the paragraph naming
+			// difference between "GE Vernova wins order" and the paragraph naming
 			// the counterparty, the megawatts and the delivery schedule is
 			// the whole difference between a summary and research.
 			Snippet: research.EvidenceExcerpt(f.Body, turn.Question, 480),

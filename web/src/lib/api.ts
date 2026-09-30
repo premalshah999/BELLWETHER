@@ -1729,3 +1729,244 @@ export const api = {
 
   deleteTrade: (id: number) => request<void>(`/api/journal/${id}`, { method: "DELETE" }),
 };
+
+// ---- paper trading ---------------------------------------------------------
+
+/** Whole cents: money is never a float on the server. */
+export type Cents = number;
+
+export interface PaperSettings {
+  commission_cents: number;
+  slippage_bps: number;
+  sec_fee_per_million: number;
+  taf_per_share: number;
+  taf_max_cents: number;
+  pattern_day_trader: boolean;
+  max_position_pct: number;
+  max_daily_loss_pct: number;
+  max_drawdown_pct: number;
+  max_trades_per_day: number;
+  min_price: number;
+  stop_loss_pct: number;
+  take_profit_pct: number;
+  flatten_at_close: boolean;
+  weekly_goal_pct: number;
+}
+
+export interface PaperHolding {
+  symbol: string;
+  qty: number;
+  avg_cost_cents: Cents;
+  price_cents: Cents;
+  value_cents: Cents;
+  unrealized_cents: Cents;
+  unrealized_pct: number;
+  weight_pct: number;
+  opened_at: string;
+  reserved_qty: number;
+}
+
+export interface PaperWallet {
+  id: number;
+  name: string;
+  owner: string;
+  status: "active" | "closed";
+  settings: PaperSettings;
+  created_at: string;
+  cash_cents: Cents;
+  reserved_cents: Cents;
+  buying_power_cents: Cents;
+  market_value_cents: Cents;
+  equity_cents: Cents;
+  net_deposits_cents: Cents;
+  fees_cents: Cents;
+  realized_cents: Cents;
+  unrealized_cents: Cents;
+  total_return_pct: number;
+  day_change_pct?: number;
+  drawdown_pct: number;
+  day_trades: number;
+  trades_today: number;
+  session_open: boolean;
+  minutes_to_close: number;
+  holdings: PaperHolding[];
+}
+
+export type OrderType = "market" | "limit" | "stop" | "stop_limit";
+
+export interface PaperOrder {
+  id: number;
+  symbol: string;
+  side: "buy" | "sell";
+  type: OrderType;
+  qty: number;
+  limit_cents?: Cents;
+  stop_cents?: Cents;
+  tif: "day" | "gtc";
+  status: "accepted" | "filled" | "canceled" | "rejected" | "expired";
+  filled_qty: number;
+  avg_fill_cents?: Cents;
+  reserved_cents: Cents;
+  source: "manual" | "agent" | "protective";
+  agent_id?: number;
+  reason?: string;
+  reject_reason?: string;
+  stop_loss_pct?: number;
+  take_profit_pct?: number;
+  parent_order_id?: number;
+  created_at: string;
+  filled_at?: string;
+}
+
+export interface PaperOrderRequest {
+  client_order_id?: string;
+  symbol: string;
+  side: "buy" | "sell";
+  type: OrderType;
+  qty: number;
+  limit_price?: number;
+  stop_price?: number;
+  tif: "day" | "gtc";
+  stop_loss_pct?: number;
+  take_profit_pct?: number;
+  reason?: string;
+}
+
+export interface PaperFill {
+  id: number;
+  order_id: number;
+  symbol: string;
+  side: "buy" | "sell";
+  qty: number;
+  price_cents: Cents;
+  fee_cents: Cents;
+  quote_cents: Cents;
+  realized_cents?: Cents;
+  filled_at: string;
+}
+
+export interface PaperPayment {
+  id: number;
+  direction: "deposit" | "withdrawal";
+  amount_cents: Cents;
+  provider: string;
+  provider_ref?: string;
+  status: "created" | "processing" | "succeeded" | "failed" | "canceled";
+  failure_reason?: string;
+  created_at: string;
+}
+
+export interface LedgerTx {
+  id: number;
+  kind: string;
+  memo?: string;
+  postings: { account: string; amount_cents: Cents }[];
+  created_at: string;
+}
+
+export interface EquityPoint {
+  at: string;
+  cash_cents: Cents;
+  market_value_cents: Cents;
+  equity_cents: Cents;
+  benchmark?: number;
+}
+
+export interface PaperPerformance {
+  since?: string;
+  return_pct: number;
+  benchmark_pct?: number;
+  excess_pct?: number;
+  max_drawdown_pct: number;
+  sharpe?: number;
+  volatility_pct?: number;
+  weeks: { week: string; return_pct: number; benchmark_pct?: number }[];
+  weekly_goal_pct: number;
+  goal_hit_weeks: number;
+  trades: number;
+  win_rate: number;
+  avg_win_pct: number;
+  avg_loss_pct: number;
+  profit_factor?: number;
+  realized_cents: Cents;
+  fees_cents: Cents;
+  luck?: { simulations: number; trades: number; actual_pct: number; median_pct: number; beat_pct: number; p90_pct: number };
+  verdict: string;
+}
+
+export interface PaperAgentConfig {
+  symbols?: string[];
+  watchlist_ids?: number[];
+  use_scanner: boolean;
+  every_minutes: number;
+  max_positions: number;
+  intraday: boolean;
+  instructions?: string;
+  algorithm_id?: number;
+  exit_algorithm_id?: number;
+  size_pct?: number;
+  webhook_url?: string;
+  webhook_secret?: string;
+}
+
+export interface PaperAgent {
+  id?: number;
+  kind: "ai" | "algorithm" | "webhook";
+  name: string;
+  enabled: boolean;
+  config: PaperAgentConfig;
+  halted_reason?: string;
+  last_run_at?: string;
+}
+
+export interface PaperIntent {
+  symbol: string;
+  side: "buy" | "sell";
+  qty?: number;
+  size_pct?: number;
+  stop_loss_pct?: number;
+  take_profit_pct?: number;
+  confidence?: number;
+  reason: string;
+}
+
+export interface PaperDecision {
+  id: number;
+  agent_id: number;
+  at: string;
+  summary: string;
+  intents: PaperIntent[] | null;
+  order_ids: number[] | null;
+  rejected: { symbol: string; side: string; reason: string }[] | null;
+  model?: string;
+  error?: string;
+}
+
+const w = (id: number) => `/api/paper/wallets/${id}`;
+
+export const paperApi = {
+  wallets: () => request<{ wallets: PaperWallet[]; defaults: PaperSettings }>("/api/paper/wallets"),
+  wallet: (id: number) => request<PaperWallet>(w(id)),
+  createWallet: (body: { name: string; deposit?: number; settings?: PaperSettings }) =>
+    request<PaperWallet>("/api/paper/wallets", { method: "POST", body: JSON.stringify(body) }),
+  updateWallet: (id: number, body: { name: string; settings: PaperSettings }) =>
+    request<PaperWallet>(w(id), { method: "PUT", body: JSON.stringify(body) }),
+  closeWallet: (id: number) => request<void>(w(id), { method: "DELETE" }),
+  deposit: (id: number, amount: number, key: string) =>
+    request<PaperPayment>(`${w(id)}/deposits`, { method: "POST", body: JSON.stringify({ amount, idempotency_key: key }) }),
+  withdraw: (id: number, amount: number, key: string) =>
+    request<PaperPayment>(`${w(id)}/withdrawals`, { method: "POST", body: JSON.stringify({ amount, idempotency_key: key }) }),
+  payments: (id: number) => request<{ payments: PaperPayment[] }>(`${w(id)}/payments`),
+  orders: (id: number, status?: "open") => request<{ orders: PaperOrder[] }>(`${w(id)}/orders${status ? `?status=${status}` : ""}`),
+  placeOrder: (id: number, body: PaperOrderRequest) =>
+    request<{ order: PaperOrder; fill?: PaperFill }>(`${w(id)}/orders`, { method: "POST", body: JSON.stringify(body) }),
+  cancelOrder: (id: number, orderID: number) => request<PaperOrder>(`${w(id)}/orders/${orderID}`, { method: "DELETE" }),
+  activity: (id: number) => request<{ fills: PaperFill[] | null; ledger: LedgerTx[] | null }>(`${w(id)}/activity`),
+  performance: (id: number) => request<{ performance: PaperPerformance; equity: EquityPoint[] }>(`${w(id)}/performance`),
+  agents: (id: number) => request<{ agents: PaperAgent[]; ai_available: boolean }>(`${w(id)}/agents`),
+  saveAgent: (id: number, a: PaperAgent) =>
+    request<PaperAgent>(a.id ? `${w(id)}/agents/${a.id}` : `${w(id)}/agents`, { method: a.id ? "PUT" : "POST", body: JSON.stringify(a) }),
+  deleteAgent: (id: number, agentID: number) => request<void>(`${w(id)}/agents/${agentID}`, { method: "DELETE" }),
+  runAgent: (id: number, agentID: number) => request<PaperDecision>(`${w(id)}/agents/${agentID}/run`, { method: "POST" }),
+  decisions: (id: number) => request<{ decisions: PaperDecision[] }>(`${w(id)}/decisions`),
+};

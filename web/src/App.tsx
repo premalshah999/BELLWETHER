@@ -28,6 +28,7 @@ const EventStudyPage = page("/eventstudy", "EventStudyPage");
 const GeopoliticsPage = page("/geopolitics", "GeopoliticsPage");
 const JournalPage = page("/journal", "JournalPage");
 const PositionsPage = page("/positions", "PositionsPage");
+const PaperPage = page("/paper", "PaperPage");
 const NewsPage = page("/news", "NewsPage");
 const ResearchPage = page("/research", "ResearchPage");
 const ScannerPage = page("/scanner", "ScannerPage");
@@ -203,6 +204,8 @@ export function App() {
                 element={<CongressPage onSelect={setSelected} />}
               />
               <Route path="/eventstudy" element={<EventStudyPage />} />
+              <Route path="/paper" element={<Navigate to="/paper/overview" replace />} />
+              <Route path="/paper/:tab" element={<PaperPage onSelect={setSelected} />} />
               <Route
                 path="/calendar"
                 element={<CalendarPage onSelect={setSelected} />}

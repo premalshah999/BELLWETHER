@@ -19,6 +19,7 @@ import (
 	"github.com/tradesys/dashboard/internal/marketdata"
 	"github.com/tradesys/dashboard/internal/news"
 	"github.com/tradesys/dashboard/internal/news/company"
+	"github.com/tradesys/dashboard/internal/paper"
 	"github.com/tradesys/dashboard/internal/research"
 	"github.com/tradesys/dashboard/internal/scanner"
 	"github.com/tradesys/dashboard/internal/smartmoney"
@@ -123,8 +124,15 @@ type Deps struct {
 	// SmartMoney reads SEC for insider and fund filings. Nil without an SEC
 	// contact, in which case following a new fund is unavailable.
 	SmartMoney *smartmoney.Syncer
-	Log        *slog.Logger
-	Version    string
+	// Paper trades simulated money at real prices; PaperRunner runs its
+	// agents; PaperWebhook validates a webhook agent's target. LuckPool loads
+	// daily bars for the skill-or-luck test's random traders.
+	Paper        *paper.Engine
+	PaperRunner  *paper.Runner
+	PaperWebhook paper.Webhook
+	LuckPool     func(context.Context) map[string][]marketdata.Candle
+	Log          *slog.Logger
+	Version      string
 	// Now is injectable for deterministic tests.
 	Now func() time.Time
 }
@@ -145,6 +153,7 @@ type Server struct {
 	sessionSecret []byte
 	// studies caches computed event studies; see studyTTL.
 	studies studyCache
+	luck    luckPools
 }
 
 // New builds the server and its routes.
@@ -281,6 +290,27 @@ func (s *Server) routes() {
 				r.Post("/", s.handleCreatePosition)
 				r.Delete("/{id}", s.handleDeletePosition)
 				r.Post("/{id}/close", s.handleClosePosition)
+			})
+			r.Route("/paper/wallets", func(r chi.Router) {
+				r.Get("/", s.handleWallets)
+				r.Post("/", s.handleCreateWallet)
+				r.Get("/{id}", s.handleWallet)
+				r.Put("/{id}", s.handleUpdateWallet)
+				r.Delete("/{id}", s.handleCloseWallet)
+				r.Post("/{id}/deposits", s.handlePayment("deposit"))
+				r.Post("/{id}/withdrawals", s.handlePayment("withdrawal"))
+				r.Get("/{id}/payments", s.handlePayments)
+				r.Get("/{id}/orders", s.handlePaperOrders)
+				r.Post("/{id}/orders", s.handlePlacePaperOrder)
+				r.Delete("/{id}/orders/{oid}", s.handleCancelPaperOrder)
+				r.Get("/{id}/activity", s.handlePaperActivity)
+				r.Get("/{id}/performance", s.handlePaperPerformance)
+				r.Get("/{id}/agents", s.handlePaperAgents)
+				r.Post("/{id}/agents", s.handleSavePaperAgent)
+				r.Put("/{id}/agents/{aid}", s.handleSavePaperAgent)
+				r.Delete("/{id}/agents/{aid}", s.handleDeletePaperAgent)
+				r.With(s.aiLimiter.middleware).Post("/{id}/agents/{aid}/run", s.handleRunPaperAgent)
+				r.Get("/{id}/decisions", s.handlePaperDecisions)
 			})
 			r.Get("/journal", s.handleJournal)
 			r.Post("/journal", s.handleRecordTrade)

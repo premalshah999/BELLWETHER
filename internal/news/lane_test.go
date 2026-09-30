@@ -126,26 +126,26 @@ func TestHeatRisesAndDecays(t *testing.T) {
 	clock := func() time.Time { return now }
 	tr := NewTracker(clock)
 
-	if got := tr.SymbolHeat("SUZLON"); got != HeatNormal {
+	if got := tr.SymbolHeat("GEV"); got != HeatNormal {
 		t.Fatalf("initial heat = %s, want normal", got)
 	}
 
 	// A high-importance official filing should make it hot immediately.
-	tr.Observe([]string{"SUZLON"}, nil, 9, true, "order win")
-	tr.Observe([]string{"SUZLON"}, nil, 9, true, "order win")
-	tr.Observe([]string{"SUZLON"}, nil, 9, true, "order win")
-	tr.Observe([]string{"SUZLON"}, nil, 9, true, "order win")
-	if got := tr.SymbolHeat("SUZLON"); got != HeatHot {
+	tr.Observe([]string{"GEV"}, nil, 9, true, "order win")
+	tr.Observe([]string{"GEV"}, nil, 9, true, "order win")
+	tr.Observe([]string{"GEV"}, nil, 9, true, "order win")
+	tr.Observe([]string{"GEV"}, nil, 9, true, "order win")
+	if got := tr.SymbolHeat("GEV"); got != HeatHot {
 		t.Errorf("heat after four material filings = %s, want hot", got)
 	}
 
 	// And it must cool without anyone resetting it.
 	now = now.Add(4 * heatHalfLife)
-	if got := tr.SymbolHeat("SUZLON"); got == HeatHot {
+	if got := tr.SymbolHeat("GEV"); got == HeatHot {
 		t.Errorf("still hot after four half-lives; heat is not decaying")
 	}
 	now = now.Add(20 * heatHalfLife)
-	if got := tr.SymbolHeat("SUZLON"); got != HeatNormal {
+	if got := tr.SymbolHeat("GEV"); got != HeatNormal {
 		t.Errorf("heat = %s long after the event, want normal", got)
 	}
 }

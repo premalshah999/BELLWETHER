@@ -543,6 +543,7 @@ func run() error {
 		log.Info("failed research turns abandoned by a previous process", "count", n)
 	}
 
+	paperEngine, paperRunner, paperWebhook := startPaper(ctx, store, router, aiServiceIfConfigured(cfg, aiService), evaluator, companyMaster, cfg.PaperWebhookAllow, log)
 	smartMoney, err := newSmartMoneySyncer(cfg, store, log)
 	if err != nil {
 		log.Warn("smart money sync disabled", "err", err)
@@ -575,6 +576,10 @@ func run() error {
 			Processor:     eventProcessor,
 			Research:      researchEngine,
 			SmartMoney:    smartMoney,
+			Paper:         paperEngine,
+			PaperRunner:   paperRunner,
+			PaperWebhook:  paperWebhook,
+			LuckPool:      func(ctx context.Context) map[string][]marketdata.Candle { return luckPool(ctx, store, companyMaster) },
 			Searcher:      searcher,
 			Log:           log,
 			Version:       version,

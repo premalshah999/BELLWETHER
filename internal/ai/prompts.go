@@ -30,6 +30,7 @@ const (
 	PromptDeepResearch     = "deep_research"
 	PromptResearchFollowup = "research_followup"
 	PromptSymbolDebrief    = "symbol_debrief"
+	PromptTradeAgent       = "trade_agent"
 )
 
 // templates are parsed once at startup. A malformed template is a programming
