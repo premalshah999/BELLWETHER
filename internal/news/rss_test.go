@@ -22,7 +22,7 @@ func TestParseGoogleNewsRSS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(title, "Reliance") {
+	if !strings.Contains(title, "Exxon") {
 		t.Errorf("feed title = %q", title)
 	}
 	// Two entries are unusable — one with no link, one with no title — and
@@ -32,7 +32,7 @@ func TestParseGoogleNewsRSS(t *testing.T) {
 	}
 
 	first := items[0]
-	if !strings.HasPrefix(first.Title, "Reliance Industries slips") {
+	if !strings.HasPrefix(first.Title, "Exxon Mobil slips") {
 		t.Errorf("title = %q", first.Title)
 	}
 	// Google News names the real publisher in <source>; that is far more
@@ -45,10 +45,10 @@ func TestParseGoogleNewsRSS(t *testing.T) {
 	}
 
 	// HTML entities in titles must be decoded.
-	if !strings.Contains(items[1].Title, "July & leads") {
+	if !strings.Contains(items[1].Title, "Permian & leads") {
 		t.Errorf("entity was not decoded: %q", items[1].Title)
 	}
-	if items[1].Source != "The Economic Times" {
+	if items[1].Source != "CNBC" {
 		t.Errorf("source = %q", items[1].Source)
 	}
 
@@ -56,8 +56,8 @@ func TestParseGoogleNewsRSS(t *testing.T) {
 	if !items[2].Published.IsZero() {
 		t.Errorf("unparseable pubDate produced %v, want the zero time", items[2].Published)
 	}
-	if items[2].Source != "Mint" {
-		t.Errorf("source = %q, want Mint", items[2].Source)
+	if items[2].Source != "MarketWatch" {
+		t.Errorf("source = %q, want MarketWatch", items[2].Source)
 	}
 }
 
@@ -209,16 +209,11 @@ func TestArticleScored(t *testing.T) {
 	}
 }
 
-// TestParseFeedKeepsLinklessNSEItems covers a real loss found in production.
-//
-// NSE publishes its exchange-surveillance notices — "significant movement in
-// price has been observed", volume spurts, requests to verify a news report —
-// with an empty <link/> element. Requiring a URL silently discarded all of
-// them, which is roughly nine items a day and among the most informative
-// things the exchange emits.
-func TestParseFeedKeepsLinklessNSEItems(t *testing.T) {
-	body := []byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>NSE</title>
-<item><title>Pelatro Limited</title><link/><description>Significant movement in price has been observed in Pelatro Limited. The Exchange has sought clarification. |SUBJECT: Price movement</description><pubDate>25-Aug-2026 17:54:00</pubDate></item>
+// An official notice can arrive with an empty <link/> element and its whole
+// substance in the description. Requiring a URL silently discarded those.
+func TestParseFeedKeepsLinklessItems(t *testing.T) {
+	body := []byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>Exchange notices</title>
+<item><title>Acme Corp</title><link/><description>Significant movement in price has been observed in Acme Corp. The Exchange has sought clarification. |SUBJECT: Price movement</description><pubDate>25-Aug-2026 17:54:00</pubDate></item>
 <item><title>No substance at all</title><link/><description></description><pubDate>25-Aug-2026 17:55:00</pubDate></item>
 </channel></rss>`)
 
@@ -229,7 +224,7 @@ func TestParseFeedKeepsLinklessNSEItems(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("got %d items, want 1: a link-less item with substance is kept, one without is not", len(items))
 	}
-	if items[0].Title != "Pelatro Limited" {
+	if items[0].Title != "Acme Corp" {
 		t.Errorf("title = %q", items[0].Title)
 	}
 	if items[0].URL != "" {

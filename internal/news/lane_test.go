@@ -158,9 +158,9 @@ func TestRoutineDisclosureBarelyRegisters(t *testing.T) {
 
 	// Newspaper publication notices, importance 2.
 	for i := 0; i < 5; i++ {
-		tr.Observe([]string{"WIPRO"}, nil, 2, true, "newspaper publication")
+		tr.Observe([]string{"WMT"}, nil, 2, true, "newspaper publication")
 	}
-	if got := tr.SymbolHeat("WIPRO"); got == HeatHot {
+	if got := tr.SymbolHeat("WMT"); got == HeatHot {
 		t.Error("routine disclosures should not make a company hot")
 	}
 }

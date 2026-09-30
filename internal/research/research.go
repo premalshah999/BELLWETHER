@@ -258,7 +258,7 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 	// own subject leads.
 	//
 	// Ranking by what the articles happened to mention and then truncating is
-	// how "how has RELIANCE performed" came to price ADANIPORTS, BANKINDIA and
+	// how "how has XOM performed" came to price AAPL, ABBV and
 	// four other names alphabetically ahead of it, and answer that it had no
 	// data on the company the reader asked about. What a question names is the
 	// thing to measure; what its sources mention is context.

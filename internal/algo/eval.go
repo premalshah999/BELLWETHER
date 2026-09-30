@@ -123,26 +123,10 @@ func (r Result) Triggered() bool { return r.Status == StatusTriggered }
 
 // Evaluator evaluates algorithms. It holds no mutable state and is safe for
 // concurrent use.
-type Evaluator struct {
-	// loc was once the timezone every session-based indicator bucketed by,
-	// which was wrong the moment a second venue existed: a US symbol's
-	// SessionVWAP reset by IST resets mid-session, at 02:30 ET. Evaluate now
-	// derives the location per call from the symbol's own venue
-	// (sym.Exchange.Location()) instead, so this field is kept only for
-	// source compatibility with existing callers and is otherwise unused.
-	loc *time.Location
-}
+type Evaluator struct{}
 
-// NewEvaluator builds an evaluator. loc is accepted for compatibility with
-// existing callers but no longer used: session-based indicators bucket by
-// the symbol being evaluated, not a single shared timezone. Pass time.UTC or
-// nil.
-func NewEvaluator(loc *time.Location) *Evaluator {
-	if loc == nil {
-		loc = time.UTC
-	}
-	return &Evaluator{loc: loc}
-}
+// NewEvaluator builds an evaluator.
+func NewEvaluator() *Evaluator { return &Evaluator{} }
 
 // RequiredBars reports how much history this algorithm needs before any of its
 // conditions can be decided, so the scheduler can fetch enough candles in one
@@ -189,7 +173,6 @@ func derefOperand(o *Operand) Operand {
 // referencing SMA(200) three times computes it once.
 type evalContext struct {
 	candles []marketdata.Candle
-	loc     *time.Location
 	cache   map[string]indicators.Series
 	// index is the bar being evaluated: the most recent one.
 	index int
@@ -211,7 +194,7 @@ func (c *evalContext) series(o Operand) (indicators.Series, bool) {
 	if s, hit := c.cache[key]; hit {
 		return s, true
 	}
-	s := def.Compute(c.candles, o, c.loc)
+	s := def.Compute(c.candles, o)
 	c.cache[key] = s
 	return s, true
 }
@@ -257,13 +240,8 @@ func (e *Evaluator) Evaluate(a *Algorithm, sym marketdata.Symbol, candles []mark
 
 	ctx := &evalContext{
 		candles: candles,
-		// The symbol's own exchange decides the session boundary, not a
-		// single operator-display timezone: e.loc would bucket a US
-		// session's SessionVWAP by IST, resetting it mid-session at 02:30
-		// ET.
-		loc:   sym.Exchange.Location(),
-		cache: map[string]indicators.Series{},
-		index: len(candles) - 1,
+		cache:   map[string]indicators.Series{},
+		index:   len(candles) - 1,
 	}
 	last := candles[ctx.index]
 	res.BarTime = last.Time

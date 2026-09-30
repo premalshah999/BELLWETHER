@@ -13,12 +13,12 @@ func TestHubDeliversToSubscribedTopicsOnly(t *testing.T) {
 	events, cancelE := h.Subscribe("b", TopicEvents)
 	defer cancelE()
 
-	h.Publish(TopicQuotes, "RELIANCE", 1234.5)
+	h.Publish(TopicQuotes, "XOM", 1234.5)
 
 	select {
 	case m := <-quotes.C():
-		if m.Key != "RELIANCE" {
-			t.Errorf("key = %q, want RELIANCE", m.Key)
+		if m.Key != "XOM" {
+			t.Errorf("key = %q, want XOM", m.Key)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("quote subscriber received nothing")

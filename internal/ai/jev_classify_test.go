@@ -106,7 +106,7 @@ func TestClassificationGoesToJevWhenConfigured(t *testing.T) {
 	defer llm.Close()
 
 	store := newClassifyStore(appleEvent())
-	svc := NewService(newClient(t, &fakeLLM{Server: llm}, newMemBudget(), 1e9), nil, store, time.UTC,
+	svc := NewService(newClient(t, &fakeLLM{Server: llm}, newMemBudget(), 1e9), nil, store,
 		WithJev(jev.New("ts_k", jev.WithBaseURL(srv.URL))))
 
 	n, err := svc.ClassifyEvents(context.Background(), 10)
@@ -133,7 +133,7 @@ func TestLowConfidenceTypeKeepsTheDeterministicOne(t *testing.T) {
 		"is_event":   noul(0.9),
 	})
 	store := newClassifyStore(appleEvent())
-	svc := NewService(nil, nil, store, time.UTC, WithJev(jev.New("k", jev.WithBaseURL(srv.URL))))
+	svc := NewService(nil, nil, store, WithJev(jev.New("k", jev.WithBaseURL(srv.URL))))
 	if _, err := svc.ClassifyEvents(context.Background(), 10); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestImportanceUsesTheWholeDistribution(t *testing.T) {
 		"is_event":   noul(0.95),
 	})
 	store := newClassifyStore(appleEvent())
-	svc := NewService(nil, nil, store, time.UTC, WithJev(jev.New("k", jev.WithBaseURL(srv.URL))))
+	svc := NewService(nil, nil, store, WithJev(jev.New("k", jev.WithBaseURL(srv.URL))))
 	if _, err := svc.ClassifyEvents(context.Background(), 10); err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestNonEventsAreDemotedAndExplained(t *testing.T) {
 	ev := appleEvent()
 	ev.Headline = "AAPL stock price, news, quote and history"
 	store := newClassifyStore(ev)
-	svc := NewService(nil, nil, store, time.UTC, WithJev(jev.New("k", jev.WithBaseURL(srv.URL))))
+	svc := NewService(nil, nil, store, WithJev(jev.New("k", jev.WithBaseURL(srv.URL))))
 	if _, err := svc.ClassifyEvents(context.Background(), 10); err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestUnsureDirectionIsUnclear(t *testing.T) {
 		"impact_AAPL":    score(2, map[string]float64{"2": 1}),
 	})
 	store := newClassifyStore(appleEvent())
-	svc := NewService(nil, nil, store, time.UTC, WithJev(jev.New("k", jev.WithBaseURL(srv.URL))))
+	svc := NewService(nil, nil, store, WithJev(jev.New("k", jev.WithBaseURL(srv.URL))))
 	if _, err := svc.ClassifyEvents(context.Background(), 10); err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestUnsureDirectionIsUnclear(t *testing.T) {
 func TestFallsBackToTheTextModelWithoutJev(t *testing.T) {
 	llm := newFakeLLM(t, `{"events":[{"id":"1","event_type":"EARNINGS","importance":7,"confidence":0.8}]}`)
 	store := newClassifyStore(appleEvent())
-	svc := NewService(newClient(t, llm, newMemBudget(), 1e9), nil, store, time.UTC,
+	svc := NewService(newClient(t, llm, newMemBudget(), 1e9), nil, store,
 		WithJev(jev.New(""))) // present but unconfigured: no key
 	if _, err := svc.ClassifyEvents(context.Background(), 10); err != nil {
 		t.Fatal(err)
@@ -252,7 +252,7 @@ func TestDigestScoresWithJevAndIgnoresTheTextModelGuard(t *testing.T) {
 		{ID: 7, Symbol: "AAPL", Title: "Apple beats on iPhone sales", Source: "wsj", PublishedAt: time.Now()},
 	}}
 	// No text-model client: with the old guard this returned ErrNotConfigured.
-	svc := NewService(nil, nil, nil, time.UTC, WithScoreStore(store),
+	svc := NewService(nil, nil, nil, WithScoreStore(store),
 		WithJev(jev.New("k", jev.WithBaseURL(srv.URL))))
 	if _, err := svc.RunNewsDigest(context.Background(), 10); err != nil {
 		t.Fatalf("RunNewsDigest: %v", err)

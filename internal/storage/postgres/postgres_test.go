@@ -141,9 +141,9 @@ func TestFullTextSearch(t *testing.T) {
 	now := time.Now().UTC()
 
 	for i, headline := range []string{
-		"Larsen & Toubro wins metro contract worth 4200 crore",
-		"Infosys raises full-year revenue guidance",
-		"Reliance declares interim dividend of Rs 10 per share",
+		"Fluor wins metro contract worth $4.2 billion",
+		"Intel raises full-year revenue guidance",
+		"Exxon declares quarterly dividend of $0.99 per share",
 	} {
 		imp := 6
 		if _, _, err := db.UpsertEvent(ctx, news.Event{

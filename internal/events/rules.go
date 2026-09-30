@@ -97,7 +97,7 @@ var headlineRules = []rule{
 		"deal called off", "deal collapses", "walks away from"), TypeOrderCancelled, 1},
 
 	// Money.
-	{compile("fund rais(e|ing)", "raises (?:Rs|₹|\\$)", "IPO", "preferential allotment",
+	{compile("fund rais(e|ing)", "raises \\$", "IPO", "preferential allotment",
 		"(?:secondary|follow[- ]on|equity) offering", "at[- ]the[- ]market offering",
 		"private placement", "PIPE (?:deal|financing)", "convertible note"), TypeFundRaise, 0},
 	{compile("pledge(d|s)?", "encumbrance", "promoter (?:selling|buying|stake)"), TypePledge, 1},
@@ -107,7 +107,7 @@ var headlineRules = []rule{
 
 	// Investment.
 	{compile("capex", "capital expenditure", "new (?:[\\w-]+ ){0,2}(?:plant|fab|facility|factory|mill)",
-		"expansion", "greenfield", "brownfield", "will invest (?:Rs|₹|\\$)",
+		"expansion", "greenfield", "brownfield", "will invest \\$",
 		"breaks ground", "production capacity"), TypeCapex, 0},
 	{compile("launch(es|ed)?", "new product", "unveils"), TypeNewProduct, 0},
 

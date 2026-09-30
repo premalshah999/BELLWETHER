@@ -25,9 +25,8 @@ type Snapshot struct {
 	Industry string    `json:"industry,omitempty"`
 
 	// QuoteCurrency is what the share trades in; FinancialCurrency is what
-	// the statements are filed in. They differ for some Indian companies —
-	// Infosys files in USD and trades in INR — and any ratio built from one
-	// of each is meaningless unless they match.
+	// the statements are filed in. They differ for a foreign company's ADR,
+	// and any ratio built from one of each is meaningless unless they match.
 	QuoteCurrency     string `json:"quote_currency,omitempty"`
 	FinancialCurrency string `json:"financial_currency,omitempty"`
 
@@ -89,8 +88,8 @@ type Period struct {
 	Currency string `json:"currency,omitempty"`
 
 	// Nil means unknown, which is a different thing from the period end and
-	// must never be silently replaced by it. An Indian company reports six to
-	// eight weeks after a quarter closes; anything that reads the period end as
+	// must never be silently replaced by it. A company reports weeks after
+	// a quarter closes; anything that reads the period end as
 	// the moment the numbers existed is looking into the future.
 	ReportDate *time.Time `json:"report_date,omitempty"`
 

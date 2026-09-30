@@ -154,10 +154,8 @@ type Event struct {
 	Evidence []RawItem     `json:"evidence,omitempty"`
 	// Sectors are the industries a macro or policy event reaches, filled in
 	// only for the SectorScope types -- a company-specific event has none,
-	// since its reach is the company itself. Mixed-taxonomy: an NSE
-	// industry name ("Oil Gas & Consumable Fuels") and a GICS sector
-	// ("US: Energy") can both appear on the same event, since a story about
-	// crude oil genuinely touches both.
+	// since its reach is the company itself. They are GICS sectors with a
+	// "US: " prefix ("US: Energy").
 	Sectors []string `json:"sectors,omitempty"`
 
 	// TimestampTrust says whether PublishedAt may be shown as a publication

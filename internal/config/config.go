@@ -88,10 +88,6 @@ type Config struct {
 	// SessionSecret signs session cookies across restarts.
 	SessionSecret string
 
-	// Presentation
-	DisplayTZ   *time.Location
-	DisplayTZID string
-
 	// SECUserAgent is the contact string SEC EDGAR's fair-access policy
 	// requires on every request: "AppName/1.0 (contact@example.com)". A
 	// generic or empty User-Agent gets 403'd outright -- verified live
@@ -149,7 +145,6 @@ func Load(envFile string) (*Config, error) {
 		// market data feed. A licensed tick source makes this irrelevant.
 		StreamInterval: envDuration("STREAM_INTERVAL", 5*time.Second),
 		SessionSecret:  envStr("SESSION_SECRET", ""),
-		DisplayTZID:    envStr("DISPLAY_TZ", "America/New_York"),
 		SECUserAgent:   envStr("SEC_USER_AGENT", ""),
 	}
 
@@ -181,12 +176,6 @@ func Load(envFile string) (*Config, error) {
 			return nil, fmt.Errorf("config: MARKETDATA_ORDER contains unknown provider %q (want yfinance, twelvedata, alphavantage, or synthetic)", p)
 		}
 	}
-
-	loc, err := time.LoadLocation(c.DisplayTZID)
-	if err != nil {
-		return nil, fmt.Errorf("config: DISPLAY_TZ %q: %w", c.DisplayTZID, err)
-	}
-	c.DisplayTZ = loc
 
 	c.LogLevel = parseLevel(envStr("LOG_LEVEL", "info"))
 

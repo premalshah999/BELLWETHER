@@ -69,7 +69,7 @@ func TestEntersAtNextBarOpenNotSignalClose(t *testing.T) {
 		[4]float64{150, 160, 149, 155}, // fill should be this open: 150
 		[4]float64{155, 156, 154, 155},
 	)
-	res, err := Run(aboveHundred(), sym(t), cs, Config{MaxHoldBars: 1, CostBps: 0}, algo.NewEvaluator(time.UTC))
+	res, err := Run(aboveHundred(), sym(t), cs, Config{MaxHoldBars: 1, CostBps: 0}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -94,12 +94,12 @@ func TestFutureBarsCannotChangeEarlierTrades(t *testing.T) {
 	)
 	cfg := Config{StopLossPct: 3, TakeProfitPct: 5, MaxHoldBars: 3, CostBps: 5}
 
-	full, err := Run(aboveHundred(), sym(t), append([]marketdata.Candle(nil), cs...), cfg, algo.NewEvaluator(time.UTC))
+	full, err := Run(aboveHundred(), sym(t), append([]marketdata.Candle(nil), cs...), cfg, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("full run: %v", err)
 	}
 	cut := 12
-	short, err := Run(aboveHundred(), sym(t), append([]marketdata.Candle(nil), cs[:cut]...), cfg, algo.NewEvaluator(time.UTC))
+	short, err := Run(aboveHundred(), sym(t), append([]marketdata.Candle(nil), cs[:cut]...), cfg, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("short run: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestStopLossFillsAtTheStopNotTheClose(t *testing.T) {
 		[4]float64{100, 100, 100, 100}, // entry at this open: 100
 		[4]float64{100, 100, 80, 85},   // low pierces a 5% stop at 95
 	)
-	res, err := Run(aboveHundred(), sym(t), cs, Config{StopLossPct: 5, CostBps: 0}, algo.NewEvaluator(time.UTC))
+	res, err := Run(aboveHundred(), sym(t), cs, Config{StopLossPct: 5, CostBps: 0}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestTakeProfitFillsAtTheTarget(t *testing.T) {
 		[4]float64{100, 100, 100, 100}, // entry at 100
 		[4]float64{100, 130, 100, 105}, // high clears a 10% target at 110
 	)
-	res, err := Run(aboveHundred(), sym(t), cs, Config{TakeProfitPct: 10, CostBps: 0}, algo.NewEvaluator(time.UTC))
+	res, err := Run(aboveHundred(), sym(t), cs, Config{TakeProfitPct: 10, CostBps: 0}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestAmbiguousBarTakesTheStopAndIsFlagged(t *testing.T) {
 		[4]float64{100, 100, 100, 100}, // entry at 100
 		[4]float64{100, 130, 80, 100},  // reaches +10% target and -5% stop
 	)
-	res, err := Run(aboveHundred(), sym(t), cs, Config{StopLossPct: 5, TakeProfitPct: 10}, algo.NewEvaluator(time.UTC))
+	res, err := Run(aboveHundred(), sym(t), cs, Config{StopLossPct: 5, TakeProfitPct: 10}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestCostsAreChargedOnEntryAndExit(t *testing.T) {
 		[4]float64{100, 100, 100, 100}, // entry at 100
 		[4]float64{100, 100, 100, 100}, // exit at 100 on the hold limit
 	)
-	res, err := Run(aboveHundred(), sym(t), cs, Config{MaxHoldBars: 1, CostBps: 50}, algo.NewEvaluator(time.UTC))
+	res, err := Run(aboveHundred(), sym(t), cs, Config{MaxHoldBars: 1, CostBps: 50}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestBuyHoldUsesTheSameWindowAsTheStrategy(t *testing.T) {
 		[4]float64{100, 100, 100, 100},
 		[4]float64{200, 200, 200, 200},
 	)
-	res, err := Run(never, sym(t), cs, Config{}, algo.NewEvaluator(time.UTC))
+	res, err := Run(never, sym(t), cs, Config{}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestBuyHoldUsesTheSameWindowAsTheStrategy(t *testing.T) {
 // exactly the losing trades that had not yet been cut.
 func TestOpenPositionAtTheEndIsReported(t *testing.T) {
 	cs := flat(90, 95, 101, 100, 99, 98, 97)
-	res, err := Run(aboveHundred(), sym(t), cs, Config{}, algo.NewEvaluator(time.UTC))
+	res, err := Run(aboveHundred(), sym(t), cs, Config{}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestOpenPositionAtTheEndIsReported(t *testing.T) {
 }
 
 func TestWarnsWhenThereIsNoExitRule(t *testing.T) {
-	res, err := Run(aboveHundred(), sym(t), flat(90, 95, 101, 102, 103), Config{CostBps: 10}, algo.NewEvaluator(time.UTC))
+	res, err := Run(aboveHundred(), sym(t), flat(90, 95, 101, 102, 103), Config{CostBps: 10}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestWarnsWhenThereIsNoExitRule(t *testing.T) {
 }
 
 func TestZeroCostsAreCalledOut(t *testing.T) {
-	res, err := Run(aboveHundred(), sym(t), flat(90, 95, 101, 102, 103), Config{MaxHoldBars: 1, CostBps: 0}, algo.NewEvaluator(time.UTC))
+	res, err := Run(aboveHundred(), sym(t), flat(90, 95, 101, 102, 103), Config{MaxHoldBars: 1, CostBps: 0}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestUnsortedCandlesAreOrdered(t *testing.T) {
 	for i := range cs {
 		rev[i] = cs[len(cs)-1-i]
 	}
-	res, err := Run(aboveHundred(), sym(t), rev, Config{MaxHoldBars: 1}, algo.NewEvaluator(time.UTC))
+	res, err := Run(aboveHundred(), sym(t), rev, Config{MaxHoldBars: 1}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestUnsortedCandlesAreOrdered(t *testing.T) {
 }
 
 func TestNoCandlesIsAnError(t *testing.T) {
-	if _, err := Run(aboveHundred(), sym(t), nil, Config{}, algo.NewEvaluator(time.UTC)); err == nil {
+	if _, err := Run(aboveHundred(), sym(t), nil, Config{}, algo.NewEvaluator()); err == nil {
 		t.Error("expected an error for an empty series")
 	}
 }
@@ -347,7 +347,7 @@ func TestShortProfitsWhenPriceFalls(t *testing.T) {
 		[4]float64{100, 100, 90, 90},   // short at this open (100), covered at its close (90)
 	)
 	res, err := Run(aboveHundred(), sym(t), cs,
-		Config{Direction: Short, MaxHoldBars: 1, CostBps: 0}, algo.NewEvaluator(time.UTC))
+		Config{Direction: Short, MaxHoldBars: 1, CostBps: 0}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestShortStopIsAboveEntry(t *testing.T) {
 		[4]float64{100, 120, 100, 118}, // high pierces a 5% stop at 105
 	)
 	res, err := Run(aboveHundred(), sym(t), cs,
-		Config{Direction: Short, StopLossPct: 5, CostBps: 0}, algo.NewEvaluator(time.UTC))
+		Config{Direction: Short, StopLossPct: 5, CostBps: 0}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestShortTargetIsBelowEntry(t *testing.T) {
 		[4]float64{100, 100, 80, 95},   // low reaches a 10% target at 90
 	)
 	res, err := Run(aboveHundred(), sym(t), cs,
-		Config{Direction: Short, TakeProfitPct: 10, CostBps: 0}, algo.NewEvaluator(time.UTC))
+		Config{Direction: Short, TakeProfitPct: 10, CostBps: 0}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -420,12 +420,12 @@ func TestCostsAreSymmetricAcrossDirections(t *testing.T) {
 		[4]float64{100, 100, 100, 100}, // flat round trip either way
 	)
 	long, err := Run(aboveHundred(), sym(t), append([]marketdata.Candle(nil), cs...),
-		Config{Direction: Long, MaxHoldBars: 1, CostBps: 25}, algo.NewEvaluator(time.UTC))
+		Config{Direction: Long, MaxHoldBars: 1, CostBps: 25}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("long: %v", err)
 	}
 	short, err := Run(aboveHundred(), sym(t), append([]marketdata.Candle(nil), cs...),
-		Config{Direction: Short, MaxHoldBars: 1, CostBps: 25}, algo.NewEvaluator(time.UTC))
+		Config{Direction: Short, MaxHoldBars: 1, CostBps: 25}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("short: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestCostsAreSymmetricAcrossDirections(t *testing.T) {
 
 func TestShortResultsCarryABorrowWarning(t *testing.T) {
 	res, err := Run(aboveHundred(), sym(t), flat(90, 95, 101, 102, 103),
-		Config{Direction: Short, MaxHoldBars: 1, CostBps: 10}, algo.NewEvaluator(time.UTC))
+		Config{Direction: Short, MaxHoldBars: 1, CostBps: 10}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -474,7 +474,7 @@ func TestFractionalSizingScalesTheAccountNotTheTrade(t *testing.T) {
 	)
 	res, err := Run(aboveHundred(), sym(t), cs,
 		Config{SizeMode: SizeFraction, SizePct: 25, MaxHoldBars: 1, CostBps: 0},
-		algo.NewEvaluator(time.UTC))
+		algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -508,7 +508,7 @@ func TestRiskSizingLosesExactlyTheRiskBudget(t *testing.T) {
 	)
 	res, err := Run(aboveHundred(), sym(t), cs,
 		Config{SizeMode: SizeRisk, RiskPct: 1, StopLossPct: 5, CostBps: 0},
-		algo.NewEvaluator(time.UTC))
+		algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -529,7 +529,7 @@ func TestRiskSizingLosesExactlyTheRiskBudget(t *testing.T) {
 func TestRiskSizingIsCappedAtTheWholeAccount(t *testing.T) {
 	res, err := Run(aboveHundred(), sym(t), flat(90, 95, 101, 100, 95),
 		Config{SizeMode: SizeRisk, RiskPct: 10, StopLossPct: 2, CostBps: 0},
-		algo.NewEvaluator(time.UTC))
+		algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -553,7 +553,7 @@ func TestRiskSizingIsCappedAtTheWholeAccount(t *testing.T) {
 func TestRiskSizingWithoutAStopIsCalledOut(t *testing.T) {
 	res, err := Run(aboveHundred(), sym(t), flat(90, 95, 101, 102, 103),
 		Config{SizeMode: SizeRisk, RiskPct: 1, MaxHoldBars: 1, CostBps: 10},
-		algo.NewEvaluator(time.UTC))
+		algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -587,7 +587,7 @@ func TestExitRuleFillsAtTheNextOpen(t *testing.T) {
 		[4]float64{88, 88, 88, 88},     // exit fills at this open: 88
 	)
 	res, err := Run(aboveHundred(), sym(t), cs,
-		Config{ExitRule: below, CostBps: 0}, algo.NewEvaluator(time.UTC))
+		Config{ExitRule: below, CostBps: 0}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -619,7 +619,7 @@ func TestStopBeatsTheExitRuleOnTheSameBar(t *testing.T) {
 		[4]float64{70, 70, 70, 70},
 	)
 	res, err := Run(aboveHundred(), sym(t), cs,
-		Config{ExitRule: below, StopLossPct: 5, CostBps: 0}, algo.NewEvaluator(time.UTC))
+		Config{ExitRule: below, StopLossPct: 5, CostBps: 0}, algo.NewEvaluator())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}

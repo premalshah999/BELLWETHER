@@ -77,7 +77,6 @@ export type Interval = "1m" | "5m" | "15m" | "1h" | "1d" | "1wk";
 export interface Meta {
   app: string;
   version: string;
-  display_tz: string;
   disclaimer: string;
   server_time: string;
   features: {

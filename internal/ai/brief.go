@@ -65,7 +65,7 @@ type briefSymbol struct {
 func (s *Service) GenerateMorningBrief(ctx context.Context) (MorningBrief, error) {
 	now := s.now()
 	brief := MorningBrief{
-		Date:        now.In(s.loc).Format("2 Jan 2006"),
+		Date:        now.In(marketdata.Market).Format("2 Jan 2006"),
 		GeneratedAt: now,
 	}
 
@@ -146,7 +146,7 @@ func (s *Service) GenerateMorningBrief(ctx context.Context) (MorningBrief, error
 
 	prompt, err := UserPrompt(PromptMorningBrief, map[string]any{
 		"Date":    brief.Date,
-		"TZ":      s.loc.String(),
+		"TZ":      marketdata.Market.String(),
 		"Symbols": rows,
 		"News":    articles,
 		"Alerts":  recentAlerts,

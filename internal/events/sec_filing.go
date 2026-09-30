@@ -53,8 +53,7 @@ var (
 // numbers are literal SEC regulation citations (Item 8.01 of Form 8-K under
 // 17 CFR 249.308), not something that changes with a redesign.
 //
-// This is a stronger signal than the keyword classifier NSE-style filings
-// fall back to: the filer is declaring the item under penalty of the
+// This is a stronger signal than the keyword classifier: the filer is declaring the item under penalty of the
 // securities laws, not being described by a third party.
 var secItemType = map[string]Type{
 	"1.01": TypeContract,           // Entry into a Material Definitive Agreement
@@ -84,8 +83,7 @@ var secItemType = map[string]Type{
 // ParseSECFiling reads one item from an SEC EDGAR current-filings feed.
 // title and description are the raw feed fields, already HTML-unescaped and
 // tag-stripped by the generic feed parser (see cleanText in internal/news) --
-// this only imposes SEC's own structure on top of that plain text, the same
-// division of labour as ParseFiling for NSE.
+// this only imposes SEC's own structure on top of that plain text.
 func ParseSECFiling(title, description string) SECFiling {
 	f := SECFiling{Type: TypeUnclassified}
 
@@ -146,8 +144,7 @@ func classifySECItems(codes []string) Type {
 	return best
 }
 
-// buildSECHeadline composes a readable headline the way buildFilingHeadline
-// does for NSE.
+// buildSECHeadline composes a readable headline from a filing's fields.
 func buildSECHeadline(f SECFiling) string {
 	form := f.FormType
 	switch {

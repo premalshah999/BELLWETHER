@@ -89,9 +89,8 @@ type searchResult struct {
 
 // handleSearchSymbols finds instruments by company name or ticker.
 //
-// This is what makes the watchlist more than the two symbols it ships with:
-// without discovery, an operator has to already know that Infosys is
-// a ticker before they can add it.
+// This is what makes the watchlist more than the symbols it ships with:
+// without it an operator has to already know a company's ticker to add it.
 func (s *Server) handleSearchSymbols(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {

@@ -61,17 +61,17 @@ const contentAgeExpr = `CASE
                 ELSE e.published_at
              END`
 
-// indianSymbol matches a symbol listed in India. The archive still holds
-// events on Indian listings from before the product became US-only, and every
-// read leaves them out rather than deleting them.
-const indianSymbol = `'\.(NSE|BSE)$'`
+// retiredSymbol matches a listing on a venue the app no longer covers. The
+// archive still holds events on them, and every read leaves them out rather
+// than deleting them.
+const retiredSymbol = `'\.(NSE|BSE)$'`
 
 // usRelevant keeps an event unless everything tying it to a company points
-// at an Indian listing: an Indian entity with no other, or evidence that came
-// only from an Indian instrument's own watchlist search.
+// at a retired listing: a retired entity with no other, or evidence that came
+// only from a retired instrument's own watchlist search.
 const usRelevant = `NOT (
-    EXISTS (SELECT 1 FROM event_entities xi WHERE xi.event_id = e.id AND xi.symbol ~ ` + indianSymbol + `)
-    AND NOT EXISTS (SELECT 1 FROM event_entities xu WHERE xu.event_id = e.id AND xu.symbol !~ ` + indianSymbol + `)
+    EXISTS (SELECT 1 FROM event_entities xi WHERE xi.event_id = e.id AND xi.symbol ~ ` + retiredSymbol + `)
+    AND NOT EXISTS (SELECT 1 FROM event_entities xu WHERE xu.event_id = e.id AND xu.symbol !~ ` + retiredSymbol + `)
 ) AND NOT (
     EXISTS (SELECT 1 FROM event_evidence wi WHERE wi.event_id = e.id AND wi.source_id ~ '^watch-.*\.(nse|bse)$')
     AND NOT EXISTS (SELECT 1 FROM event_evidence wu WHERE wu.event_id = e.id AND wu.source_id !~ '^watch-.*\.(nse|bse)$')
@@ -97,7 +97,7 @@ func (d *DB) ListEvents(ctx context.Context, f EventFilter) ([]news.Event, error
 		sym := strings.ToUpper(f.Symbol)
 		// Two ways an event belongs to an instrument: a resolved entity, or
 		// evidence from that instrument's own watchlist search. The second
-		// matters for anything outside the NSE master — a foreign holding has
+		// matters for anything outside the company master — a foreign holding has
 		// no entity to resolve to, and without this its page would be empty
 		// while its search quietly collected a hundred items.
 		args = append(args, sym, "watch-"+strings.ToLower(sym))
@@ -271,7 +271,7 @@ func (d *DB) attachEntities(ctx context.Context, list []news.Event, ids []int64)
 SELECT event_id, symbol, relationship::text, match_confidence, match_method,
        direction::text, impact_strength, rationale
 FROM event_entities
-WHERE event_id = ANY($1::bigint[]) AND symbol !~ `+indianSymbol+`
+WHERE event_id = ANY($1::bigint[]) AND symbol !~ `+retiredSymbol+`
 ORDER BY match_confidence DESC, symbol`, ids)
 	if err != nil {
 		return fmt.Errorf("postgres: load event entities: %w", err)
@@ -485,13 +485,13 @@ var questionWords = map[string]bool{
 	"has": true, "have": true, "had": true, "can": true, "could": true,
 	"any": true, "all": true, "there": true, "their": true, "them": true,
 	"companies": true, "company": true, "stock": true, "stocks": true,
-	"share": true, "shares": true, "india": true, "indian": true,
+	"share": true, "shares": true, "market": true,
 }
 
 // contentWords reduces a question to searchable lexemes.
 //
 // Words that appear in nearly every document — "companies", "stocks",
-// "Indian" — are dropped along with grammar. Left in, they dominate the rank
+// "market" — are dropped along with grammar. Left in, they dominate the rank
 // and every result looks equally relevant.
 func contentWords(q string) []string {
 	var out []string

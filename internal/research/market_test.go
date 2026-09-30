@@ -174,23 +174,23 @@ func Test52WeekExtremes(t *testing.T) {
 
 // TestQuestionSubjectIsMeasuredFirst guards the defect where a question about
 // one company priced six others: symbols were taken from the retrieved
-// articles and truncated alphabetically, so "how has RELIANCE performed" was
-// answered with "the computed series covers ADANIPORTS, BANKINDIA, ..." and no
+// articles and truncated alphabetically, so "how has XOM performed" was
+// answered with "the computed series covers AAPL, ABBV, ..." and no
 // data on the company asked about.
 func TestQuestionSubjectIsMeasuredFirst(t *testing.T) {
 	e := &Engine{
 		resolve: func(text string) []string {
-			if containsFold(text, "RELIANCE") {
-				return []string{"RELIANCE"}
+			if containsFold(text, "XOM") {
+				return []string{"XOM"}
 			}
 			return nil
 		},
 	}
-	fromFindings := []string{"ADANIENSOL", "ADANIPORTS", "BANKINDIA", "BSE", "CUMMINSIND", "DHANBANK"}
-	got := e.rankForMeasurement("How has RELIANCE performed over six months?", fromFindings)
+	fromFindings := []string{"AAPL", "ABBV", "BAC", "BLK", "CMI", "DHR"}
+	got := e.rankForMeasurement("How has XOM performed over six months?", fromFindings)
 
-	if len(got) == 0 || got[0] != "RELIANCE" {
-		t.Fatalf("ranked = %v, want RELIANCE first", got)
+	if len(got) == 0 || got[0] != "XOM" {
+		t.Fatalf("ranked = %v, want XOM first", got)
 	}
 	// And it must survive the cap that truncated it away before.
 	if len(got) > maxMeasured {
@@ -198,7 +198,7 @@ func TestQuestionSubjectIsMeasuredFirst(t *testing.T) {
 	}
 	found := false
 	for _, s := range got {
-		if s == "RELIANCE" {
+		if s == "XOM" {
 			found = true
 		}
 	}
@@ -210,10 +210,10 @@ func TestQuestionSubjectIsMeasuredFirst(t *testing.T) {
 // TestRankForMeasurementDedupes: a symbol both named and mentioned is measured
 // once.
 func TestRankForMeasurementDedupes(t *testing.T) {
-	e := &Engine{resolve: func(string) []string { return []string{"TCS"} }}
-	got := e.rankForMeasurement("TCS results", []string{"TCS", "INFY"})
-	if len(got) != 2 || got[0] != "TCS" || got[1] != "INFY" {
-		t.Errorf("ranked = %v, want [TCS INFY]", got)
+	e := &Engine{resolve: func(string) []string { return []string{"ACN"} }}
+	got := e.rankForMeasurement("ACN results", []string{"ACN", "INTC"})
+	if len(got) != 2 || got[0] != "ACN" || got[1] != "INTC" {
+		t.Errorf("ranked = %v, want [ACN INTC]", got)
 	}
 }
 
@@ -222,19 +222,19 @@ func containsFold(haystack, needle string) bool {
 }
 
 // TestMeasurePreservesRank: the ranked order must survive the concurrent
-// fetch. Sorting results alphabetically afterwards buried RELIANCE beneath
+// fetch. Sorting results alphabetically afterwards buried XOM beneath
 // five companies the reader had not asked about.
 func TestMeasurePreservesRank(t *testing.T) {
 	e := &Engine{
 		log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 		prices: stubPrices{},
 	}
-	got := e.measure(context.Background(), []string{"RELIANCE", "ADANIPORTS", "BSE"})
+	got := e.measure(context.Background(), []string{"XOM", "ABBV", "BLK"})
 	if len(got) != 3 {
 		t.Fatalf("measured %d instruments, want 3", len(got))
 	}
-	if got[0].Symbol != "RELIANCE" {
-		t.Errorf("order = %s, %s, %s; want the ranked order with RELIANCE first",
+	if got[0].Symbol != "XOM" {
+		t.Errorf("order = %s, %s, %s; want the ranked order with XOM first",
 			got[0].Symbol, got[1].Symbol, got[2].Symbol)
 	}
 }

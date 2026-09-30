@@ -14,7 +14,7 @@ func TestStringArrayRoundTrip(t *testing.T) {
 		in   []string
 	}{
 		{"empty", []string{}},
-		{"simple", []string{"RELIANCE", "TCS", "INFY"}},
+		{"simple", []string{"XOM", "ACN", "INTC"}},
 		{"ampersand symbol", []string{"M&M", "L&T"}},
 		{"embedded comma", []string{"Metals & Mining", "Oil Gas & Consumable Fuels"}},
 		{"quotes", []string{`say "hello"`, `back\slash`}},
@@ -66,7 +66,7 @@ func TestStringArrayScansPostgresLiterals(t *testing.T) {
 		want    []string
 	}{
 		{"{}", []string{}},
-		{"{RELIANCE,TCS}", []string{"RELIANCE", "TCS"}},
+		{"{XOM,ACN}", []string{"XOM", "ACN"}},
 		{`{"M&M",LT}`, []string{"M&M", "LT"}},
 		{`{"Metals & Mining"}`, []string{"Metals & Mining"}},
 		{`{"a,b",c}`, []string{"a,b", "c"}},

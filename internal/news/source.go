@@ -26,15 +26,13 @@ const (
 	// Form 4, 13F). Same generic Atom shape as MethodRSS -- SEC embeds its
 	// filer, accession number and (for 8-K) item codes as HTML inside the
 	// <summary> element rather than as distinct fields, so the structured
-	// reading happens in events.ParseSECFiling, exactly where NSE's
-	// pipe-delimited facts are read from an otherwise-generic feed item.
+	// reading happens in events.ParseSECFiling.
 	MethodSECFiling Method = "sec_filing"
 	// MethodFederalRegister is the Federal Register's documents.json search
 	// API -- JSON, not a feed, like MethodGDELT. The issuing agency is
 	// structured metadata the API returns directly, encoded into the raw
-	// item's description in NSE's own "|KEY: VALUE" convention so
-	// interpret() can read it back with the same parsePipeFacts every
-	// NSE-sourced filing already uses.
+	// item's description as "|KEY: VALUE" pairs so interpret() can read it
+	// back with parsePipeFacts.
 	MethodFederalRegister Method = "federal_register"
 )
 
@@ -43,7 +41,7 @@ const (
 // This exists because compliance is not a document that lives beside the code —
 // it is a property of each source that the pipeline must be able to enforce.
 // A feed being publicly fetchable says nothing about whether its contents may
-// be redistributed in a commercial product, and several Indian publishers
+// be redistributed in a commercial product, and several publishers
 // state explicitly that their feeds are for personal, non-commercial use.
 type UsageClass string
 

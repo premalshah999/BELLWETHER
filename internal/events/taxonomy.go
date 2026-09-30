@@ -68,7 +68,7 @@ const (
 	TypeRegulatoryAction Type = "REGULATORY_ACTION"
 	// TypeRegulatoryApproval is the opposite sign of TypeRegulatoryAction and
 	// must not share a type with it. A licence granted and a licence
-	// suspended arrive through the same NSE subject line, and collapsing them
+	// suspended arrive under the same subject, and collapsing them
 	// would hand the model an event whose direction is already wrong.
 	TypeRegulatoryApproval Type = "REGULATORY_APPROVAL"
 	TypeTaxAction          Type = "TAX_ACTION"
@@ -103,9 +103,7 @@ const (
 
 	// TypeFundNAV is a mutual-fund net asset value declaration. It is
 	// classified rather than discarded so the filter is visible and
-	// reversible, but it is not equity news: these alone are 440 of the 1,600
-	// items in a day's NSE announcements, and letting them through would mean
-	// a feed that is one quarter signal.
+	// reversible, but it is not equity news.
 	TypeFundNAV Type = "FUND_NAV"
 )
 

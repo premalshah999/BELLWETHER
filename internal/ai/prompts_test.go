@@ -6,7 +6,7 @@ import (
 )
 
 func TestEveryPromptParsesAndRenders(t *testing.T) {
-	// A malformed template must never be discovered at 08:30 IST inside a
+	// A malformed template must never be discovered at 08:30 inside a
 	// cron job, so every prompt is exercised here with representative data.
 	cases := map[string]any{
 		PromptSystem: nil,
@@ -16,12 +16,12 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 			"Summary":       "RSI(14)=32.10 < 35",
 			"Price":         "2,431.00",
 			"News": []map[string]string{
-				{"Title": "Reliance falls", "Source": "Reuters", "Age": "2h ago"},
+				{"Title": "Exxon falls", "Source": "Reuters", "Age": "2h ago"},
 			},
 		},
 		PromptEventBrief: map[string]any{
-			"Headline":  "Time Technoplast Limited: securing order of Rs. 250 crore",
-			"Body":      "The company has secured an order worth Rs. 250 crore for composite cylinders, to be executed over eighteen months.",
+			"Headline":  "Hexcel Corporation: securing order of $250 million",
+			"Body":      "The company has secured an order worth $250 million for composite structures, to be executed over eighteen months.",
 			"EventType": "CONTRACT",
 			"Companies": "TIMETECHNO",
 			"Source":    "SEC 8-K filings",
@@ -29,7 +29,7 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 			"Published": "2026-08-31T12:01:00Z",
 		},
 		PromptMorningBrief: map[string]any{
-			"Date": "24 Aug 2026", "TZ": "Asia/Kolkata",
+			"Date": "24 Aug 2026", "TZ": "America/New_York",
 			"Symbols": []map[string]string{
 				{"Symbol": "AAPL", "Price": "310.34", "ChangePercent": "+0.61%", "Note": "above SMA20"},
 			},
@@ -40,18 +40,18 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 			"Types": "ORDER_WIN, EARNINGS, DIVIDEND",
 			"Events": []map[string]any{{
 				"ID": "12", "Type": "ORDER_WIN", "Importance": "7",
-				"Headline": "Larsen & Toubro: receipt of an order worth Rs 4,200 crore",
+				"Headline": "Fluor: receipt of an order worth $4.2 billion",
 				"Summary":  "receipt of an order", "Facts": "PURPOSE=ORDER",
 				"Companies": "LT", "SourceCount": 3, "Official": true,
 			}},
 		},
 		PromptDeepResearch: map[string]any{
 			"Query": "Exxon Pioneer merger", "Symbols": "XOM",
-			"History":  []map[string]string{{"Question": "How is Reliance doing?", "Answer": "Refining margins improved."}},
+			"History":  []map[string]string{{"Question": "How is Exxon doing?", "Answer": "Refining margins improved."}},
 			"Universe": []map[string]string{{"Industry": "Construction Materials", "Symbols": "ULTRACEMCO, ACC"}},
 			"Count":    2, "Scrapers": "google_news, gdelt",
 			"Sources": []map[string]any{{
-				"Index": 1, "Title": "Reliance weighs retail demerger",
+				"Index": 1, "Title": "Exxon weighs retail demerger",
 				"Publisher": "Reuters", "Snippet": "People familiar said…",
 				"Age": "2h ago", "Trust": 95,
 			}},
@@ -71,7 +71,7 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 			}},
 		},
 		PromptNewsDigest: map[string]any{
-			"Symbol": "XOM", "Company": "Reliance Industries",
+			"Symbol": "XOM", "Company": "Exxon Mobil",
 			"Articles": []map[string]string{{"ID": "a1", "Title": "T", "Source": "S", "Age": "1h ago"}},
 		},
 		PromptExplainMove: map[string]any{

@@ -10,7 +10,6 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, metaResponse{
 		App:        "TradeSys",
 		Version:    s.deps.Version,
-		DisplayTZ:  c.DisplayTZID,
 		Disclaimer: Disclaimer,
 		ServerTime: s.deps.Now(),
 		Features: metaFeatures{

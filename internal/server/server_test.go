@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -100,10 +99,7 @@ func newHarness(t *testing.T) *harness {
 		marketdata.WithOutcomeSink(tracker.MarketDataSink()),
 		marketdata.WithLogger(quiet))
 
-	loc, _ := time.LoadLocation("America/New_York")
 	cfg := &config.Config{
-		DisplayTZID:          "America/New_York",
-		DisplayTZ:            loc,
 		MarketDataOrder:      []string{"yfinance"},
 		AllowUnauthenticated: true,
 	}
@@ -145,7 +141,6 @@ func TestMeta(t *testing.T) {
 	}
 	got := decode[struct {
 		App        string `json:"app"`
-		DisplayTZ  string `json:"display_tz"`
 		Disclaimer string `json:"disclaimer"`
 		Features   struct {
 			AI           bool `json:"ai"`
@@ -156,9 +151,6 @@ func TestMeta(t *testing.T) {
 
 	if got.App != "TradeSys" {
 		t.Errorf("app = %q", got.App)
-	}
-	if got.DisplayTZ != "America/New_York" {
-		t.Errorf("display_tz = %q, want America/New_York", got.DisplayTZ)
 	}
 	if got.Disclaimer != server.Disclaimer {
 		t.Errorf("disclaimer = %q, want the shared constant", got.Disclaimer)
