@@ -92,14 +92,29 @@ function response(path) {
   if (path === "/api/eventstudy/types") return { types: [{ event_type: "EARNINGS", count: 20 }] };
   if (path === "/api/eventstudy") return { event_type: "EARNINGS", benchmark: "GSPC.INDEX", holding_days: 5, total_events: 20, samples: 10, mean_abnormal_return_pct: 0.5, median_abnormal_return_pct: 0.2, stddev_pct: 2, hit_rate: 55, reaction: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, drift: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, abs_reaction_pct: 3.1, groups: [{ label: "positive", samples: 6, reaction: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, drift: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, abs_reaction_pct: 3 }, { label: "negative", samples: 4, reaction: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, drift: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, abs_reaction_pct: 3 }], warnings: [] };
   if (path === "/api/smartmoney/funds") return { funds: [] };
-  if (path === "/api/forecast") return {
-    report: { at: now, as_of: now, horizon: 5, symbols: 2, train_rows: 1000, years: [{ year: 2025, days: 100, rank_ic: 0.03, t: 2, spread_pct: 0.4, top_hit_pct: 60 }],
-      overall: { year: 0, days: 100, rank_ic: 0.03, t: 2, spread_pct: 0.4, top_hit_pct: 60 },
-      factors: [{ key: "mom_12_1", label: "12-month momentum", why: "Momentum persists.", rank_ic: 0.03, t: 3, weight: 0.03 }] },
-    top: [{ symbol: "AAPL", name: "Apple Inc.", sector: "Information Technology", score: 0.1, percentile: 99, drivers: [{ key: "mom_12_1", label: "12-month momentum", contribution: 0.02 }] }],
-    bottom: [], total: 2, live: [], live_summary: { runs: 0 },
-  };
-  if (path.startsWith("/api/forecast/symbols/")) return { symbol: "AAPL", latest: { as_of: now, symbol: "AAPL", score: 0.1, percentile: 99, drivers: [] }, history: [], horizon: 5, stale: false };
+  if (path === "/api/forecast" || path.startsWith("/api/forecast/symbols/")) {
+    const q = [-0.06, -0.045, -0.035, -0.027, -0.02, -0.014, -0.009, -0.005, -0.002, 0.001, 0.004, 0.007, 0.011, 0.016, 0.022, 0.029, 0.037, 0.048, 0.064];
+    const hd = (h) => ({ h, q: q.map((v) => v * Math.sqrt(h / 5)), expected: 0.002, alpha: 0.001, p_up: 0.53, p_beat: 0.51, p_up_raw: 0.54, p_beat_raw: 0.52, es5: -0.08, sigma: 0.04 });
+    const levels = [0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95];
+    const fan = Array.from({ length: 20 }, (_, d) => levels.map((l) => (l - 0.5) * 0.12 * Math.sqrt((d + 1) / 20)));
+    const dist = { horizons: [hd(5), hd(10), hd(20)], fan, fan_levels: levels, beta: 1.1, vol_pct: 28, normal_vol_pct: 25, earnings: { session: 7, typical_move_pct: 4.2, from_calendar: true }, percentile_20: 80 };
+    const pick = { symbol: "AAPL", name: "Apple Inc.", sector: "Information Technology", score: 0.9, percentile: 95, drivers: [{ key: "mom_12_1", label: "12-month momentum", contribution: 0.2 }], dist };
+    const rec = { n: 1000, crps: 0.03, crps_raw: 0.031, crps_normal: 0.0305, crps_history: 0.0306, skill_normal_pct: 1.7, skill_history_pct: 1.6, dm_normal_t: 4, dm_history_t: 4.3,
+      coverage: [52, 82, 91], calibrated_coverage: [50, 80, 90], calibrated: true, pit: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+      brier_up: 0.251, brier_up_calibrated: 0.2505, brier_up_base_rate: 0.2497, brier_beat: 0.2501, brier_beat_calibrated: 0.2499, brier_beat_base_rate: 0.2496 };
+    const alpha = { days: 100, ic: 0.024, t: 2.3, ridge_ic: 0.02, tree_ic: 0.016, momentum_ic: 0.013, spread_pct: 0.47 };
+    const vol = { n: 1000, har: 0.22, garch: 0.27, blend: 0.22, naive: 0.32, weight: 1, skill_pct: 31 };
+    const report = { version: 2, at: now, as_of: now, horizon: 5, horizons: [5, 10, 20], symbols: 2, train_rows: 1000, paths: 4000, eval_paths: 400, eval_stocks: 400,
+      years: [{ year: 2025, train_rows: 1000, alpha: { 5: alpha, 20: alpha }, vol: { 5: vol, 20: vol }, dist: { 5: rec, 10: rec, 20: rec }, turnover_pct: 50, momentum_turnover_pct: 11 }],
+      alpha: { 5: alpha, 20: alpha }, vol: { 5: vol, 20: vol }, dist: { 5: rec, 10: rec, 20: rec }, turnover_pct: 50, momentum_turnover_pct: 11,
+      calibration: { slope_bps: { 5: 3, 20: 19 }, slope_t: { 5: 1, 20: 1.6 }, ensemble_weight: { 5: [0.33, 0.33, 0.34], 20: [0.33, 0.33, 0.34] }, har_weight: { 5: 1, 20: 1 }, pit_n: { 5: 1000 } },
+      regime: { stress_prob: 0.01, calm_vol_pct: 11, stress_vol_pct: 34, stay_calm: 0.98, stay_stressed: 0.82, vix: 17.5, vol_forecast_pct: { 5: 14, 10: 15, 20: 15.4 }, realised_vol_pct: 10.3 },
+      market: [hd(5), hd(10), hd(20)],
+      factors: [{ key: "mom_12_1", label: "12-month momentum", why: "Momentum persists.", ridge_weight: 0.03, tree_share_pct: 4 }],
+      reliability: { 5: { up: [{ forecast: 0.5, observed: 0.52, n: 400 }], beat: [{ forecast: 0.5, observed: 0.5, n: 400 }, { forecast: 0.55, observed: 0.53, n: 200 }] } } };
+    if (path === "/api/forecast") return { report, rows: [pick], total: 1, sort: "p_beat", offset: 0, live: [], live_summary: { runs: 0 } };
+    return { symbol: "AAPL", latest: { ...pick, as_of: now }, history: [], horizons: [5, 10, 20], stale: false, market: report.market, regime: report.regime, calibration: report.dist };
+  }
   if (path === "/api/paper/wallets") return { wallets: [], defaults: {} };
   if (path === "/api/algorithms/templates") return { templates: [] };
   if (path === "/api/algorithms/vocabulary") return { indicators: [], intervals: [], operators: [] };

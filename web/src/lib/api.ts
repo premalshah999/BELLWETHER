@@ -406,6 +406,31 @@ export interface Outlook {
   realized_move_percent?: number;
   actual_scenario?: "base" | "bull" | "bear";
   brier_score?: number;
+  /** The engine's distribution the outlook started from. */
+  quant?: OutlookPrior;
+  /** The distribution after the writer's adjustment. */
+  final?: OutlookPrior;
+  adjustment?: { shift_sigma: number; vol_scale: number; evidence?: string[]; reasoning?: string };
+  quant_brier?: number;
+}
+
+export interface OutlookPrior {
+  source: "engine" | "history";
+  as_of?: string;
+  quantiles: number[];
+  p_up: number;
+  p_beat?: number;
+  threshold_pct: number;
+  bull: number;
+  base: number;
+  bear: number;
+  bull_move_pct: number;
+  base_move_pct: number;
+  bear_move_pct: number;
+  earnings_session?: number;
+  earnings_move_pct?: number;
+  vol_pct?: number;
+  normal_vol_pct?: number;
 }
 
 export interface CalibrationBucket {
@@ -424,6 +449,10 @@ export interface Calibration {
   mean_brier: number;
   baseline_brier: number;
   generated_at: string;
+  with_prior?: number;
+  adjusted?: number;
+  published_brier?: number;
+  prior_brier?: number;
 }
 
 export interface SymbolSearchResult {
@@ -1994,35 +2023,35 @@ export const paperApi = {
   decisions: (id: number) => request<{ decisions: PaperDecision[] }>(`${w(id)}/decisions`),
 };
 
-// ---- forecast model ----------------------------------------------------------
+// ---- forecast engine ---------------------------------------------------------
 
-export interface ForecastYear {
-  year: number;
-  days: number;
-  rank_ic: number;
-  t: number;
-  spread_pct: number;
-  top_hit_pct: number;
+/** Quantile levels every forecast distribution reports, in order. */
+export const QUANTILE_LEVELS = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95];
+
+export interface HorizonDist {
+  h: number;
+  /** Simple returns at QUANTILE_LEVELS. */
+  q: number[];
+  expected: number;
+  alpha: number;
+  p_up: number;
+  p_beat: number;
+  p_up_raw: number;
+  p_beat_raw: number;
+  es5: number;
+  sigma: number;
 }
 
-export interface ForecastFactor {
-  key: string;
-  label: string;
-  why: string;
-  rank_ic: number;
-  t: number;
-  weight: number;
-}
-
-export interface ForecastReport {
-  at: string;
-  as_of: string;
-  horizon: number;
-  symbols: number;
-  train_rows: number;
-  years: ForecastYear[] | null;
-  overall: ForecastYear;
-  factors: ForecastFactor[];
+export interface ForecastDistribution {
+  horizons: HorizonDist[];
+  /** Per session ahead: cumulative return at fan_levels. */
+  fan?: number[][];
+  fan_levels: number[];
+  beta: number;
+  vol_pct: number;
+  normal_vol_pct: number;
+  earnings?: { session: number; typical_move_pct: number; from_calendar: boolean };
+  percentile_20: number;
 }
 
 export interface ForecastPick {
@@ -2032,6 +2061,113 @@ export interface ForecastPick {
   score: number;
   percentile: number;
   drivers: { key: string; label: string; contribution: number }[];
+  dist?: ForecastDistribution;
+}
+
+export interface AlphaRecord {
+  days: number;
+  ic: number;
+  t: number;
+  ridge_ic: number;
+  tree_ic: number;
+  composite_ic?: number;
+  momentum_ic: number;
+  spread_pct: number;
+}
+
+export interface VolRecord {
+  n: number;
+  har: number;
+  garch: number;
+  blend: number;
+  naive: number;
+  weight: number;
+  skill_pct: number;
+}
+
+export interface DistRecord {
+  n: number;
+  crps: number;
+  crps_raw: number;
+  crps_normal: number;
+  crps_history: number;
+  skill_normal_pct: number;
+  skill_history_pct: number;
+  dm_normal_t: number;
+  dm_history_t: number;
+  coverage: [number, number, number];
+  calibrated_coverage: [number, number, number];
+  calibrated: boolean;
+  pit: number[];
+  brier_up: number;
+  brier_up_calibrated: number;
+  brier_up_base_rate: number;
+  brier_beat: number;
+  brier_beat_calibrated: number;
+  brier_beat_base_rate: number;
+}
+
+export interface ForecastYear {
+  year: number;
+  train_rows: number;
+  alpha: Record<string, AlphaRecord>;
+  vol: Record<string, VolRecord>;
+  dist: Record<string, DistRecord>;
+  turnover_pct: number;
+  momentum_turnover_pct: number;
+}
+
+export interface ForecastFactor {
+  key: string;
+  label: string;
+  why: string;
+  regime?: boolean;
+  ridge_weight: number;
+  tree_share_pct: number;
+  /** The factor's own out-of-sample rank IC over 20 sessions, and its t. */
+  ic?: number;
+  t?: number;
+}
+
+export interface MarketRegime {
+  stress_prob: number;
+  calm_vol_pct: number;
+  stress_vol_pct: number;
+  stay_calm: number;
+  stay_stressed: number;
+  vix: number;
+  vol_forecast_pct: Record<string, number>;
+  realised_vol_pct: number;
+}
+
+export interface ReliabilityBin {
+  forecast: number;
+  observed: number;
+  n: number;
+}
+
+export interface ForecastReport {
+  version: number;
+  at: string;
+  as_of: string;
+  horizon: number;
+  horizons: number[];
+  symbols: number;
+  train_rows: number;
+  paths: number;
+  eval_paths: number;
+  eval_stocks: number;
+  years: ForecastYear[] | null;
+  alpha: Record<string, AlphaRecord>;
+  vol: Record<string, VolRecord>;
+  dist: Record<string, DistRecord>;
+  turnover_pct: number;
+  momentum_turnover_pct: number;
+  calibration: { slope_bps: Record<string, number>; slope_t: Record<string, number>; ensemble_weight: Record<string, [number, number, number]>; har_weight: Record<string, number>; pit_n: Record<string, number> };
+  regime: MarketRegime;
+  market: HorizonDist[];
+  factors: ForecastFactor[];
+  reliability: Record<string, { up: ReliabilityBin[]; beat: ReliabilityBin[] }>;
 }
 
 export interface ForecastLiveRun {
@@ -2040,20 +2176,58 @@ export interface ForecastLiveRun {
   rank_ic: number;
   top_pct: number;
   avg_pct: number;
+  scored?: number;
+  in50_pct?: number;
+  in80_pct?: number;
+  brier_up?: number;
+  brier_up_base?: number;
+  brier_beat?: number;
+  brier_beat_base?: number;
+}
+
+export type ForecastSort = "score" | "p_beat" | "p_up" | "alpha" | "risk" | "vol_change" | "earnings";
+
+export interface ForecastLiveSummary {
+  runs: number;
+  rank_ic?: number;
+  t?: number;
+  top_edge_pct?: number;
+  scored_runs?: number;
+  in50_pct?: number;
+  in80_pct?: number;
+  brier_up?: number;
+  brier_up_base?: number;
+  brier_beat?: number;
+  brier_beat_base?: number;
 }
 
 export const forecastApi = {
-  latest: (q = "", limit = 30) =>
-    request<{
+  latest: (opts: { q?: string; sort?: ForecastSort; dir?: "asc" | "desc"; offset?: number; limit?: number } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.q) p.set("q", opts.q);
+    if (opts.sort) p.set("sort", opts.sort);
+    if (opts.dir) p.set("dir", opts.dir);
+    if (opts.offset) p.set("offset", String(opts.offset));
+    p.set("limit", String(opts.limit ?? 30));
+    return request<{
       report: ForecastReport;
-      top: ForecastPick[];
-      bottom: ForecastPick[];
+      rows: ForecastPick[];
       total: number;
+      sort: ForecastSort;
+      offset: number;
       live: ForecastLiveRun[];
-      live_summary: { runs: number; rank_ic?: number; t?: number; top_edge_pct?: number };
-    }>(`/api/forecast?limit=${limit}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
+      live_summary: ForecastLiveSummary;
+    }>(`/api/forecast?${p.toString()}`);
+  },
   symbol: (symbol: string) =>
-    request<{ symbol: string; latest: ForecastPick & { as_of: string }; history: (ForecastPick & { as_of: string })[]; horizon: number; stale: boolean }>(
-      `/api/forecast/symbols/${encodeURIComponent(symbol)}`,
-    ),
+    request<{
+      symbol: string;
+      latest: ForecastPick & { as_of: string };
+      history: (ForecastPick & { as_of: string })[];
+      horizons: number[];
+      stale: boolean;
+      market?: HorizonDist[];
+      regime?: MarketRegime;
+      calibration?: Record<string, DistRecord>;
+    }>(`/api/forecast/symbols/${encodeURIComponent(symbol)}`),
 };

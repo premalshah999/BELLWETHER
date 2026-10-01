@@ -65,6 +65,19 @@ export function CalibrationPage() {
         <ReliabilityCurve cal={cal} />
       )}
 
+      {cal && (cal.with_prior ?? 0) > 0 && (
+        <p className="border-b border-border-subtle px-3 py-2.5 text-meta leading-relaxed text-text-secondary">
+          Since outlooks started from the forecast engine, {cal.with_prior} have been scored. The AI adjusted {cal.adjusted ?? 0} of them. Brier
+          score of the published probabilities: <span className="font-num">{(cal.published_brier ?? 0).toFixed(3)}</span>; of the engine's
+          alone on the same outcomes: <span className="font-num">{(cal.prior_brier ?? 0).toFixed(3)}</span>.{" "}
+          {(cal.published_brier ?? 0) < (cal.prior_brier ?? 0)
+            ? "The adjustments have helped."
+            : (cal.adjusted ?? 0) === 0
+              ? "No adjustment has been made yet."
+              : "The adjustments have not helped: the engine alone would have scored as well or better."}
+        </p>
+      )}
+
       {cal && cal.resolved === 0 && (
         <p className="border-b border-border-subtle px-3 py-2 text-meta leading-relaxed text-text-muted">
           No outlook has resolved yet, so the figures above rest on nothing. They become
