@@ -418,17 +418,30 @@ func (s *Service) synthesise(ctx context.Context, conv research.Conversation, tu
 		var moves, reactions, notable, smart []string
 		for _, m := range a.BigMoves {
 			line := fmt.Sprintf("%s: %+.2f%% against the market (%+.2f%% raw, %.1fx normal volume)", m.Date, m.AbnormalPct, m.ReturnPct, m.VolumeRatio)
-			if len(m.Events) == 0 {
-				line += "; no news in the archive"
+			if m.Earnings != "" {
+				line += "; " + m.Earnings
+			}
+			if m.Insider != "" {
+				line += "; " + m.Insider
 			}
 			for _, ev := range m.Events {
-				line += fmt.Sprintf("; news: \"%s\" (%s)", ev.Headline, strings.ToLower(strings.ReplaceAll(ev.Type, "_", " ")))
+				line += fmt.Sprintf("; news: \"%s\" (%s)", ev.Headline, strings.ToLower(research.NewsLabel(ev.Type)))
+			}
+			for _, w := range m.Web {
+				line += fmt.Sprintf("; coverage that day: \"%s\" (%s)", w.Title, w.Publisher)
+			}
+			switch {
+			case m.Explained():
+			case m.Covered:
+				line += "; no news in the archive"
+			default:
+				line += "; before the news archive covers this company, so its news is unknown"
 			}
 			moves = append(moves, line)
 		}
 		for _, r := range a.Reactions {
-			reactions = append(reactions, fmt.Sprintf("%s: %d events, next session %+.2f%% vs market on average, five sessions %+.2f%%, positive %.0f%% of the time",
-				strings.ToLower(strings.ReplaceAll(r.Type, "_", " ")), r.Count, r.Day1Mean, r.Day5Mean, r.HitRate))
+			reactions = append(reactions, fmt.Sprintf("%s: %d sessions since %s, first session %+.2f%% vs market on average (%.2f%% either way), five sessions %+.2f%%, ahead of the market %.0f%% of the time",
+				r.Label, r.Count, r.Since, r.Day1Mean, r.AbsMean, r.Day5Mean, r.HitRate))
 		}
 		for _, n := range a.Notable {
 			notable = append(notable, fmt.Sprintf("%s \"%s\": next session %+.2f%%, five sessions %+.2f%% vs market",

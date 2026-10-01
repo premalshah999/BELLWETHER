@@ -7,9 +7,35 @@ import { formatAgo, formatDateTime, formatDuration } from "../lib/format";
 import { usSectors } from "../lib/signals";
 import { Drawer } from "./ui/controls";
 
+/** Event types whose code name is not what a US investor would call them. */
+const TYPE_LABELS: Record<string, string> = {
+  SHAREHOLDING_CHANGE: "Ownership change",
+  NEWS_VERIFICATION: "Response to a report",
+  NEWSPAPER_PUBLICATION: "Public notice",
+  PROMOTER_TRANSACTION: "Controlling holder trade",
+  ALLOTMENT: "Share issuance",
+  BONUS: "Bonus shares",
+  PLEDGE: "Share pledge",
+  CONCALL: "Earnings call",
+  AGM: "Annual meeting",
+  EGM: "Special meeting",
+  FUND_RAISE: "Share or debt offering",
+  DEMERGER: "Spin-off",
+  NEW_PRODUCT: "Product news",
+  ORDER_WIN: "Contract win",
+  CAPEX: "Capital spending",
+  INSOLVENCY: "Bankruptcy or distress",
+  MACRO_EVENT: "Economic news",
+  SECTOR_EVENT: "Industry news",
+  REGULATORY_POLICY: "Policy and regulation",
+  GEOPOLITICAL_EVENT: "Geopolitics",
+  COMMODITY_EVENT: "Commodities",
+};
+
 /** INSIDER_TRANSACTION → "Insider transaction". */
 export function typeLabel(t: string | undefined): string {
   if (!t || t === "UNCLASSIFIED") return "Unclassified";
+  if (TYPE_LABELS[t]) return TYPE_LABELS[t];
   const s = t.replace(/_/g, " ").toLowerCase();
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

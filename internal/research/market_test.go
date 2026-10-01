@@ -177,43 +177,48 @@ func Test52WeekExtremes(t *testing.T) {
 // articles and truncated alphabetically, so "how has XOM performed" was
 // answered with "the computed series covers AAPL, ABBV, ..." and no
 // data on the company asked about.
-func TestQuestionSubjectIsMeasuredFirst(t *testing.T) {
-	e := &Engine{
-		resolve: func(text string) []string {
-			if containsFold(text, "XOM") {
-				return []string{"XOM"}
-			}
-			return nil
-		},
+// TestNamedSubjectIsTheOnlyOneMeasured: what the question names is measured;
+// what its articles happen to mention is not. Measuring the mentions is how
+// "how has XOM performed" once priced AAPL and ABBV ahead of XOM.
+func TestNamedSubjectIsTheOnlyOneMeasured(t *testing.T) {
+	findings := []Finding{
+		{Relevance: 40, Symbols: []string{"AAPL", "XOM"}},
+		{Relevance: 30, Symbols: []string{"AAPL"}},
+		{Relevance: 20, Symbols: []string{"AAPL"}},
 	}
-	fromFindings := []string{"AAPL", "ABBV", "BAC", "BLK", "CMI", "DHR"}
-	got := e.rankForMeasurement("How has XOM performed over six months?", fromFindings)
-
-	if len(got) == 0 || got[0] != "XOM" {
-		t.Fatalf("ranked = %v, want XOM first", got)
-	}
-	// And it must survive the cap that truncated it away before.
-	if len(got) > maxMeasured {
-		got = got[:maxMeasured]
-	}
-	found := false
-	for _, s := range got {
-		if s == "XOM" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("the question's own subject was truncated away: %v", got)
+	got := subjectsOf([]string{"XOM", "XOM"}, findings)
+	if len(got) != 1 || got[0] != "XOM" {
+		t.Fatalf("subjects = %v, want [XOM]", got)
 	}
 }
 
-// TestRankForMeasurementDedupes: a symbol both named and mentioned is measured
-// once.
-func TestRankForMeasurementDedupes(t *testing.T) {
-	e := &Engine{resolve: func(string) []string { return []string{"ACN"} }}
-	got := e.rankForMeasurement("ACN results", []string{"ACN", "INTC"})
-	if len(got) != 2 || got[0] != "ACN" || got[1] != "INTC" {
-		t.Errorf("ranked = %v, want [ACN INTC]", got)
+// TestNoSubjectForAGeneralQuestion: a question naming no company gets a
+// company analysis only when its sources are plainly about one.
+func TestNoSubjectForAGeneralQuestion(t *testing.T) {
+	// The 401(k) question: one article each mentions Apple, AMD and ADAM.
+	stray := []Finding{
+		{Relevance: 90, Symbols: []string{"AAPL"}},
+		{Relevance: 80, Symbols: []string{"AMD"}},
+		{Relevance: 70, Symbols: []string{"ADAM"}},
+		{Relevance: 60},
+		{Relevance: 50},
+	}
+	if got := subjectsOf(nil, stray); len(got) != 0 {
+		t.Fatalf("subjects = %v, want none", got)
+	}
+	// A question about "the chipmaker that just joined the trillion-dollar
+	// club" names nothing, but its sources are about AMD.
+	about := []Finding{
+		{Relevance: 90, Symbols: []string{"AMD"}},
+		{Relevance: 80, Symbols: []string{"AMD", "NVDA"}},
+		{Relevance: 70, Symbols: []string{"AMD"}},
+		{Relevance: 5, Symbols: []string{"NVDA"}},
+	}
+	if got := subjectsOf(nil, about); len(got) != 1 || got[0] != "AMD" {
+		t.Fatalf("subjects = %v, want [AMD]", got)
+	}
+	if got := mentioned(about, nil); len(got) != 1 || got[0] != "AMD" {
+		t.Fatalf("mentioned = %v, want [AMD]: NVDA is in one relevant source", got)
 	}
 }
 

@@ -187,3 +187,124 @@ func TestDiscoveryCooldownIsSharedAcrossAdapters(t *testing.T) {
 		t.Fatal("another adapter ignored the shared rate limit")
 	}
 }
+
+// TestQuestionTermsOutweighFiller is the 401(k) question that once ranked a
+// Prime Day deals list and a footballer's biography above Fidelity's guide:
+// "401(k)" tokenised to "401" and a dropped "k", so the one specific term in
+// the question matched nothing, and "best" and "early" did all the work.
+func TestQuestionTermsOutweighFiller(t *testing.T) {
+	q := "Best strategies for early career 401k"
+	findings := []Finding{
+		{Title: "20+ of the best early Prime Day deals on trading cards", URL: "https://deals.example/1"},
+		{Title: "Biography: Age, Early Life, Education and Career of the incoming chief", URL: "https://bio.example/2"},
+		{Title: "How to max out your 401(k) and retirement savings | Fidelity", URL: "https://fidelity.example/3"},
+		{Title: "Making the Most of Your 401(k) in Your 20s", URL: "https://schwab.example/4", Snippet: "Starting your career? Your employer's match is the first strategy."},
+	}
+	rankFindings(q, findings)
+	if !strings.Contains(findings[0].URL, "schwab") || !strings.Contains(findings[1].URL, "fidelity") {
+		t.Fatalf("ranking = %s, %s", findings[0].URL, findings[1].URL)
+	}
+	for _, f := range findings[2:] {
+		if f.Relevance >= 10 {
+			t.Fatalf("%q counted as relevant (%.1f)", f.Title, f.Relevance)
+		}
+	}
+	if got := relevantOnly(findings); len(got) != 4 {
+		t.Fatalf("with fewer than eight relevant sources nothing is dropped, got %d", len(got))
+	}
+}
+
+// TestSubjectCompanyCountsAsAMatch: an article resolved to the company the
+// question names is about it, whatever words the headline uses.
+func TestSubjectCompanyCountsAsAMatch(t *testing.T) {
+	findings := []Finding{
+		{Title: "Cupertino's quarter: services carry the year", URL: "https://a.example/1", Symbols: []string{"AAPL"}},
+		{Title: "Launches of the week in gadgets", URL: "https://b.example/2"},
+	}
+	rankFindingsFor("How is apple doing after the new Product Launches?", []string{"AAPL"}, findings)
+	if findings[0].URL != "https://a.example/1" || findings[0].Relevance < 10 {
+		t.Fatalf("subject article not ranked first as relevant: %+v", findings)
+	}
+}
+
+func TestUSMarketOnly(t *testing.T) {
+	in := []Finding{
+		{URL: "https://www.livemint.com/money/personal-finance/x.html", Publisher: "collected"},
+		{URL: "https://news.google.com/rss/articles/abc", Publisher: "The Economic Times"},
+		{URL: "https://www.businesstoday.in/markets/x", Publisher: "Business Today"},
+		{URL: "https://www.fidelity.com/learning-center/x", Publisher: "fidelity.com"},
+	}
+	out := usMarketOnly(in)
+	if len(out) != 1 || !strings.Contains(out[0].URL, "fidelity") {
+		t.Fatalf("kept %+v", out)
+	}
+}
+
+// TestRefusingPublisherIsSkipped: a publisher that answered 403 is not
+// tried again for a while, so the next question's reading goes elsewhere.
+func TestRefusingPublisherIsSkipped(t *testing.T) {
+	f := &ArticleFetcher{}
+	f.noteRefusal("https://www.investopedia.com/a", fmt.Errorf("article: www.investopedia.com returned HTTP 403"))
+	if !f.Blocked("https://investopedia.com/b") {
+		t.Fatal("a 403 should block the publisher")
+	}
+	f.noteRefusal("https://js.example/a", fmt.Errorf("article: only 4 words extracted; full text unavailable"))
+	if f.Blocked("https://js.example/b") {
+		t.Fatal("one empty page should not block a publisher")
+	}
+	f.noteRefusal("https://js.example/c", fmt.Errorf("article: only 0 words extracted; full text unavailable"))
+	if !f.Blocked("https://js.example/d") {
+		t.Fatal("two empty pages should block it")
+	}
+	f.noteRefusal("https://slow.example/a", fmt.Errorf("context deadline exceeded"))
+	if f.Blocked("https://slow.example/b") {
+		t.Fatal("a timeout is not a refusal")
+	}
+}
+
+// TestAggregatorDuplicateDropped: the Google News redirect for a headline
+// already held with the publisher's own address adds nothing readable.
+func TestAggregatorDuplicateDropped(t *testing.T) {
+	out := dedupeFindings([]Finding{
+		{Title: "Apple Stock Surges After Its Biggest Launch - MarketBeat", URL: "https://news.google.com/rss/articles/x"},
+		{Title: "Apple Stock Surges After Its Biggest Launch", URL: "https://www.marketbeat.com/a"},
+		{Title: "Only on Google News - Reuters", URL: "https://news.google.com/rss/articles/y"},
+	})
+	if len(out) != 2 || out[0].URL != "https://www.marketbeat.com/a" {
+		t.Fatalf("kept %+v", out)
+	}
+}
+
+func TestOfficialSitesForPersonalFinance(t *testing.T) {
+	for q, want := range map[string]string{
+		"Best strategies for early career 401k":         "irs.gov dol.gov",
+		"When should I claim Social Security benefits?": "irs.gov ssa.gov",
+		"Roth IRA or brokerage account for a first job": "irs.gov investor.gov",
+	} {
+		if !personalFinance.MatchString(q) {
+			t.Errorf("%q not recognised as personal finance", q)
+		}
+		if got := strings.Join(officialSites(q), " "); got != want {
+			t.Errorf("officialSites(%q) = %s, want %s", q, got, want)
+		}
+	}
+	for _, q := range []string{"How has Apple reacted to earnings?", "What is driving Caterpillar shares this quarter?"} {
+		if personalFinance.MatchString(q) {
+			t.Errorf("%q matched as personal finance", q)
+		}
+	}
+}
+
+func TestAccountKind(t *testing.T) {
+	for q, want := range map[string]string{
+		"Best strategies for early career 401k": "401(k)",
+		"how much can I put in a 403(b)":        "403(b)",
+		"Roth IRA or brokerage account":         "Roth IRA",
+		"HSA as a retirement account":           "HSA",
+		"When should I claim Social Security?":  "",
+	} {
+		if got := accountKind(q); got != want {
+			t.Errorf("accountKind(%q) = %q, want %q", q, got, want)
+		}
+	}
+}

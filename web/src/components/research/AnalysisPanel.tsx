@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from "react";
 import type { StockAnalysis } from "../../lib/api";
 import { money } from "../charts/BarList";
 import { formatDate } from "../../lib/format";
+import { typeLabel } from "../EventDrawer";
+import { safeHref } from "../../lib/url";
 
 function pct(v: number, digits = 1) {
   return `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}%`;
@@ -9,11 +11,8 @@ function pct(v: number, digits = 1) {
 function tone(v: number) {
   return v > 0 ? "text-semantic-up" : v < 0 ? "text-semantic-down" : "text-text-secondary";
 }
-function words(t: string) {
-  const s = t.replace(/_/g, " ").toLowerCase();
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-const day = (d: string) => formatDate(d, { month: "short", day: "numeric", year: "2-digit" });
+const words = typeLabel;
+const day = (d: string) => formatDate(d, { month: "short", day: "numeric", year: "numeric" });
 
 /**
  * The stock against the S&P 500 over the year, both rebased to 100, with its
@@ -44,9 +43,14 @@ function PriceChart({ a }: { a: StockAnalysis }) {
   const path = (k: "s" | "b") => pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[k]).toFixed(1)}`).join("");
   const area = `${path("s")}L${x(pts.length - 1)},${y(lo)}L${x(0)},${y(lo)}Z`;
   const moveIdx = new Map(a.big_moves.map((m) => [m.date, m]));
+  // One label per month, skipping any that would sit on top of the last:
+  // a window that opens on Sep 30 starts a new month the next session.
   const months: number[] = [];
   pts.forEach((p, i) => {
-    if (i === 0 || p.d.slice(5, 7) !== pts[i - 1]!.d.slice(5, 7)) months.push(i);
+    if (i === 0 || p.d.slice(5, 7) !== pts[i - 1]!.d.slice(5, 7)) {
+      if (months.length && x(i) - x(months[months.length - 1]!) < 32) months.pop();
+      months.push(i);
+    }
   });
   const last = pts[pts.length - 1]!;
   const onMove = (e: React.MouseEvent) => {
@@ -149,7 +153,9 @@ function PriceChart({ a }: { a: StockAnalysis }) {
 
 export function AnalysisPanel({ a, onSymbol }: { a: StockAnalysis; onSymbol?: (s: string) => void }) {
   const y1 = a.excess.find((e) => e.horizon === "1y") ?? a.excess[a.excess.length - 1];
-  const explained = a.big_moves.filter((m) => (m.events?.length ?? 0) > 0).length;
+  const onRecord = (m: StockAnalysis["big_moves"][number]) => !!(m.earnings || m.insider || m.events?.length || m.web?.length);
+  const explained = a.big_moves.filter(onRecord).length;
+  const uncovered = a.big_moves.filter((m) => !onRecord(m) && m.news_covered === false).length;
   return (
     <section className="mt-5 overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
       <header className="flex flex-wrap items-baseline justify-between gap-2 px-5 pt-4">
@@ -157,7 +163,7 @@ export function AnalysisPanel({ a, onSymbol }: { a: StockAnalysis; onSymbol?: (s
           <button type="button" onClick={() => onSymbol?.(a.symbol)} className="hover:text-accent-text">
             {a.symbol}
           </button>{" "}
-          <span className="font-normal text-text-muted">against the market, past year</span>
+          <span className="font-normal text-text-muted">against the market</span>
         </h4>
         <span className="text-micro text-text-muted">
           Measured from {a.bars} sessions of prices to {day(a.as_of)}. Not a source claim.
@@ -185,11 +191,15 @@ export function AnalysisPanel({ a, onSymbol }: { a: StockAnalysis; onSymbol?: (s
           <dd className="text-micro text-text-muted">Market explains {Math.round(a.correlation * a.correlation * 100)}% of its moves</dd>
         </div>
         <div>
-          <dt className="text-meta text-text-muted">Big days explained by news</dt>
+          <dt className="text-meta text-text-muted">Big days with a cause on record</dt>
           <dd className="font-num text-[18px] font-semibold text-text-primary">
             {explained} of {a.big_moves.length}
           </dd>
-          <dd className="text-micro text-text-muted">{a.up_days} up days, {a.down_days} down</dd>
+          <dd className="text-micro text-text-muted">
+            {uncovered > 0
+              ? `${uncovered} before the news archive${a.news_since ? ` (from ${day(a.news_since)})` : ""}`
+              : `${a.up_days} up days, ${a.down_days} down`}
+          </dd>
         </div>
       </dl>
 
@@ -208,7 +218,12 @@ export function AnalysisPanel({ a, onSymbol }: { a: StockAnalysis; onSymbol?: (s
       )}
 
       <div className="mt-4 px-5">
-        <h5 className="text-meta font-semibold text-text-secondary">Biggest days, and the news behind them</h5>
+        <h5 className="text-meta font-semibold text-text-secondary">Biggest days, and what is on record about them</h5>
+        <p className="text-micro text-text-muted">
+          Earnings from the company's results history, insider trades from SEC Form 4 filings, news from Bellwether's archive
+          {a.news_since ? `, which covers ${a.symbol} from ${day(a.news_since)}` : ""}. Days older than the archive are searched in
+          that day's published news.
+        </p>
       </div>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[640px] text-ui">
@@ -217,7 +232,7 @@ export function AnalysisPanel({ a, onSymbol }: { a: StockAnalysis; onSymbol?: (s
               <th className="px-5 py-2 font-medium">Session</th>
               <th className="px-3 py-2 text-right font-medium">vs market</th>
               <th className="px-3 py-2 text-right font-medium">Volume</th>
-              <th className="px-5 py-2 font-medium">News found</th>
+              <th className="px-5 py-2 font-medium">On record</th>
             </tr>
           </thead>
           <tbody>
@@ -227,14 +242,30 @@ export function AnalysisPanel({ a, onSymbol }: { a: StockAnalysis; onSymbol?: (s
                 <td className={"px-3 py-2.5 text-right font-num text-[12.5px] font-semibold " + tone(m.abnormal_pct)}>{pct(m.abnormal_pct)}</td>
                 <td className="px-3 py-2.5 text-right font-num text-[12px] text-text-secondary">{m.volume_ratio ? `${m.volume_ratio.toFixed(1)}×` : "—"}</td>
                 <td className="px-5 py-2.5">
-                  {m.events?.length ? (
-                    m.events.map((ev) => (
-                      <span key={ev.id} className="block text-meta leading-snug text-text-secondary">
-                        {ev.headline} <span className="text-text-muted">({words(ev.type)})</span>
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-meta text-brand">No news in the archive: moved on something not yet reported</span>
+                  {m.earnings && <span className="block text-meta font-medium leading-snug text-text-primary">{m.earnings}</span>}
+                  {m.insider && <span className="block text-meta leading-snug text-text-primary">{m.insider}</span>}
+                  {m.events?.map((ev) => (
+                    <span key={ev.id} className="block text-meta leading-snug text-text-secondary">
+                      {ev.headline} <span className="text-text-muted">({words(ev.type)})</span>
+                    </span>
+                  ))}
+                  {m.web?.map((w) => (
+                    <a
+                      key={w.url}
+                      href={safeHref(w.url)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block text-meta leading-snug text-text-secondary hover:text-accent-text"
+                    >
+                      {w.title} <span className="text-text-muted">({w.publisher}, that day)</span>
+                    </a>
+                  ))}
+                  {!onRecord(m) && (
+                    <span className="text-meta text-text-muted">
+                      {m.news_covered === false
+                        ? `Before the news archive covers ${a.symbol}, and a search of that day's news found nothing`
+                        : "No earnings, insider filing or news on record for this day"}
+                    </span>
                   )}
                 </td>
               </tr>
@@ -246,26 +277,40 @@ export function AnalysisPanel({ a, onSymbol }: { a: StockAnalysis; onSymbol?: (s
       {!!a.reactions?.length && (
         <>
           <div className="mt-4 px-5">
-            <h5 className="text-meta font-semibold text-text-secondary">How it has reacted to each kind of news</h5>
-            <p className="text-micro text-text-muted">Market-adjusted, from the first session after the news was found. Small samples mean little.</p>
+            <h5 className="text-meta font-semibold text-text-secondary">How it has reacted, by kind of event</h5>
+            <p className="text-micro text-text-muted">
+              Against the market, from the first session to trade after the event became public. Each session counts once. Rows
+              under three sessions mean little.
+            </p>
           </div>
           <div className="mt-2 overflow-x-auto">
-            <table className="w-full min-w-[560px] text-ui">
+            <table className="w-full min-w-[640px] text-ui">
               <thead>
                 <tr className="border-y border-border-subtle text-left text-meta text-text-muted">
-                  <th className="px-5 py-2 font-medium">Kind of news</th>
-                  <th className="px-3 py-2 text-right font-medium">Cases</th>
-                  <th className="px-3 py-2 text-right font-medium">Next session</th>
+                  <th className="px-5 py-2 font-medium">Event</th>
+                  <th className="px-3 py-2 text-right font-medium">Sessions</th>
+                  <th className="px-3 py-2 text-right font-medium">First session</th>
+                  <th className="px-3 py-2 text-right font-medium">Typical move</th>
                   <th className="px-3 py-2 text-right font-medium">Five sessions</th>
-                  <th className="px-5 py-2 text-right font-medium">Positive</th>
+                  <th className="px-5 py-2 text-right font-medium">Beat market</th>
                 </tr>
               </thead>
               <tbody>
                 {a.reactions.map((r) => (
                   <tr key={r.type} className={"border-b border-border-subtle last:border-0 " + (r.count < 3 ? "opacity-60" : "")}>
-                    <td className="px-5 py-2.5 text-text-primary">{words(r.type)}</td>
+                    <td className="px-5 py-2.5">
+                      <span className="text-text-primary">{r.label ?? words(r.type)}</span>
+                      {r.since && (
+                        <span className="block text-micro text-text-muted">
+                          {r.source === "earnings" ? "Results history" : r.source === "insiders" ? "SEC Form 4" : "News archive"} since {day(r.since)}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-2.5 text-right font-num text-[12px] text-text-secondary">{r.count}</td>
                     <td className={"px-3 py-2.5 text-right font-num text-[12.5px] " + tone(r.day1_mean_pct)}>{pct(r.day1_mean_pct, 2)}</td>
+                    <td className="px-3 py-2.5 text-right font-num text-[12px] text-text-secondary">
+                      {r.abs_mean_pct != null ? `±${r.abs_mean_pct.toFixed(2)}%` : "—"}
+                    </td>
                     <td className={"px-3 py-2.5 text-right font-num text-[12.5px] " + tone(r.day5_mean_pct)}>{pct(r.day5_mean_pct, 2)}</td>
                     <td className="px-5 py-2.5 text-right font-num text-[12px] text-text-secondary">{r.hit_rate.toFixed(0)}%</td>
                   </tr>

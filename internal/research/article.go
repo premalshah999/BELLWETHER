@@ -56,6 +56,64 @@ type ArticleFetcher struct {
 	publishers map[string]*publisherState
 	cache      map[string]articleCacheEntry
 	slots      chan struct{}
+	// refusals remembers publishers that turned a reader away, so the next
+	// question spends its reading on pages that can be read.
+	refusals map[string]*refusal
+}
+
+type refusal struct {
+	count int
+	since time.Time // the first refusal counted
+	until time.Time // blocked until; zero while only counting
+}
+
+// blockedFor is how long a publisher that refused stays skipped.
+const blockedFor = 6 * time.Hour
+
+// noteRefusal records a failed read. A forbidden status or a robots rule
+// blocks the publisher at once; pages that yield no text (a paywall, a
+// script-only page) block it after the second.
+func (f *ArticleFetcher) noteRefusal(rawURL string, err error) {
+	u, perr := url.Parse(rawURL)
+	if perr != nil || err == nil {
+		return
+	}
+	msg := err.Error()
+	hard := strings.Contains(msg, "HTTP 401") || strings.Contains(msg, "HTTP 403") ||
+		strings.Contains(msg, "disallows") || strings.Contains(msg, "robots access denied")
+	soft := strings.Contains(msg, "words extracted")
+	if !hard && !soft {
+		return
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.refusals == nil {
+		f.refusals = map[string]*refusal{}
+	}
+	now := time.Now()
+	r := f.refusals[host]
+	if r == nil || (!r.until.IsZero() && now.After(r.until)) || (r.until.IsZero() && now.After(r.since.Add(blockedFor))) {
+		r = &refusal{since: now}
+		f.refusals[host] = r
+	}
+	r.count++
+	if hard || r.count >= 2 {
+		r.until = now.Add(blockedFor)
+	}
+}
+
+// Blocked reports whether a URL's publisher recently refused to be read.
+func (f *ArticleFetcher) Blocked(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r := f.refusals[host]
+	return r != nil && time.Now().Before(r.until)
 }
 
 func NewArticleFetcher() *ArticleFetcher {
@@ -95,6 +153,7 @@ func (f *ArticleFetcher) Fetch(ctx context.Context, rawURL string) (Article, err
 		}
 		if ctx.Err() == nil {
 			f.remember(key, a, err)
+			f.noteRefusal(rawURL, err)
 		}
 		return a, err
 	}
@@ -348,62 +407,93 @@ var unreadableHosts = map[string]bool{
 //
 // Best-effort throughout: a paywall, a consent wall or a slow publisher costs
 // that one source its body and nothing else. Findings keep their headline
-// either way.
+// either way. When the first pass reads too little, because the most
+// relevant pages sat behind paywalls, a second pass reads further down.
 func (e *Engine) readBodies(ctx context.Context, findings []Finding) {
 	if e.articles == nil || len(findings) == 0 {
 		return
 	}
-
-	// Bounded so a question does not open thirty sockets at once.
-	sem := make(chan struct{}, articleConcurrency)
-	var wg sync.WaitGroup
-
-	attempted := 0
 	hostCounts := map[string]int{}
-	for i := range findings {
-		if attempted >= bodyFetchLimit {
-			break
-		}
-		u, err := url.Parse(findings[i].URL)
-		if findings[i].Body != "" {
-			findings[i].ReadStatus = "read"
-			continue
-		}
-		findings[i].ReadStatus = "not_read"
-		if err != nil || u.Host == "" || unreadableHosts[strings.ToLower(u.Host)] {
-			continue
-		}
-		if hostCounts[u.Hostname()] >= 3 {
-			continue
-		}
-		hostCounts[u.Hostname()]++
-		attempted++
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return
+	tried := map[int]bool{}
+	pass := func(limit int) {
+		// Bounded so a question does not open thirty sockets at once.
+		sem := make(chan struct{}, articleConcurrency)
+		var wg sync.WaitGroup
+		attempted := 0
+		for i := range findings {
+			if attempted >= limit {
+				break
 			}
-			defer func() { <-sem }()
-
-			a, err := e.articles.Fetch(ctx, findings[i].URL)
-			if err != nil {
+			if tried[i] {
+				continue
+			}
+			u, err := url.Parse(findings[i].URL)
+			if findings[i].Body != "" {
+				findings[i].ReadStatus = "read"
+				continue
+			}
+			findings[i].ReadStatus = "not_read"
+			if err != nil || u.Host == "" || unreadableHosts[strings.ToLower(u.Host)] {
+				continue
+			}
+			// Reading is spent on the sources about the question; ranking has
+			// already put them first, and an off-topic page read in full is a
+			// slot a relevant one did not get.
+			if r := findings[i].Relevance; r > 0 && r < 10 {
+				continue
+			}
+			if e.articles.Blocked(findings[i].URL) {
+				tried[i] = true
 				findings[i].ReadStatus = "unavailable"
-				findings[i].ReadError = err.Error()
-				e.log.Debug("could not read article", "url", findings[i].URL, "err", err)
-				return
+				findings[i].ReadError = "article: publisher recently refused automated reading"
+				continue
 			}
-			findings[i].Body = trimWords(a.Text, maxBodyWords)
-			findings[i].Words = len(strings.Fields(findings[i].Body))
-			findings[i].ReadStatus = "read"
-			findings[i].FetchedAt = a.FetchedAt
-			findings[i].Cached = a.Cached
-		}(i)
+			if hostCounts[u.Hostname()] >= 3 {
+				continue
+			}
+			hostCounts[u.Hostname()]++
+			attempted++
+			tried[i] = true
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				select {
+				case sem <- struct{}{}:
+				case <-ctx.Done():
+					return
+				}
+				defer func() { <-sem }()
+
+				a, err := e.articles.Fetch(ctx, findings[i].URL)
+				if err != nil {
+					findings[i].ReadStatus = "unavailable"
+					findings[i].ReadError = err.Error()
+					e.log.Debug("could not read article", "url", findings[i].URL, "err", err)
+					return
+				}
+				findings[i].Body = trimWords(a.Text, maxBodyWords)
+				findings[i].Words = len(strings.Fields(findings[i].Body))
+				findings[i].ReadStatus = "read"
+				findings[i].FetchedAt = a.FetchedAt
+				findings[i].Cached = a.Cached
+			}(i)
+		}
+		wg.Wait()
 	}
-	wg.Wait()
+	pass(bodyFetchLimit)
+	read := 0
+	for _, f := range findings {
+		if f.Body != "" {
+			read++
+		}
+	}
+	if read < wantRead && ctx.Err() == nil {
+		pass(bodyFetchLimit / 2)
+	}
 }
+
+// wantRead is how many readable sources make a first pass enough.
+const wantRead = 15
 
 func trimWords(s string, max int) string {
 	f := strings.Fields(s)

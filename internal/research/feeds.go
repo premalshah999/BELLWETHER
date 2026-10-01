@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -68,15 +67,15 @@ func (f *FeedScraper) Search(ctx context.Context, query string, limit int) ([]Fi
 		}
 		f.until = time.Now().Add(2 * time.Minute)
 	}
-	terms := QueryTerms(query)
+	about := profileOf(query)
 	var out []Finding
 	for _, item := range f.items {
-		if termHits(item.Title+" "+item.Snippet, terms) == 0 {
+		if !about.matches(item.Title + " " + item.Snippet) {
 			continue
 		}
 		out = append(out, item)
 	}
-	rankFindings(strings.Join(terms, " "), out)
+	rankFindings(query, out)
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}

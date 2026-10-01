@@ -1293,8 +1293,28 @@ export interface StockAnalysis {
     abnormal_pct: number;
     volume_ratio: number;
     events?: { id: number; headline: string; type: string; importance: number; discovered_at: string }[];
+    /** Set when this was the first session after an earnings release. */
+    earnings?: string;
+    /** Set when a notable Form 4 became public the evening before. */
+    insider?: string;
+    /** Whether the news archive already covered the company that day. */
+    news_covered?: boolean;
+    /** Coverage published that day, found by a dated news search. */
+    web?: { title: string; url: string; publisher: string; published_at: string }[];
   }[];
-  reactions?: { type: string; count: number; day1_mean_pct: number; day5_mean_pct: number; hit_rate: number }[];
+  reactions?: {
+    type: string;
+    label?: string;
+    source?: "earnings" | "insiders" | "news";
+    count: number;
+    since?: string;
+    day1_mean_pct: number;
+    day5_mean_pct: number;
+    abs_mean_pct?: number;
+    hit_rate: number;
+  }[];
+  /** First day the news archive holds an event about the company. */
+  news_since?: string;
   notable?: { event: { id: number; headline: string; type: string }; session: string; day1_abnormal_pct: number; day5_abnormal_pct: number }[];
   smart_money?: { insider_buy_value: number; insider_sell_value: number; insider_buyers?: string[]; insider_sellers: number; fund_moves?: string[]; congress_filings: number };
   catalyst?: { kind: string; date: string; in_days: number; eps_mean?: number };

@@ -3,6 +3,7 @@ package research
 import (
 	"context"
 	"math"
+	"sort"
 	"sync"
 	"time"
 )
@@ -240,11 +241,6 @@ func Measure(symbol string, bars []Bar) *MarketStats {
 // thing. The cap is on the question, not the sector.
 const maxMeasured = 6
 
-// rankForMeasurement puts the question's own subjects first.
-//
-// Symbols named in the question are what the reader asked about. Symbols that
-// merely appear in retrieved articles are context, and are worth measuring
-// only once the subject is covered.
 // valuations fetches fundamentals for the instruments a question is about.
 func (e *Engine) valuations(ctx context.Context, symbols []string) []Valuation {
 	if e.valuation == nil || len(symbols) == 0 {
@@ -264,21 +260,85 @@ func (e *Engine) valuations(ctx context.Context, symbols []string) []Valuation {
 	return out
 }
 
-func (e *Engine) rankForMeasurement(query string, fromFindings []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	add := func(list []string) {
-		for _, s := range list {
-			if s != "" && !seen[s] {
-				seen[s] = true
-				out = append(out, s)
-			}
+// subjectsOf decides which companies a question is about: the ones it names,
+// or, when it names none, at most two that at least three of its most
+// relevant sources are about. A question about retirement accounts or the
+// Fed has no subject company, and gets no company analysis.
+func subjectsOf(named []string, findings []Finding) []string {
+	if len(named) > 0 {
+		return dedupe(named)
+	}
+	count := map[string]int{}
+	considered := 0
+	for _, f := range findings {
+		if f.Relevance < 10 {
+			continue
+		}
+		if considered++; considered > 15 {
+			break
+		}
+		for _, s := range dedupe(f.Symbols) {
+			count[s]++
 		}
 	}
-	if e.resolve != nil {
-		add(e.resolve(query))
+	var out []string
+	for s, n := range count {
+		if n >= 3 && n*5 >= considered {
+			out = append(out, s)
+		}
 	}
-	add(fromFindings)
+	sort.Slice(out, func(i, j int) bool {
+		if count[out[i]] != count[out[j]] {
+			return count[out[i]] > count[out[j]]
+		}
+		return out[i] < out[j]
+	})
+	return out[:min(len(out), 2)]
+}
+
+// mentioned lists the question's subjects, then the companies at least two
+// relevant sources name, most named first. A company one stray headline
+// mentions is not something the sources are about.
+func mentioned(findings []Finding, subjects []string) []string {
+	count := map[string]int{}
+	for _, f := range findings {
+		if f.Relevance < 10 {
+			continue
+		}
+		for _, s := range dedupe(f.Symbols) {
+			count[s]++
+		}
+	}
+	out := dedupe(subjects)
+	seen := map[string]bool{}
+	for _, s := range out {
+		seen[s] = true
+	}
+	var rest []string
+	for s, n := range count {
+		if n >= 2 && !seen[s] {
+			rest = append(rest, s)
+		}
+	}
+	sort.Slice(rest, func(i, j int) bool {
+		if count[rest[i]] != count[rest[j]] {
+			return count[rest[i]] > count[rest[j]]
+		}
+		return rest[i] < rest[j]
+	})
+	out = append(out, rest...)
+	return out[:min(len(out), 12)]
+}
+
+func dedupe(list []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range list {
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
 	return out
 }
 

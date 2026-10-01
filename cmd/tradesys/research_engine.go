@@ -179,7 +179,7 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, archive *postgr
 		research.WithPrices(research.RouterPrices{Router: router}),
 		// Price history tied to the news, insider trading and the calendar:
 		// how the stock behaved, what moved it, and how it reacts.
-		research.WithAnalysis(analysisDeps(store, archive)),
+		research.WithAnalysis(analysisDeps(store, archive, master)),
 		// Reads the pages behind the results rather than working from their
 		// headlines. This is the difference between a report and a list of
 		// links: without it the model sees a title and a forty-word snippet,
@@ -194,30 +194,85 @@ func buildResearchEngine(cfg *config.Config, store *postgres.DB, archive *postgr
 }
 
 // analysisDeps connects research's price analysis to the archive.
-func analysisDeps(store *postgres.DB, archive *postgres.Archive) research.AnalysisDeps {
+func analysisDeps(store *postgres.DB, archive *postgres.Archive, master *company.Master) research.AnalysisDeps {
 	return research.AnalysisDeps{
-		Events: func(ctx context.Context, symbol string, since time.Time) ([]research.EventRef, error) {
-			f := postgres.EventFilter{Symbol: symbol, Since: since, Limit: 500, IncludeUnattributedWatchlist: true}
-			var (
-				list []news.Event
-				err  error
-			)
-			if archive != nil {
-				list, err = archive.ListEvents(ctx, f, time.Now())
-			} else {
-				list, err = store.ListEvents(ctx, f)
+		Name: func(symbol string) string {
+			if c, ok := master.Lookup(symbol); ok {
+				return news.ShortName(c.Name)
 			}
+			return ""
+		},
+		// Every event in the window, a page at a time. One page of the newest
+		// 500 covered only the last week for a busy name, so every kind of
+		// news was measured on the same few sessions.
+		Events: func(ctx context.Context, symbol string, since time.Time) ([]research.EventRef, error) {
+			const page, most = 500, 6000
+			var out []research.EventRef
+			for offset := 0; offset < most; offset += page {
+				f := postgres.EventFilter{Symbol: symbol, Since: since, Limit: page, Offset: offset, IncludeUnattributedWatchlist: true}
+				var (
+					list []news.Event
+					err  error
+				)
+				if archive != nil {
+					list, err = archive.ListEvents(ctx, f, time.Now())
+				} else {
+					list, err = store.ListEvents(ctx, f)
+				}
+				if err != nil {
+					return nil, err
+				}
+				for _, e := range list {
+					imp := 0
+					if e.Importance != nil {
+						imp = *e.Importance
+					}
+					out = append(out, research.EventRef{ID: e.ID, Headline: e.Headline, Type: e.Type,
+						Importance: imp, DiscoveredAt: e.DiscoveredAt})
+				}
+				if len(list) < page {
+					break
+				}
+			}
+			return out, nil
+		},
+		Earnings: func(ctx context.Context, symbol string) ([]research.EarningsRef, error) {
+			list, err := store.SymbolEarnings(ctx, symbol, 40)
 			if err != nil {
 				return nil, err
 			}
-			out := make([]research.EventRef, 0, len(list))
+			out := make([]research.EarningsRef, 0, len(list))
 			for _, e := range list {
-				imp := 0
-				if e.Importance != nil {
-					imp = *e.Importance
+				out = append(out, research.EarningsRef{AnnouncedAt: e.AnnouncedAt, SurprisePct: e.SurprisePct})
+			}
+			return out, nil
+		},
+		// One reference per Form 4 and direction: a filing reporting twelve
+		// sales lines is one decision.
+		Insiders: func(ctx context.Context, symbol string, since time.Time) ([]research.InsiderRef, error) {
+			trades, err := store.ListInsiderTrades(ctx, postgres.InsiderFilter{Symbol: symbol, Since: since, Market: true, Limit: 1000})
+			if err != nil {
+				return nil, err
+			}
+			byFiling := map[string]*research.InsiderRef{}
+			var order []string
+			for _, t := range trades {
+				if t.Value == nil {
+					continue
 				}
-				out = append(out, research.EventRef{ID: e.ID, Headline: e.Headline, Type: e.Type,
-					Importance: imp, DiscoveredAt: e.DiscoveredAt})
+				key := t.Accession + "/" + t.Code
+				ref := byFiling[key]
+				if ref == nil {
+					ref = &research.InsiderRef{FiledAt: t.FiledAt, Buy: t.Code == "P", Planned: true, Who: t.OwnerName + " (" + t.Role() + ")"}
+					byFiling[key] = ref
+					order = append(order, key)
+				}
+				ref.Value += *t.Value
+				ref.Planned = ref.Planned && t.Plan105b1
+			}
+			out := make([]research.InsiderRef, 0, len(order))
+			for _, k := range order {
+				out = append(out, *byFiling[k])
 			}
 			return out, nil
 		},

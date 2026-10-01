@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -210,15 +211,29 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 		webReports  []ScraperReport
 		wg          sync.WaitGroup
 	)
+	var (
+		officialFound  []Finding
+		officialReport *ScraperReport
+	)
 	wg.Go(func() { webFindings, webReports = e.fanOut(ctx, web, query, max(perScraper, webDepth), 35*time.Second) })
+	wg.Go(func() {
+		octx, cancel := context.WithTimeout(ctx, 35*time.Second)
+		defer cancel()
+		officialFound, officialReport = e.officialFindings(octx, query)
+	})
 	findings, reports := e.fanOut(ctx, fixed, query, perScraper, 35*time.Second)
 	wg.Wait()
 	findings, reports = append(findings, webFindings...), append(reports, webReports...)
+	findings = append(findings, officialFound...)
+	if officialReport != nil {
+		reports = append(reports, *officialReport)
+	}
 	sort.Slice(reports, func(i, j int) bool { return reports[i].Name < reports[j].Name })
 
-	findings = dedupeFindings(findings)
-	symbolSet := map[string]bool{}
+	findings = dedupeFindings(usMarketOnly(findings))
+	var named []string
 	if e.resolve != nil {
+		named = e.resolve(query)
 		for i := range findings {
 			text := findings[i].Title
 			if findings[i].Snippet != "" {
@@ -227,19 +242,9 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 			if len(findings[i].Symbols) == 0 {
 				findings[i].Symbols = e.resolve(text)
 			}
-			for _, s := range findings[i].Symbols {
-				symbolSet[s] = true
-			}
 		}
 	}
-
-	rankFindings(query, findings)
-
-	symbols := make([]string, 0, len(symbolSet))
-	for s := range symbolSet {
-		symbols = append(symbols, s)
-	}
-	sort.Strings(symbols)
+	rankFindingsFor(query, named, findings)
 
 	var universe []UniverseNote
 	if e.universe != nil {
@@ -252,22 +257,27 @@ func (e *Engine) Search(ctx context.Context, query string, perScraper int) (Resu
 	reportProgress(ctx, "reading", fmt.Sprintf("Checking publisher access and reading up to %d relevant pages", bodyFetchLimit))
 	e.readBodies(ctx, findings)
 
-	rankFindings(query, findings)
+	rankFindingsFor(query, named, findings)
+	findings = relevantOnly(findings)
 
-	// Measured last, because it needs the resolved symbols — but the question's
-	// own subject leads.
+	// Measured last, and only for what the question is about: the companies
+	// it names, or failing that one or two its sources are plainly about.
 	//
-	// Ranking by what the articles happened to mention and then truncating is
-	// how "how has XOM performed" came to price AAPL, ABBV and
-	// four other names alphabetically ahead of it, and answer that it had no
-	// data on the company the reader asked about. What a question names is the
-	// thing to measure; what its sources mention is context.
-	reportProgress(ctx, "measuring", "Computing market context for the companies in this question")
-	ranked := e.rankForMeasurement(query, symbols)
-	measurements := e.measure(ctx, ranked)
-	valuations := e.valuations(ctx, ranked)
-	reportProgress(ctx, "measuring", "Relating price moves to the news and to insider trading")
-	analyses := e.analyse(ctx, ranked)
+	// Measuring whatever the articles happened to mention is how "how has
+	// XOM performed" came to price AAPL and ABBV ahead of it, and how a
+	// question about 401(k) strategy came back with Apple's reaction to news.
+	subjects := subjectsOf(named, findings)
+	symbols := mentioned(findings, subjects)
+	var measurements []MarketStats
+	var valuations []Valuation
+	var analyses []Analysis
+	if len(subjects) > 0 {
+		reportProgress(ctx, "measuring", "Computing market context for the companies in this question")
+		measurements = e.measure(ctx, subjects)
+		valuations = e.valuations(ctx, subjects)
+		reportProgress(ctx, "measuring", "Relating price moves to earnings, the news and insider trading")
+		analyses = e.analyse(ctx, subjects)
+	}
 
 	return Result{
 		Query: query, Findings: findings, Scrapers: reports, Symbols: symbols,
@@ -357,7 +367,7 @@ func (e *Engine) Web(ctx context.Context, query, kind string, limit int) ([]Find
 	}
 	limit = max(1, min(limit, 40))
 	findings, reports := e.fanOut(ctx, scrapers, query, limit, 12*time.Second)
-	findings = dedupeFindings(findings)
+	findings = dedupeFindings(usMarketOnly(findings))
 	if kind == "news" {
 		// Newest first; an undated result sorts last rather than being
 		// assumed recent.
@@ -376,6 +386,18 @@ func (e *Engine) Web(ctx context.Context, query, kind string, limit int) ([]Find
 		}
 	}
 	return findings, reports, nil
+}
+
+// usMarketOnly drops findings from publishers writing for another country's
+// investors: their tax rules, savings products and listings do not apply here.
+func usMarketOnly(findings []Finding) []Finding {
+	out := findings[:0]
+	for _, f := range findings {
+		if !news.OutsideUSMarket(f.URL, f.Publisher) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // dedupeFindings collapses the same document arriving from several scrapers.
@@ -410,9 +432,35 @@ func dedupeFindings(in []Finding) []Finding {
 			best[key] = prev
 		}
 	}
+	// A Google News link is an opaque redirect that cannot be read. When
+	// the same headline arrived with the publisher's own address, keep that
+	// one and drop the redirect.
+	direct := map[string]bool{}
+	for _, k := range order {
+		if f := best[k]; !isAggregatorLink(f.URL) {
+			direct[headlineKey(f.Title)] = true
+		}
+	}
 	out := make([]Finding, 0, len(order))
 	for _, k := range order {
-		out = append(out, best[k])
+		f := best[k]
+		if isAggregatorLink(f.URL) && direct[headlineKey(f.Title)] {
+			continue
+		}
+		out = append(out, f)
 	}
 	return out
+}
+
+func isAggregatorLink(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && unreadableHosts[strings.ToLower(u.Hostname())]
+}
+
+// headlineKey is a headline without the " - Publisher" an aggregator adds.
+func headlineKey(title string) string {
+	if i := strings.LastIndex(title, " - "); i > 0 {
+		title = title[:i]
+	}
+	return strings.ToLower(strings.Join(strings.Fields(title), " "))
 }
