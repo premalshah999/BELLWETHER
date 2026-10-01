@@ -174,6 +174,8 @@ Three official, free sources of "who is putting money where":
   search for by name and follow. Each portfolio is searchable, filterable by
   what changed, sortable and paged, however many thousand positions it holds.
 
+![A fund's whole portfolio: searchable, filtered by what changed, with its sector mix](docs/images/fund.png)
+
 ![House STOCK Act disclosures, with how late each was filed against the 45-day deadline](docs/images/congress.png)
 
 - **Congress** — House STOCK Act disclosures, including how late each was filed
@@ -210,7 +212,7 @@ sources that failed or could not be read are listed as gaps.
 
 ### Paper trading — does the strategy actually make money?
 
-![A paper wallet: equity, holdings, and the account against the S&P 500](docs/images/paper.png)
+![A paper wallet with its trading agents and their decision log](docs/images/paper.png)
 
 Open a wallet with simulated money and trade it at real market prices. It is
 built to be as strict as a real account so the answer means something:

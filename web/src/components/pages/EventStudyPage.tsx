@@ -61,6 +61,7 @@ export function EventStudyPage() {
 
   const t = result && result.samples > 1 ? result.mean_abnormal_return_pct / stderr(result) : 0;
   const real = Math.abs(t) >= 2 && (result?.samples ?? 0) >= 30;
+  const usable = real && Math.abs(result?.mean_abnormal_return_pct ?? 0) >= 0.25;
   const phrase = eventPhrase(type);
 
   return (
@@ -113,12 +114,14 @@ export function EventStudyPage() {
               <p
                 className={
                   "mt-3 inline-flex items-center gap-2 rounded-md px-2.5 py-1 text-ui font-medium " +
-                  (real ? "bg-brand-muted text-brand" : "bg-bg-panel-hover text-text-secondary")
+                  (usable ? "bg-brand-muted text-brand" : "bg-bg-panel-hover text-text-secondary")
                 }
               >
-                {real
-                  ? "That drift is larger than chance would plausibly produce."
-                  : "That drift is within what chance alone would produce, so it is not an edge on its own."}
+                {!real
+                  ? "That drift is within what chance alone would produce, so it is not an edge on its own."
+                  : Math.abs(result.mean_abnormal_return_pct) < 0.25
+                    ? "Statistically real, but smaller than the cost of trading it, so not a usable edge."
+                    : "That drift is larger than chance would plausibly produce."}
                 <span className="font-normal text-text-muted">t = {t.toFixed(1)}</span>
               </p>
             </section>
