@@ -59,8 +59,8 @@ export function ForecastPage({ onSelect }: { onSelect: (s: string) => void }) {
                 <Stat term="Top tenth beat the average" value={`${rep.overall.top_hit_pct.toFixed(0)}%`} note="of sessions" />
                 <Stat
                   term="Live since launch"
-                  value={data.live_summary.runs ? signed(data.live_summary.rank_ic, 3) : "—"}
-                  note={data.live_summary.runs ? `rank IC over ${data.live_summary.runs} scored runs` : "first scores after five sessions"}
+                  value={data.live_summary?.runs ? signed(data.live_summary?.rank_ic, 3) : "—"}
+                  note={data.live_summary?.runs ? `rank IC over ${data.live_summary?.runs} scored runs` : "first scores after five sessions"}
                 />
               </dl>
               {verdict && <p className={"mt-4 text-ui " + verdict.tone}>{verdict.text}</p>}
@@ -101,7 +101,7 @@ export function ForecastPage({ onSelect }: { onSelect: (s: string) => void }) {
                 factors overlap.
               </p>
               <ul className="mt-3 divide-y divide-border-subtle">
-                {rep.factors.map((f) => (
+                {(rep.factors ?? []).map((f) => (
                   <li key={f.key} className="grid gap-1 py-2.5 sm:grid-cols-[minmax(0,1.2fr)_90px_90px_minmax(0,2fr)] sm:items-center sm:gap-3">
                     <span className="text-ui text-text-primary">{f.label}</span>
                     <span className="font-num text-meta text-text-secondary">IC {signed(f.rank_ic, 3)}</span>
@@ -134,12 +134,12 @@ export function ForecastPage({ onSelect }: { onSelect: (s: string) => void }) {
                   </button>
                 )}
               </form>
-              <span className="text-meta text-text-muted">{data.total.toLocaleString()} stocks ranked</span>
+              <span className="text-meta text-text-muted">{(data.total ?? 0).toLocaleString()} stocks ranked</span>
             </div>
 
             <div className="grid gap-5 lg:grid-cols-2">
-              <PickList title="Most likely to outperform" picks={data.top} onOpen={open} />
-              <PickList title="Most likely to underperform" picks={data.bottom} onOpen={open} />
+              <PickList title="Most likely to outperform" picks={data.top ?? []} onOpen={open} />
+              <PickList title="Most likely to underperform" picks={data.bottom ?? []} onOpen={open} />
             </div>
             <p className="max-w-3xl text-meta leading-relaxed text-text-muted">
               <Sparkles size={12} className="mr-1 inline" />

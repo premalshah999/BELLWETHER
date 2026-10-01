@@ -90,7 +90,17 @@ function response(path) {
   if (path === "/api/journal") return { trades: [] };
   if (path === "/api/congress/filings") return { filings: [] };
   if (path === "/api/eventstudy/types") return { types: [{ event_type: "EARNINGS", count: 20 }] };
-  if (path === "/api/eventstudy") return { event_type: "EARNINGS", benchmark: "GSPC.INDEX", holding_days: 5, total_events: 20, samples: 10, mean_abnormal_return_pct: 0.5, median_abnormal_return_pct: 0.2, stddev_pct: 2, hit_rate: 55, warnings: [] };
+  if (path === "/api/eventstudy") return { event_type: "EARNINGS", benchmark: "GSPC.INDEX", holding_days: 5, total_events: 20, samples: 10, mean_abnormal_return_pct: 0.5, median_abnormal_return_pct: 0.2, stddev_pct: 2, hit_rate: 55, reaction: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, drift: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, abs_reaction_pct: 3.1, groups: [{ label: "positive", samples: 6, reaction: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, drift: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, abs_reaction_pct: 3 }, { label: "negative", samples: 4, reaction: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, drift: { mean_pct: 0.5, median_pct: 0.2, stddev_pct: 2, hit_rate: 55, t: 1.1 }, abs_reaction_pct: 3 }], warnings: [] };
+  if (path === "/api/smartmoney/funds") return { funds: [] };
+  if (path === "/api/forecast") return {
+    report: { at: now, as_of: now, horizon: 5, symbols: 2, train_rows: 1000, years: [{ year: 2025, days: 100, rank_ic: 0.03, t: 2, spread_pct: 0.4, top_hit_pct: 60 }],
+      overall: { year: 0, days: 100, rank_ic: 0.03, t: 2, spread_pct: 0.4, top_hit_pct: 60 },
+      factors: [{ key: "mom_12_1", label: "12-month momentum", why: "Momentum persists.", rank_ic: 0.03, t: 3, weight: 0.03 }] },
+    top: [{ symbol: "AAPL", name: "Apple Inc.", sector: "Information Technology", score: 0.1, percentile: 99, drivers: [{ key: "mom_12_1", label: "12-month momentum", contribution: 0.02 }] }],
+    bottom: [], total: 2, live: [], live_summary: { runs: 0 },
+  };
+  if (path.startsWith("/api/forecast/symbols/")) return { symbol: "AAPL", latest: { as_of: now, symbol: "AAPL", score: 0.1, percentile: 99, drivers: [] }, history: [], horizon: 5, stale: false };
+  if (path === "/api/paper/wallets") return { wallets: [], defaults: {} };
   if (path === "/api/algorithms/templates") return { templates: [] };
   if (path === "/api/algorithms/vocabulary") return { indicators: [], intervals: [], operators: [] };
   if (path === "/api/algorithms") return { algorithms: [] };
@@ -115,7 +125,7 @@ const routes = [
   "/geopolitics", "/congress", "/eventstudy", "/calendar", "/positions",
   "/journal", "/research", "/algorithms/build", "/algorithms/backtest",
   "/alerts", "/sources", "/ai", "/smartmoney/overview", "/smartmoney/insiders",
-  "/smartmoney/funds", "/smartmoney/congress",
+  "/smartmoney/funds", "/smartmoney/congress", "/forecast", "/paper/overview",
 ];
 
 const browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });

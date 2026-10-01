@@ -400,7 +400,7 @@ function FundsTab({ onOpen }: { onOpen: (f: FundSummary | { cik: string }) => vo
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder={`Filter ${data?.funds.length ?? ""} followed funds…`}
+            placeholder={`Filter ${data?.funds?.length ?? ""} followed funds…`}
             aria-label="Filter followed funds"
             className="h-[34px] w-full rounded-md border border-border-subtle bg-bg-field pl-8 pr-3 text-meta outline-none focus:border-brand"
           />
@@ -522,7 +522,7 @@ function FundDetail({ cik, onBack, onSymbol }: { cik: string; onBack: () => void
   const [sort, setSort] = useUrlState<NonNullable<FundQuery["sort"]>>("sort", "value");
   const [offset, setOffset] = useState(0);
   const funds = useQuery({ queryKey: ["funds"], queryFn: api.funds, staleTime: 5 * 60_000 });
-  const fund = funds.data?.funds.find((f) => f.cik === cik);
+  const fund = funds.data?.funds?.find((f) => f.cik === cik);
   const { data, isLoading, isError, error, isFetching } = useQuery({
     queryKey: ["fund", cik, q, kind, sort, offset],
     queryFn: () => api.fund(cik, { q, kind, sort, offset, limit: PAGE }),
