@@ -77,10 +77,21 @@ const usRelevant = `NOT (
     AND NOT EXISTS (SELECT 1 FROM event_evidence wu WHERE wu.event_id = e.id AND wu.source_id !~ '^watch-.*\.(nse|bse)$')
 )`
 
+// maxEventRows bounds one event query.
+const maxEventRows = 6000
+
 func (d *DB) ListEvents(ctx context.Context, f EventFilter) ([]news.Event, error) {
+	// The archive asks each shard for a page plus everything before it, so
+	// an internal caller's limit can exceed any one page; the HTTP handler
+	// bounds what a client may ask for. A limit over the cap is clamped to
+	// it, never silently cut to the default, which emptied every page after
+	// the first once the archive merged two shards.
 	limit := f.Limit
-	if limit <= 0 || limit > 500 {
+	switch {
+	case limit <= 0:
 		limit = 100
+	case limit > maxEventRows:
+		limit = maxEventRows
 	}
 
 	var (

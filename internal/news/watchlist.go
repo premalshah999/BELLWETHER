@@ -80,12 +80,18 @@ func watchlistQuery(ticker, company string, attention bool) string {
 		// No name: market words keep the ticker in a financial context.
 		return fmt.Sprintf("%q (shares OR stock OR NASDAQ OR NYSE) %s", ticker, window)
 	}
-	// Publishers write "Apple", not "Apple Inc.": drop the legal suffix.
+	return fmt.Sprintf("%q %s", ShortName(company), window)
+}
+
+// ShortName is a company's name as publishers write it: "Apple", not
+// "Apple Inc.".
+func ShortName(company string) string {
+	company = strings.TrimSpace(company)
 	for _, suffix := range []string{" Inc.", " Inc", " Corporation", " Corp.", " Corp", " & Co.", " Co.", " Co",
 		" Company", " plc", " PLC", " Ltd.", " Ltd", " Limited", ","} {
 		company = strings.TrimSuffix(company, suffix)
 	}
-	return fmt.Sprintf("%q %s", company, window)
+	return company
 }
 
 func displayName(ticker, company string, attention bool) string {

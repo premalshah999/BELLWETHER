@@ -74,7 +74,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		Symbol:       strings.TrimSpace(q.Get("symbol")),
 		Query:        strings.TrimSpace(q.Get("q")),
 		OfficialOnly: q.Get("official") == "1" || q.Get("official") == "true",
-		Limit:        atoiDefault(q.Get("limit"), 60),
+		Limit:        min(atoiDefault(q.Get("limit"), 60), 500),
 		Offset:       atoiDefault(q.Get("offset"), 0),
 	}
 	if t := strings.TrimSpace(q.Get("type")); t != "" {

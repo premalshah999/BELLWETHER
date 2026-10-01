@@ -574,6 +574,9 @@ func (e *Engine) parseFeedItems(src Source, body []byte, discoveredAt time.Time)
 		if publisher == "" {
 			publisher = feedTitle
 		}
+		if OutsideUSMarket(p.URL, publisher) {
+			continue
+		}
 		out = append(out, RawItem{
 			SourceID:       src.ID,
 			URL:            p.URL,
@@ -848,7 +851,7 @@ func (e *Engine) parseGDELT(src Source, body []byte, discoveredAt time.Time) ([]
 	out := make([]RawItem, 0, len(doc.Articles))
 	for _, a := range doc.Articles {
 		title := cleanText(a.Title)
-		if title == "" || a.URL == "" {
+		if title == "" || a.URL == "" || OutsideUSMarket(a.URL, a.Domain) {
 			continue
 		}
 		published, note := ValidatePublished(parseGDELTDate(a.SeenDate), discoveredAt, trust)
