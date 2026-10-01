@@ -34,8 +34,8 @@ A representative slice — the full route table is `internal/server/server.go`:
 | `POST` | `/api/symbols/{symbol}/outlook` | A probabilistic outlook, logged and later scored |
 | `GET` | `/api/ai/calibration` | The model's measured forecasting track record |
 | `POST` | `/api/research/ask` | Multi-source deep research, cited |
-| `GET` | `/api/forecast` | The forecast model's ranking, walk-forward record and live record |
-| `GET` | `/api/forecast/symbols/{symbol}` | One stock's model rank and drivers |
+| `GET` | `/api/forecast?sort=p_beat&q=&offset=&limit=` | Every stock's forecast distribution, the engine's walk-forward record, the market's regime and the live record |
+| `GET` | `/api/forecast/symbols/{symbol}` | One stock's distribution over 5, 10 and 20 sessions, with its 20-session fan |
 | `GET` | `/api/smartmoney/funds`, `/api/smartmoney/funds/search?q=` | Followed funds; search any 13F filer on SEC |
 | `POST` | `/api/smartmoney/funds` | Follow a 13F filer by CIK |
 | `GET` | `/api/smartmoney/funds/{cik}?q=&kind=&sort=&offset=` | A fund's holdings, searched, filtered and paged |

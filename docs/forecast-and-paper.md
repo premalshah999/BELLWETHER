@@ -1,72 +1,159 @@
 # Forecast and paper trading
 
 Two features that turn Bellwether from describing what happened into testing
-what will: a model that ranks stocks for the next five sessions, and paper
-accounts where a strategy — yours, an algorithm, or an AI — trades real prices
-with simulated money until the record says whether it works.
+what will: an engine that forecasts the range of every stock's next 5, 10 and
+20 sessions, and paper accounts where a strategy — yours, an algorithm, or an
+AI — trades real prices with simulated money until the record says whether it
+works.
 
-## The forecast model
+## The forecast engine
 
-Code: `internal/forecast`, run by `cmd/tradesys/forecast.go` after each close.
+Code: `internal/forecast`, run by `cmd/tradesys/forecast.go` after each close
+(16:40 New York) and by hand with `-forecast`.
 
-### What it reads
+A forecast here is a distribution, not a number. Daily stock returns are
+close to unpredictable in direction and highly predictable in size, so the
+engine puts its effort where the evidence is: how wide the range is, how fat
+its tails are, and how much a report inside the window widens it.
 
-| Factor | Evidence |
-| --- | --- |
-| 12-month momentum, skipping the last month | Jegadeesh and Titman (1993) |
-| 1-month return (reversal) | Jegadeesh (1990) |
-| 5-day return (short-term reversal) | widely replicated |
-| 20-day volatility | the low-volatility anomaly |
-| Volume, 5 days against 60 | attention and unabsorbed news |
-| Distance from the 52-week high | George and Hwang (2004) |
-| RSI(14) | the most-watched oscillator |
-| Latest earnings surprise within 90 days | post-earnings-announcement drift |
-| Opportunistic insider buying, 90 days | Cohen, Malloy and Pomorski (2012) |
-| Discretionary insider selling, 90 days | the weaker opposite signal |
+### Volatility
 
-Each is known at the close of the session it is computed for: bars that have
-closed, earnings announced before that close, Form 4s filed by that evening.
+Two models, blended by which forecast better in earlier years (QLIKE loss,
+Patton 2011):
 
-### How it learns
+- **HAR** (Corsi, 2009): the next 5 and 20 sessions' variance regressed on
+  the stock's own variance over the last day, week, month and year, the
+  market's monthly variance and the variance VIX implies. Fitted pooled across
+  the universe on range-based variance (Garman and Klass, 1980, plus the
+  overnight gap), in logs, with Duan's smearing correction.
+- **GJR-GARCH(1,1)** with Student-t errors (Glosten, Jagannathan and Runkle,
+  1993), fitted per stock by maximum likelihood, with variance targeting.
 
-Every session, each factor and the five-session forward return are replaced by
-their rank across the universe, scaled to [-1, 1]. A ridge regression maps
-factor ranks to return ranks. Ranking makes the model robust to outliers and
-regimes, and a linear model on good factors is the baseline serious research
-keeps returning to: Microsoft's Qlib reports rank ICs of about 0.045 for its
-own LightGBM and linear models on 158 factors.
+Earnings days are left out of both, so a report does not teach either model
+that the stock is volatile for the month after it. The report comes back in
+the simulation as a jump.
 
-### How it is judged
+### The market
 
-Walk-forward. Each calendar year is scored by a model fit only on the three
-years before it, with a gap of twice the horizon so no training label overlaps
-the test. The page reports, per year and overall:
+A two-state Gaussian hidden Markov model of the S&P 500's daily returns
+(Hamilton, 1989), fitted by Baum-Welch and read forward only: a calm state and
+a stressed one, the odds of switching, and today's probability of each.
 
-- **Rank IC** — the correlation between the ranking and what then happened.
-- **t** — how far that is from chance.
-- **Top minus bottom tenth** — the average return gap over five sessions.
-- **Top-tenth hit rate** — how often the top tenth beat the average stock.
+### Expected return
 
-Every live ranking is stored, and once its five sessions pass it is scored the
-same way, so the live record accumulates beside the backtest.
+27 published stock factors (momentum, reversal, volatility, beta, lottery
+demand, skewness, illiquidity, volume, the 52-week high, moving averages,
+earnings surprise and timing, sector momentum, seasonality, insider buying
+and selling, overnight returns) are ranked across the universe each week.
+A ridge regression and gradient-boosted trees (histogram method, depth
+three, heavy regularisation, early stopping on a later slice of the training
+window) each learn the next 5 and 20 sessions' abnormal-return ranks; the
+trees also see three market-state inputs (S&P 500 volatility, VIX, its last
+month), so they can learn when a factor works. The two are blended by their
+out-of-sample record in earlier years.
 
-### What the research says to expect
+The ranking becomes an expected return only through what such rankings
+actually earned: a Fama-MacBeth slope of realised abnormal return on the
+score's rank, estimated on earlier out-of-sample years, with Newey-West
+errors, and shrunk to nothing when its t statistic is weak.
 
-- Cross-sectional models earn small edges: a rank IC of 0.02–0.05 is good.
-- LLM agents' trading returns are largely market and style exposure rather
-  than stock-picking skill once that is controlled for ("From Knowing to
-  Doing", 2026). Paper performance therefore reports beta and alpha.
-- An LLM ranking the Russell 1000 daily from live research found real alpha,
-  but only in its top picks (Agentic AI Nowcasting, 2026). The model's
-  strongest picks get an AI outlook each morning, scored on the AI track
-  record, so the two can be compared.
-- LLMs can memorise historical prices, so any backtest of an LLM is suspect.
-  Bellwether's AI is only ever scored forward, on predictions logged before
-  the outcome.
-- Finance-specific time-series foundation models (Kronos, MIT licensed)
-  forecast candles better than general ones. They need PyTorch and more memory
-  than a 4 GB host spares, so Kronos is not bundled; its forecast would enter
-  this model as one more factor, judged the same way.
+### Simulation
+
+For each stock, thousands of paths through the next 20 sessions:
+
+    stock = expected return + beta x market + own shock (+ earnings jump)
+
+The market path moves between the two regimes; its shocks are the S&P 500's
+own past ones, standardised and rescaled to today's forecast variance. Each
+stock's shocks are its own past idiosyncratic ones, redrawn the same way
+(filtered historical simulation, Barone-Adesi et al., 1999), so its skew and
+fat tails carry through. A report inside the window adds a jump drawn from
+that company's past earnings-day moves, rescaled to today's volatility, or its
+sector's when it has fewer than eight on record. All stocks share the same
+market paths, so the probability of beating the S&P 500 is measured against
+the same simulated markets.
+
+### Validation
+
+Every year with three years of history before it is forecast by models
+fitted only on those years, then scored:
+
+- **CRPS** (continuous ranked probability score) of each distribution
+  against a normal curve on 60-day volatility and against the stock's own
+  past year of returns, with Diebold-Mariano tests on the weekly differences.
+- **Coverage**: the share of outcomes inside the central 50, 80 and 90%
+  ranges, and the PIT histogram (where outcomes fell inside their own
+  forecast; flat is calibrated).
+- **Brier scores** of the probability of rising and of beating the S&P 500,
+  against always forecasting the base rate, with reliability diagrams.
+- **QLIKE** of the volatility models against assuming next week looks like
+  last month.
+- **Rank IC** of the ranking, its parts, and momentum alone.
+
+Ranges and probabilities are recalibrated before they are shown, from the
+misses of earlier years: quantile levels move halfway toward the level that
+held its share of outcomes (Kuleshov et al., 2018), and probabilities pass
+through an isotonic map. Every live forecast is stored and scored the same
+way once its window passes.
+
+### What the record shows
+
+Tested on 1,494 stocks, January 2020 to September 2026 (seven years, each
+forecast by models fitted only on the years before it), with the full
+distribution scored for an even sample of 400 stocks every week:
+
+| Over | CRPS against a bell curve | against the stock's own history | 50 / 80 / 90% ranges held |
+| --- | --- | --- | --- |
+| 5 sessions | 2.4% better (t = 4.9) | 2.9% better (t = 4.2) | 51 / 81 / 90% |
+| 10 sessions | 1.6% better (t = 2.7) | 2.6% better (t = 4.4) | 52 / 82 / 91% |
+| 20 sessions | 1.1% better (t = 1.5) | 4.6% better (t = 5.3) | 52 / 82 / 92% |
+
+The five-session distribution beat the bell curve in every one of the seven
+years. The volatility forecast cut QLIKE loss by 18% (5 sessions) and 24% (20
+sessions) against assuming the next weeks look like the last month; HAR beat
+GARCH, and the blend leans three to one toward HAR.
+
+Direction is another matter. The probability of rising and of beating the
+S&P 500 scored no better than the base rate, and the ranking's rank IC was
+indistinguishable from zero (0.004 over 5 sessions, t = 0.5), as was
+momentum's alone. Of the 27 factors, two held up on their own over the seven
+years, both about earnings: the latest surprise (post-earnings drift, IC
++0.016, t = 3.0) and the approach of the next report (the announcement
+premium, t = 2.8). Neither held steadily enough within a three-year training
+window for the models to learn it reliably. The engine therefore shrinks its
+expected returns to about zero, and the page says the ranking has no proven
+edge.
+
+The things that mattered most were found by the test, not assumed:
+stretches of stale, unchanged prices in older data (dropped before modelling,
+because a feed carrying a quote forward reads as zero volatility); single
+days beyond a 25% move outside earnings, which are almost always corporate
+actions such as spin-offs (capped in the volatility inputs); a company's own
+past earnings moves, used as they happened rather than rescaled by a jumpy
+month; and the calibration window (two years, because ranges miss
+differently after a crash than after a calm).
+
+### Limits
+
+- The history is today's index members traced back. Companies that were
+  dropped or failed are missing, which flatters past returns (and so the
+  ranking) more than volatility or ranges.
+- Earnings dates inside a test window are taken as known; companies publish
+  them weeks ahead.
+- Direction is close to a coin toss and the page says so. A probability of
+  beating the market near 50% is the honest answer for most stocks.
+
+### The AI outlook
+
+An outlook starts from the engine's distribution for that stock over ten
+sessions. Bull and bear are fixed per stock as moves beyond one normal-sized
+move (its past year's volatility), so their probabilities change with
+volatility, the market's regime and reports inside the window. The AI reads
+the news against the distribution and may shift it by up to half a standard
+deviation or widen it between 0.7 and 1.6 times, and only when it names the
+item the engine cannot see. The engine's probabilities and the published ones
+are both scored against the same outcome, so the track record shows whether
+the adjustments help.
 
 ## Paper trading
 

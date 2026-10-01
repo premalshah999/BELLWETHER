@@ -10,6 +10,7 @@ import (
 
 	"github.com/tradesys/dashboard/internal/config"
 	"github.com/tradesys/dashboard/internal/marketdata"
+	"github.com/tradesys/dashboard/internal/marketdata/yfin"
 	"github.com/tradesys/dashboard/internal/news/company"
 	"github.com/tradesys/dashboard/internal/scanner"
 	"github.com/tradesys/dashboard/internal/storage/postgres"
@@ -126,5 +127,63 @@ func runBackfillHistory() error {
 		log.Info("history batch saved", "through", start+len(batch), "of", len(symbols))
 	}
 	log.Info("history backfill complete", "symbols", saved)
+	return nil
+}
+
+// runBackfillDeepHistory stores ten years of daily bars, older than what the
+// candles table holds, for the universe, the S&P 500 and VIX: what the
+// forecast engine needs to be tested across more than one market.
+func runBackfillDeepHistory() error {
+	ctx := context.Background()
+	cfg, err := config.Load(".env")
+	if err != nil {
+		return err
+	}
+	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	if cfg.YFinanceURL == "" {
+		return fmt.Errorf("history: YFINANCE_URL is not configured")
+	}
+	store, err := openStore(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	master, err := company.Load()
+	if err != nil {
+		return err
+	}
+	prices := yfin.New(cfg.YFinanceURL, yfin.WithDividendAdjustment(cfg.YFinanceAdjust))
+	for _, idx := range []string{"GSPC.INDEX", "VIX.INDEX"} {
+		bars, err := prices.Candles(ctx, marketdata.MustParseSymbol(idx), marketdata.Interval1d, 2600)
+		if err != nil {
+			log.Warn("index history failed", "symbol", idx, "err", err)
+			continue
+		}
+		n, err := store.SaveDailyHistory(ctx, idx, bars.Candles)
+		log.Info("index history saved", "symbol", idx, "bars", n, "err", err)
+	}
+	universe := buildScanUniverse(master)
+	symbols := universe.Symbols()
+	client := &scanner.Client{BaseURL: cfg.YFinanceURL, HTTP: &http.Client{Timeout: 15 * time.Minute},
+		Adjust: cfg.YFinanceAdjust, Period: "10y"}
+	saved := 0
+	for start := 0; start < len(symbols); start += 50 {
+		batch := symbols[start:min(start+50, len(symbols))]
+		res, err := client.Scan(ctx, batch, 1)
+		if err != nil {
+			log.Warn("deep history batch failed", "from", start, "err", err)
+			continue
+		}
+		for sym, candles := range res.Series {
+			n, err := store.SaveDailyHistory(ctx, sym.String(), candles)
+			if err != nil {
+				log.Warn("deep history not saved", "symbol", sym.String(), "err", err)
+				continue
+			}
+			saved += n
+		}
+		log.Info("deep history batch saved", "through", start+len(batch), "of", len(symbols), "bars", saved)
+	}
+	log.Info("deep history backfill complete", "bars", saved)
 	return nil
 }

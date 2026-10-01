@@ -86,6 +86,7 @@ All reuse the exact code path their scheduled job runs.
 | `-refresh-calendar` | rebuild the forward earnings/dividend calendar (~3 min for the universe) |
 | `-merge-duplicates N` | clean headlines and merge duplicate events from the last N days |
 | `-backfill-history` | store five years of daily bars for the whole universe (about 15 minutes); run once on a new install |
+| `-backfill-deep-history` | store ten years of daily bars, older than the candles table holds, for the universe, the S&P 500 and VIX (about 12 minutes); the forecast engine's tests need it |
 | `-backfill-earnings` | store every past earnings announcement with its EPS surprise (about 30 minutes) |
 | `-backfill-insiders N` | load the newest N quarters of SEC's insider-transaction datasets |
 | `-forecast` | validate the forecast model and store today's ranking |
@@ -100,6 +101,7 @@ feeds cannot supply. Load it once, in this order:
 
 ```bash
 docker compose exec tradesys tradesys -backfill-history
+docker compose exec tradesys tradesys -backfill-deep-history
 docker compose exec tradesys tradesys -backfill-earnings
 docker compose exec tradesys tradesys -backfill-insiders 12
 docker compose exec tradesys tradesys -forecast
@@ -112,6 +114,10 @@ The `backup` service writes a compressed `pg_dump` every six hours into the
 of each day for `BACKUP_KEEP_DAYS` (default 14) — the first rather than the
 last, because if corruption landed on a given day, the earliest copy is the
 one most likely to predate it.
+
+The `daily_history` table (ten years of bars for the forecast engine) is
+left out of every dump: it can be fetched again with `-backfill-deep-history`,
+and it would otherwise add tens of megabytes to each of them.
 
 By hand:
 
@@ -176,7 +182,7 @@ model market holidays.
 | 02:30 daily | news rollover to the archive |
 | 02:00 Saturday | fundamentals refresh for the universe |
 | hourly | event briefs, news digest, event classification |
-| 16:40 weekdays | forecast model: validate and rank the universe |
+| 16:40 weekdays | forecast engine: test walk-forward, simulate every stock (about 5 minutes) |
 | every 30 s in the session | paper trading: fill orders, run agents; equity marked every 15 min and at the close |
 | 05:00 Sunday | earnings history (latest quarters) |
 | 04:00 on the 3rd | SEC insider dataset for the newest quarter |

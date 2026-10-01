@@ -67,6 +67,8 @@ func main() {
 		"validate the forecast model and store today's ranking, then exit")
 	backfillHistory := flag.Bool("backfill-history", false,
 		"store five years of daily bars for the whole universe, then exit")
+	backfillDeep := flag.Bool("backfill-deep-history", false,
+		"store ten years of daily bars for the forecast engine's tests, then exit")
 	backfillEarnings := flag.Bool("backfill-earnings", false,
 		"store past earnings announcements for the whole universe, then exit")
 	refreshCal := flag.Bool("refresh-calendar", false,
@@ -140,6 +142,13 @@ func main() {
 	if *runForecastFlag {
 		if err := runForecastCmd(); err != nil {
 			slog.Error("forecast failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *backfillDeep {
+		if err := runBackfillDeepHistory(); err != nil {
+			slog.Error("deep history backfill failed", "err", err)
 			os.Exit(1)
 		}
 		return
@@ -512,6 +521,7 @@ func run() error {
 		ai.WithWatchlist(store),
 		ai.WithAlerts(store),
 		ai.WithJev(jevClient),
+		ai.WithForecasts(store),
 		ai.WithResearchModel(cfg.LLMResearchModel, cfg.LLMResearchEffort))
 
 	if !cfg.LLMConfigured() {

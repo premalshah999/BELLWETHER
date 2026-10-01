@@ -41,12 +41,13 @@ services:
 
     restart: unless-stopped
 
-    # A dashboard is not a memory-hungry service; these caps turn a runaway
-    # loop into a restart rather than a wedged host.
+    # These caps turn a runaway loop into a restart rather than a wedged
+    # host. The forecast engine needs about 420 MB for five minutes after
+    # each close (its heap is capped there); the server runs in under 100.
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 768M
 
     logging:
       driver: json-file
@@ -225,7 +226,9 @@ services:
           target="/backups/tradesys-$$stamp.sql.gz"
           # --clean --if-exists so the dump can be restored over an existing
           # database without hand-editing it first.
-          if pg_dump --clean --if-exists --no-owner --no-privileges                | gzip -9 > "$$target.partial"; then
+          # daily_history is re-fetchable price history: its rows are left
+          # out so ten years of bars do not ride along in every dump.
+          if pg_dump --clean --if-exists --no-owner --no-privileges --exclude-table-data=daily_history | gzip -9 > "$$target.partial"; then
             # Renamed only on success, so a dump interrupted halfway is never
             # mistaken for a good one by whoever comes looking in a crisis.
             mv "$$target.partial" "$$target"

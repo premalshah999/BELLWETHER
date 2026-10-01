@@ -752,8 +752,8 @@ def calendar(symbols: list[str]) -> dict:
 
 
 # Periods a caller may ask a scan to cover: the scheduled scan reads a year,
-# a history backfill up to five.
-SCAN_PERIODS = {"1y", "2y", "5y"}
+# a history backfill up to five, and the forecast engine's deep history ten.
+SCAN_PERIODS = {"1y", "2y", "5y", "10y"}
 
 
 def scan(symbols: list[str], period: str = SCAN_PERIOD, adjust: bool = False) -> dict:
@@ -977,7 +977,7 @@ class Handler(BaseHTTPRequestHandler):
 
         period = str(payload.get("period") or SCAN_PERIOD)
         if period not in SCAN_PERIODS:
-            self._send(400, {"error": "period must be 1y, 2y or 5y"})
+            self._send(400, {"error": "period must be 1y, 2y, 5y or 10y"})
             return
         try:
             result = scan(symbols, period, bool(payload.get("adjust")))

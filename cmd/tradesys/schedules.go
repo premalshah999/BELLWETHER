@@ -102,7 +102,7 @@ func startAISchedules(
 		// The forecast after the close scan has stored the day's bars.
 		if master != nil {
 			addWithin("forecast", "40 16 * * 1-5", 30*time.Minute, func(runCtx context.Context) {
-				if err := runForecast(runCtx, store, master, log); err != nil {
+				if err := runForecast(runCtx, cfg, store, master, log); err != nil {
 					log.Warn("forecast failed", "err", err)
 				}
 			})

@@ -115,22 +115,35 @@ drawing tools and multi-chart layouts. The **Context** tab sits beside it:
 - **Latest news and signals** for the symbol.
 - **Explain today's move** — a sourced AI explanation.
 - **Debrief the last month** — what happened, against the news.
-- **Outlook** — a probabilistic forecast that is logged and later scored.
+- **Forecast** — the engine's 20-session range for the stock as a fan chart.
+- **Outlook** — scenario odds from the engine, adjusted by the AI only on news, logged and scored.
 - **On the web** — fresh headlines from outside the archive.
 
-### Forecast — which stocks are likely to outperform next
+### Forecast — the range of what could happen next
 
-![The forecast model's ranking with its out-of-sample record](docs/images/forecast.png)
+![The forecast engine's scorecard, the market's regime and every stock's simulated range](docs/images/forecast.png)
 
-After every close a model ranks the whole universe by how likely each stock is
-to beat the others over the next five sessions. It reads factors with decades
-of research behind them — 12-month momentum, short-term reversal, low
-volatility, the 52-week high, the latest earnings surprise and opportunistic
-insider buying — and combines them with a ridge regression whose weights are
-on the page. It is validated **walk-forward**: each year is scored by a model
-fit only on the three years before it, and every live prediction is logged and
-scored once its five sessions have passed. The page leads with that record,
-not with the picks.
+After every close the forecast engine simulates thousands of paths for each
+stock over the next 5, 10 and 20 sessions and reports the distribution: the
+range, the probability of rising and of beating the S&P 500, the expected
+edge, and the worst 5% of outcomes. Volatility comes from HAR and GJR-GARCH
+models, blended by their record; the market moves through a calm and a
+stressed regime estimated by a hidden Markov model; each stock's own past
+shocks set the shape of its tails; an earnings report inside the window adds
+a jump drawn from that company's past earnings days; and a ranking of 27
+published factors by ridge regression and gradient-boosted trees sets the
+expected return, scaled by what such rankings actually earned.
+
+Everything is tested **walk-forward over ten years of history**: each year
+is forecast by models fit only on the years before it and scored with proper
+scoring rules (CRPS, Brier, interval coverage, Diebold-Mariano tests against
+a bell curve and the stock's own history). The page leads with that record:
+where the engine has skill (the width and shape of the range) and where it
+has none (direction, which stays close to a coin toss).
+
+The AI outlook on each stock starts from this distribution and may adjust it
+only on news the engine cannot read, within fixed bounds; the engine's
+probabilities and the published ones are both scored.
 
 ### Signals — the scanner
 
@@ -347,7 +360,7 @@ no archive database, and the app still boots.
 | [Operations](docs/operations.md) | deploying, access keys, one-off commands, backups, the schedule |
 | [Algorithms](docs/algorithms.md) | the rule language and the backtester |
 | [API](docs/api.md) | REST endpoints and the error envelope |
-| [Forecast and paper trading](docs/forecast-and-paper.md) | the model, its validation, the ledger and the execution rules |
+| [Forecast and paper trading](docs/forecast-and-paper.md) | the engine, its validation, the ledger and the execution rules |
 | [Research workflow](docs/research-workflow.md) | retrieval, ranking, citation rules and limits |
 
 ## Development

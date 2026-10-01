@@ -32,14 +32,18 @@ func (d *DB) SaveForecast(ctx context.Context, rep forecast.Report, preds []fore
 		rep.At, asOf, rep.Horizon, raw).Scan(&id); err != nil {
 		return 0, fmt.Errorf("postgres: save forecast: %w", err)
 	}
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO forecast_predictions (run_id, symbol, score, percentile, drivers) VALUES ($1,$2,$3,$4,$5)`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO forecast_predictions (run_id, symbol, score, percentile, drivers, dist) VALUES ($1,$2,$3,$4,$5,$6)`)
 	if err != nil {
 		return 0, err
 	}
 	defer stmt.Close()
 	for _, p := range preds {
 		drivers, _ := json.Marshal(p.Drivers)
-		if _, err := stmt.ExecContext(ctx, id, p.Symbol, p.Score, p.Percentile, drivers); err != nil {
+		var dist []byte
+		if p.Dist != nil {
+			dist, _ = json.Marshal(p.Dist)
+		}
+		if _, err := stmt.ExecContext(ctx, id, p.Symbol, p.Score, p.Percentile, drivers, dist); err != nil {
 			return 0, err
 		}
 	}
@@ -61,7 +65,7 @@ func (d *DB) LatestForecast(ctx context.Context) (*forecast.Report, []forecast.P
 	if err := json.Unmarshal(raw, &rep); err != nil {
 		return nil, nil, err
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT symbol, score, percentile, drivers FROM forecast_predictions WHERE run_id = $1 ORDER BY score DESC`, id)
+	rows, err := d.db.QueryContext(ctx, `SELECT symbol, score, percentile, drivers, dist FROM forecast_predictions WHERE run_id = $1 ORDER BY score DESC`, id)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -69,14 +73,41 @@ func (d *DB) LatestForecast(ctx context.Context) (*forecast.Report, []forecast.P
 	var out []forecast.Prediction
 	for rows.Next() {
 		var p forecast.Prediction
-		var drivers []byte
-		if err := rows.Scan(&p.Symbol, &p.Score, &p.Percentile, &drivers); err != nil {
+		var drivers, dist []byte
+		if err := rows.Scan(&p.Symbol, &p.Score, &p.Percentile, &drivers, &dist); err != nil {
 			return nil, nil, err
 		}
 		_ = json.Unmarshal(drivers, &p.Drivers)
+		p.Dist = decodeDist(dist)
 		out = append(out, p)
 	}
 	return &rep, out, rows.Err()
+}
+
+// LatestForecastReport is the newest run's report alone.
+func (d *DB) LatestForecastReport(ctx context.Context) (*forecast.Report, error) {
+	var raw []byte
+	err := d.db.QueryRowContext(ctx, `SELECT report FROM forecast_runs ORDER BY as_of DESC, id DESC LIMIT 1`).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var rep forecast.Report
+	if err := json.Unmarshal(raw, &rep); err != nil {
+		return nil, err
+	}
+	return &rep, nil
+}
+
+// LatestPrediction is a stock's newest forecast and the session it is for.
+func (d *DB) LatestPrediction(ctx context.Context, symbol string) (*forecast.Prediction, time.Time, error) {
+	list, err := d.SymbolForecasts(ctx, symbol, 1)
+	if err != nil || len(list) == 0 {
+		return nil, time.Time{}, err
+	}
+	return &list[0].Prediction, list[0].AsOf, nil
 }
 
 // SymbolForecasts is one stock's scores, newest first.
@@ -88,7 +119,7 @@ type SymbolForecast struct {
 // SymbolForecasts lists one stock's recent predictions.
 func (d *DB) SymbolForecasts(ctx context.Context, symbol string, limit int) ([]SymbolForecast, error) {
 	rows, err := d.db.QueryContext(ctx, `
-SELECT r.as_of, p.symbol, p.score, p.percentile, p.drivers
+SELECT r.as_of, p.symbol, p.score, p.percentile, p.drivers, p.dist
 FROM forecast_predictions p JOIN forecast_runs r ON r.id = p.run_id
 WHERE p.symbol = $1 ORDER BY r.as_of DESC LIMIT $2`, symbol, limit)
 	if err != nil {
@@ -98,11 +129,12 @@ WHERE p.symbol = $1 ORDER BY r.as_of DESC LIMIT $2`, symbol, limit)
 	var out []SymbolForecast
 	for rows.Next() {
 		var f SymbolForecast
-		var drivers []byte
-		if err := rows.Scan(&f.AsOf, &f.Symbol, &f.Score, &f.Percentile, &drivers); err != nil {
+		var drivers, dist []byte
+		if err := rows.Scan(&f.AsOf, &f.Symbol, &f.Score, &f.Percentile, &drivers, &dist); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(drivers, &f.Drivers)
+		f.Dist = decodeDist(dist)
 		out = append(out, f)
 	}
 	return out, rows.Err()
@@ -117,6 +149,27 @@ type LiveRun struct {
 	// horizon; the difference is what following the model would have added.
 	TopPct float64 `json:"top_pct"`
 	AvgPct float64 `json:"avg_pct"`
+	// The distributions, scored: how many outcomes fell inside the central
+	// 50% and 80% ranges, and the Brier scores of the probability of rising
+	// and of beating the S&P 500 against always forecasting the base rate.
+	Scored        int     `json:"scored,omitempty"`
+	In50Pct       float64 `json:"in50_pct,omitempty"`
+	In80Pct       float64 `json:"in80_pct,omitempty"`
+	BrierUp       float64 `json:"brier_up,omitempty"`
+	BrierUpBase   float64 `json:"brier_up_base,omitempty"`
+	BrierBeat     float64 `json:"brier_beat,omitempty"`
+	BrierBeatBase float64 `json:"brier_beat_base,omitempty"`
+}
+
+func decodeDist(raw []byte) *forecast.Distribution {
+	if len(raw) == 0 {
+		return nil
+	}
+	var d forecast.Distribution
+	if json.Unmarshal(raw, &d) != nil {
+		return nil
+	}
+	return &d
 }
 
 // LiveForecasts scores every run whose horizon has passed, from the stored
@@ -167,8 +220,15 @@ func (d *DB) LiveForecasts(ctx context.Context, horizon int, since time.Time) ([
 		if !ok || i+horizon >= len(sessions) {
 			continue
 		}
+		var mret float64
+		var me, mx float64
+		if err := d.db.QueryRowContext(ctx, `SELECT e.close, x.close FROM candles e, candles x
+WHERE e.symbol = 'GSPC.INDEX' AND x.symbol = 'GSPC.INDEX' AND e.interval = '1d' AND x.interval = '1d' AND e.ts = $1 AND x.ts = $2`,
+			sessions[i], sessions[i+horizon]).Scan(&me, &mx); err == nil && me > 0 {
+			mret = mx/me - 1
+		}
 		pr, err := d.db.QueryContext(ctx, `
-SELECT p.score, e.close, x.close
+SELECT p.score, e.close, x.close, p.dist
 FROM forecast_predictions p
 JOIN candles e ON e.symbol = p.symbol AND e.interval = '1d' AND e.ts = $2
 JOIN candles x ON x.symbol = p.symbol AND x.interval = '1d' AND x.ts = $3
@@ -177,21 +237,87 @@ WHERE p.run_id = $1 AND e.close > 0`, r.id, sessions[i], sessions[i+horizon])
 			return nil, err
 		}
 		var scores, rets []float64
+		var dists []*forecast.Distribution
 		for pr.Next() {
 			var s, e, x float64
-			if err := pr.Scan(&s, &e, &x); err != nil {
+			var dist []byte
+			if err := pr.Scan(&s, &e, &x, &dist); err != nil {
 				pr.Close()
 				return nil, err
 			}
 			scores, rets = append(scores, s), append(rets, x/e-1)
+			dists = append(dists, decodeDist(dist))
 		}
 		pr.Close()
 		if len(scores) < 30 {
 			continue
 		}
-		out = append(out, liveRun(r.asOf, scores, rets))
+		lr := liveRun(r.asOf, scores, rets)
+		scoreDists(&lr, horizon, dists, rets, mret)
+		out = append(out, lr)
 	}
 	return out, nil
+}
+
+// scoreDists scores the stored distributions for one horizon against the
+// returns that followed.
+func scoreDists(lr *LiveRun, horizon int, dists []*forecast.Distribution, rets []float64, market float64) {
+	var n, in50, in80 int
+	var bu, bb, up, beat float64
+	var ps, pb, ou, ob []float64
+	for k, d := range dists {
+		if d == nil {
+			continue
+		}
+		var hd *forecast.HorizonDist
+		for j := range d.Horizons {
+			if d.Horizons[j].Horizon == horizon {
+				hd = &d.Horizons[j]
+			}
+		}
+		if hd == nil || len(hd.Quantiles) != len(forecast.QuantileLevels) {
+			continue
+		}
+		y := rets[k]
+		q := hd.Quantiles
+		// Levels 0.25 and 0.75 are indices 4 and 14; 0.1 and 0.9 are 1 and 17.
+		if y >= q[4] && y <= q[14] {
+			in50++
+		}
+		if y >= q[1] && y <= q[17] {
+			in80++
+		}
+		u, b := 0.0, 0.0
+		if y > 0 {
+			u = 1
+		}
+		if y > market {
+			b = 1
+		}
+		ps, pb, ou, ob = append(ps, hd.PUp), append(pb, hd.PBeat), append(ou, u), append(ob, b)
+		up += u
+		beat += b
+		n++
+	}
+	if n < 30 {
+		return
+	}
+	up /= float64(n)
+	beat /= float64(n)
+	var bub, bbb float64
+	for i := range ps {
+		bu += (ps[i] - ou[i]) * (ps[i] - ou[i])
+		bb += (pb[i] - ob[i]) * (pb[i] - ob[i])
+		bub += (up - ou[i]) * (up - ou[i])
+		bbb += (beat - ob[i]) * (beat - ob[i])
+	}
+	f := float64(n)
+	r4 := func(x float64) float64 { return math.Round(x*1e4) / 1e4 }
+	lr.Scored = n
+	lr.In50Pct = math.Round(float64(in50)/f*1000) / 10
+	lr.In80Pct = math.Round(float64(in80)/f*1000) / 10
+	lr.BrierUp, lr.BrierUpBase = r4(bu/f), r4(bub/f)
+	lr.BrierBeat, lr.BrierBeatBase = r4(bb/f), r4(bbb/f)
 }
 
 func liveRun(asOf time.Time, scores, rets []float64) LiveRun {
