@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/tradesys/dashboard/internal/news"
 )
 
 var queryStopWords = func() map[string]bool {
@@ -193,6 +195,10 @@ func (p queryProfile) score(f *Finding, subject bool) (float64, bool) {
 		s += 12
 		matched = max(matched, p.key/2)
 	}
+	if f.Pinned {
+		s += 30
+		matched = max(matched, p.key)
+	}
 	return s, s > 0 && matched*2 >= p.key
 }
 
@@ -324,7 +330,7 @@ func EvidenceIndexes(findings []Finding, limit int) []int {
 			continue
 		}
 		host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
-		if hosts[host] >= 3 {
+		if hosts[host] >= perHostCap(f) {
 			continue
 		}
 		hosts[host]++
@@ -334,4 +340,14 @@ func EvidenceIndexes(findings []Finding, limit int) []int {
 		}
 	}
 	return out
+}
+
+// perHostCap is how many sources one publisher may contribute. Three keeps a
+// single outlet's view from dominating; an agency's own pages are the rules
+// themselves rather than a view, and get more room.
+func perHostCap(f Finding) int {
+	if f.Trust >= news.TrustOfficial {
+		return 6
+	}
+	return 3
 }

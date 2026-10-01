@@ -308,3 +308,20 @@ func TestAccountKind(t *testing.T) {
 		}
 	}
 }
+
+// TestPinnedRuleRanksFirst: this year's limit announcement shares few words
+// with "best strategies for early career 401k", but it is the fact the
+// advice turns on, and must be read.
+func TestPinnedRuleRanksFirst(t *testing.T) {
+	findings := []Finding{
+		{Title: "Making the most of your 401(k) in your 20s and early career", URL: "https://schwab.example/1", Trust: 70},
+		{Title: "Limit increases to $24,500 for 2026, IRA limit increases to $7,500", URL: "https://www.irs.gov/newsroom/x", Trust: 100, Pinned: true},
+	}
+	rankFindings("Best strategies for early career 401k", findings)
+	if !findings[0].Pinned || findings[0].Relevance < 10 {
+		t.Fatalf("pinned rule not first and relevant: %+v", findings)
+	}
+	if perHostCap(findings[0]) <= 3 {
+		t.Fatal("an agency should be allowed more than three sources")
+	}
+}

@@ -79,25 +79,34 @@ func (e *Engine) officialFindings(ctx context.Context, query string) ([]Finding,
 	}
 	rep := &ScraperReport{Name: "official_sites"}
 	var out []Finding
-	seen := map[string]bool{}
-	for _, search := range searches {
+	at := map[string]int{}
+	for n, search := range searches {
 		site := search[strings.LastIndex(search, "site:")+len("site:"):]
+		limitSearch := n == len(searches)-1 && accountKind(query) != ""
 		got, err := web.Search(ctx, search, 8)
 		if err != nil {
 			rep.Error = err.Error()
 			continue
 		}
+		first := true
 		for _, f := range got {
 			if h := strings.ToLower(hostOf(f.URL)); h != site && !strings.HasSuffix(h, "."+site) {
 				continue
 			}
-			if seen[f.URL] {
-				continue
+			i, seen := at[f.URL]
+			if !seen {
+				f.Scraper, f.Trust = rep.Name, news.TrustOfficial
+				f.Publisher = site
+				i = len(out)
+				at[f.URL] = i
+				out = append(out, f)
 			}
-			seen[f.URL] = true
-			f.Scraper, f.Trust = rep.Name, news.TrustOfficial
-			f.Publisher = site
-			out = append(out, f)
+			// The top answer to "<account> contribution limit <year>" is
+			// the announcement itself.
+			if limitSearch && first {
+				out[i].Pinned = true
+			}
+			first = false
 		}
 	}
 	rep.Count = len(out)

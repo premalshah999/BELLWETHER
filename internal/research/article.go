@@ -448,7 +448,7 @@ func (e *Engine) readBodies(ctx context.Context, findings []Finding) {
 				findings[i].ReadError = "article: publisher recently refused automated reading"
 				continue
 			}
-			if hostCounts[u.Hostname()] >= 3 {
+			if hostCounts[u.Hostname()] >= perHostCap(findings[i]) {
 				continue
 			}
 			hostCounts[u.Hostname()]++

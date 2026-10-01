@@ -45,6 +45,10 @@ type Finding struct {
 	FetchedAt  time.Time `json:"fetched_at,omitempty"`
 	Cached     bool      `json:"cached,omitempty"`
 	Relevance  float64   `json:"relevance,omitempty"`
+	// Pinned marks a finding retrieved for the specific rule a question
+	// turns on, such as this year's contribution limit. It ranks first and
+	// is read whatever its headline shares with the question.
+	Pinned bool `json:"-"`
 }
 
 // Scraper fetches results for a free-text query.
