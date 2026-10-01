@@ -93,8 +93,12 @@ func TestEveryPromptParsesAndRenders(t *testing.T) {
 			"Instructions": "Prefer large caps.",
 		},
 		PromptOutlook: map[string]any{
-			"Symbol": "AAPL", "HorizonDays": 10, "Price": "310.34", "Volatility": "1.4% daily",
-			"TrendNote": "sideways", "RSI": "48.8", "FromHigh": "-8.2%", "FromLow": "+31.0%",
+			"Symbol": "AAPL", "HorizonDays": 10, "Price": "310.34", "Source": "the engine",
+			"Q05": "-7.1%", "Q25": "-2.0%", "Q50": "+0.3%", "Q75": "+2.6%", "Q95": "+7.4%",
+			"PUp": "54%", "PBeat": "51%", "Threshold": "±4.2%",
+			"Bull": "17%", "Base": "68%", "Bear": "15%", "BullMove": "+6.8%", "BaseMove": "+0.2%", "BearMove": "-6.9%",
+			"Vol": "24%", "NormalVol": "28%", "Earnings": "a report on session 3",
+			"Drivers": "12-month momentum (toward outperforming)", "Regime": "calm", "Record": "80% ranges held 81%",
 			"News": []map[string]string{{"Title": "T", "Source": "S", "Age": "1h ago"}},
 		},
 	}

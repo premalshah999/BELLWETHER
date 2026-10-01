@@ -57,6 +57,7 @@ type Service struct {
 	watchlist WatchlistSource
 	alerts    AlertSource
 	scores    ScoreStore
+	forecasts ForecastSource
 	store     OutputStore
 	log       *slog.Logger
 	now       func() time.Time

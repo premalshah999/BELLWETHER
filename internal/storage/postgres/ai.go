@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -115,22 +116,39 @@ const outlookColumns = `id, symbol, created_at, horizon_days, price_at_creation,
     bull_probability, bull_move, bull_reasoning,
     bear_probability, bear_move, bear_reasoning,
     key_risk, model, resolved_at, realized_price, realized_move,
-    actual_scenario, brier_score`
+    actual_scenario, brier_score, quant, final, adjustment, quant_brier`
 
 func scanOutlook(r rowScanner) (ai.Outlook, error) {
 	var (
 		o                           ai.Outlook
 		resolvedAt                  sql.NullTime
 		realizedPrice, realizedMove sql.NullFloat64
-		brier                       sql.NullFloat64
+		brier, quantBrier           sql.NullFloat64
+		quant, final, adjustment    []byte
 	)
 	if err := r.Scan(&o.ID, &o.Symbol, &o.CreatedAt, &o.HorizonDays, &o.PriceAtCreation,
 		&o.Base.Probability, &o.Base.MovePercent, &o.Base.Reasoning,
 		&o.Bull.Probability, &o.Bull.MovePercent, &o.Bull.Reasoning,
 		&o.Bear.Probability, &o.Bear.MovePercent, &o.Bear.Reasoning,
 		&o.KeyRisk, &o.Model, &resolvedAt, &realizedPrice, &realizedMove,
-		&o.ActualScenario, &brier); err != nil {
+		&o.ActualScenario, &brier, &quant, &final, &adjustment, &quantBrier); err != nil {
 		return ai.Outlook{}, err
+	}
+	if len(quant) > 0 {
+		o.Quant = &ai.Prior{}
+		_ = json.Unmarshal(quant, o.Quant)
+	}
+	if len(final) > 0 {
+		o.Final = &ai.Prior{}
+		_ = json.Unmarshal(final, o.Final)
+	}
+	if len(adjustment) > 0 {
+		o.Adjustment = &ai.Adjustment{}
+		_ = json.Unmarshal(adjustment, o.Adjustment)
+	}
+	if quantBrier.Valid {
+		v := quantBrier.Float64
+		o.QuantBrier = &v
 	}
 	o.CreatedAt = o.CreatedAt.UTC()
 	if resolvedAt.Valid {
@@ -164,19 +182,31 @@ INSERT INTO outlooks (
     base_probability, base_move, base_reasoning,
     bull_probability, bull_move, bull_reasoning,
     bear_probability, bear_move, bear_reasoning,
-    key_risk, model)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    key_risk, model, quant, final, adjustment)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 RETURNING id`,
 		o.Symbol, o.CreatedAt.UTC(), o.HorizonDays, o.PriceAtCreation,
 		o.Base.Probability, o.Base.MovePercent, o.Base.Reasoning,
 		o.Bull.Probability, o.Bull.MovePercent, o.Bull.Reasoning,
 		o.Bear.Probability, o.Bear.MovePercent, o.Bear.Reasoning,
-		o.KeyRisk, o.Model).Scan(&id)
+		o.KeyRisk, o.Model, jsonOrNull(o.Quant), jsonOrNull(o.Final), jsonOrNull(o.Adjustment)).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("postgres: save outlook: %w", err)
 	}
 	o.ID = id
 	return id, nil
+}
+
+// jsonOrNull encodes v, or stores NULL when it is a nil pointer.
+func jsonOrNull[T any](v *T) any {
+	if v == nil {
+		return nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // ListOutlooks returns recorded forecasts.
@@ -249,10 +279,10 @@ func (d *DB) ResolveOutlook(ctx context.Context, o *ai.Outlook) error {
 	_, err := d.db.ExecContext(ctx, `
 UPDATE outlooks
 SET resolved_at = $1, realized_price = $2, realized_move = $3,
-    actual_scenario = $4, brier_score = $5
+    actual_scenario = $4, brier_score = $5, quant_brier = $7
 WHERE id = $6 AND resolved_at IS NULL`,
 		o.ResolvedAt.UTC(), o.RealizedPrice, o.RealizedMove,
-		o.ActualScenario, o.BrierScore, o.ID)
+		o.ActualScenario, o.BrierScore, o.ID, o.QuantBrier)
 	if err != nil {
 		return fmt.Errorf("postgres: resolve outlook: %w", err)
 	}

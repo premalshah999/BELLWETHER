@@ -17,7 +17,7 @@ Holdings:
 {{else}}- none
 {{end}}
 Candidates (price, today, 5 days, RSI14, volume vs normal, vs 20-day average, forecast model percentile):
-{{range .Candidates}}- {{.Symbol}}{{if .Name}} ({{.Name}}{{if .Sector}}, {{.Sector}}{{end}}){{end}}: ${{.Price}}, {{.ChangePct}}%, {{.Change5dPct}}% 5d, RSI {{.RSI14}}, vol {{.VolumeRatio}}x, {{.FromSMA20Pct}}% vs SMA20{{if .ModelPercentile}}, model {{.ModelPercentile}}th percentile{{end}}{{if .Signal}} [{{.Signal}}]{{end}}
+{{range .Candidates}}- {{.Symbol}}{{if .Name}} ({{.Name}}{{if .Sector}}, {{.Sector}}{{end}}){{end}}: ${{.Price}}, {{.ChangePct}}%, {{.Change5dPct}}% 5d, RSI {{.RSI14}}, vol {{.VolumeRatio}}x, {{.FromSMA20Pct}}% vs SMA20{{if .ModelPercentile}}, model {{.ModelPercentile}}th percentile{{end}}{{if .Outlook}}; {{.Outlook}}{{end}}{{if .Signal}} [{{.Signal}}]{{end}}
 {{range .Headlines}}    · {{.}}
 {{end}}{{end}}
 {{if .Instructions}}The account owner's instructions: {{.Instructions}}
@@ -45,6 +45,7 @@ Rules:
   evidence in front of you gives it a better than even chance.
 - Base each reason on the numbers and headlines above, never on facts you
   cannot see here.
-- The model percentile is a statistical ranking of the next five sessions,
-  validated out of sample: useful, but its edge is small. Treat it as one
-  input, not an instruction.
+- The forecast engine's 80% range is calibrated out of sample: about 80%
+  of outcomes have landed inside it. Use it to size positions and place
+  stops. Its percentile and its chance to beat the S&P 500 have not beaten
+  the base rate out of sample since 2020: they are not a reason to buy.

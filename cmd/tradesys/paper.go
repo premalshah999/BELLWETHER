@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/tradesys/dashboard/internal/forecast"
 	"log/slog"
 	"math"
 	"sort"
@@ -102,9 +103,11 @@ func (c paperCandidates) Candidates(ctx context.Context, symbols []string, watch
 		}
 	}
 	pct := map[string]float64{}
+	outlook := map[string]string{}
 	if _, preds, err := c.store.LatestForecast(ctx); err == nil {
 		for i, p := range preds {
 			pct[p.Symbol] = p.Percentile
+			outlook[p.Symbol] = outlookLine(p)
 			if useForecast && i < 12 {
 				add(p.Symbol)
 			}
@@ -120,6 +123,7 @@ func (c paperCandidates) Candidates(ctx context.Context, symbols []string, watch
 			continue
 		}
 		cand.Signal = signals[s]
+		cand.Outlook = outlook[s]
 		if v, ok := pct[s]; ok {
 			cand.ModelPercentile = &v
 		}
@@ -289,4 +293,24 @@ func aiServiceIfConfigured(cfg *config.Config, svc *ai.Service) *ai.Service {
 		return nil
 	}
 	return svc
+}
+
+// outlookLine is the engine's five-session forecast for an agent: the odds
+// of beating the market, the 80% range and a report inside the window.
+func outlookLine(p forecast.Prediction) string {
+	if p.Dist == nil {
+		return ""
+	}
+	for _, h := range p.Dist.Horizons {
+		if h.Horizon != 5 || len(h.Quantiles) != len(forecast.QuantileLevels) {
+			continue
+		}
+		line := fmt.Sprintf("5-session forecast: %.0f%% chance to beat the S&P 500, 80%% range %+.1f%% to %+.1f%%",
+			h.PBeat*100, h.Quantiles[1]*100, h.Quantiles[17]*100)
+		if e := p.Dist.Earnings; e != nil && e.Session <= 5 {
+			line += fmt.Sprintf(", earnings in %d sessions (typical move ±%.1f%%)", e.Session, e.TypicalMovePct)
+		}
+		return line
+	}
+	return ""
 }

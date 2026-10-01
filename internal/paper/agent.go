@@ -34,7 +34,10 @@ type Candidate struct {
 	// ModelPercentile is the forecast model's rank for the stock: 100 is the
 	// most likely to outperform over the next five sessions.
 	ModelPercentile *float64 `json:"model_percentile,omitempty"`
-	Headlines       []string `json:"headlines,omitempty"`
+	// Outlook is the engine's five-session distribution in a line: the odds
+	// of beating the S&P 500, the 80% range and any report inside it.
+	Outlook   string   `json:"outlook,omitempty"`
+	Headlines []string `json:"headlines,omitempty"`
 }
 
 // HoldingView is a holding as an agent sees it.

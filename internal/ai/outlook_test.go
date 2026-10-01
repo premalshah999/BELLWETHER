@@ -333,13 +333,17 @@ func (s stubMarket) Candles(_ context.Context, sym marketdata.Symbol, iv marketd
 	if s.err != nil {
 		return marketdata.Series{}, s.err
 	}
-	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	candles := make([]marketdata.Candle, 60)
-	for i := range candles {
-		candles[i] = marketdata.Candle{
-			Time: base.AddDate(0, 0, i), Open: s.price, High: s.price,
-			Low: s.price, Close: s.price, Volume: 1000,
+	// Weekday sessions around the outlooks the tests write, at midnight
+	// New York as the router stamps them.
+	var candles []marketdata.Candle
+	for d := time.Date(2026, 7, 1, 0, 0, 0, 0, marketdata.Market); len(candles) < 60; d = d.AddDate(0, 0, 1) {
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
 		}
+		candles = append(candles, marketdata.Candle{
+			Time: d, Open: s.price, High: s.price,
+			Low: s.price, Close: s.price, Volume: 1000,
+		})
 	}
 	return marketdata.Series{Symbol: sym, Interval: iv, Candles: candles}, nil
 }

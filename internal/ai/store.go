@@ -45,6 +45,17 @@ type Outlook struct {
 	KeyRisk string `json:"key_risk"`
 	Model   string `json:"model"`
 
+	// Quant is the engine's distribution the outlook started from, Final the
+	// distribution after the writer's adjustment, and Adjustment what was
+	// changed and on what evidence. Outlooks written before the engine have
+	// none of them.
+	Quant      *Prior      `json:"quant,omitempty"`
+	Final      *Prior      `json:"final,omitempty"`
+	Adjustment *Adjustment `json:"adjustment,omitempty"`
+	// QuantBrier is the prior's own Brier score on the same outcome, so the
+	// writer's adjustments can be judged against leaving the model alone.
+	QuantBrier *float64 `json:"quant_brier,omitempty"`
+
 	// Resolution, filled once the horizon has passed.
 	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
 	RealizedPrice  *float64   `json:"realized_price,omitempty"`
