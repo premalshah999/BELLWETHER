@@ -1,5 +1,7 @@
 # Never ship secrets into an image layer.
 .env
+.env.*
+!.env.example
 
 # Build outputs and local state
 /data/
